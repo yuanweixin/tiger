@@ -1,0 +1,21 @@
+[package]
+name = "tiger-lang"
+version = "0.1.0"
+edition = "2021"
+
+[[bin]]
+name = "tc"
+path = "src/main.rs"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+cfgrammar = "0.13.1"
+clap = { version = "4.1.8", features = ["derive"] }
+lrlex = "0.13.1"
+lrpar = "0.13.1"
+
+[build-dependencies]
+cfgrammar = "0.13.1"
+lrlex = "0.13.1"
+lrpar = "0.13.1"
