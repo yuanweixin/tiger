@@ -56,4 +56,4 @@ array "ARRAY"
 <COMMENT>\*/            <-COMMENT>;
 [0-9]+ "INT"
 ([a-zA-Z][a-zA-Z_0-9]*|_main) "ID"
-[^.] "UMINUS"
+- "UMINUS"

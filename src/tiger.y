@@ -1,4 +1,7 @@
 %start program
+
+%token "UMINUS"
+
 %right "OF"
 %nonassoc "DO" "THEN"
 %nonassoc "ELSE"
@@ -115,7 +118,7 @@ tydec : "TYPE" "ID" "EQ" ty
 /* Function declaration. */
 fundec :
     "FUNCTION" "ID" "LPAREN" tyfields "RPAREN" "EQ" exp
-    "FUNCTION" "ID" "LPAREN" tyfields "RPAREN" "COLON" type_id "EQ" exp
+  |  "FUNCTION" "ID" "LPAREN" tyfields "RPAREN" "COLON" type_id "EQ" exp
   | "PRIMITIVE" "ID" "LPAREN" tyfields "RPAREN" 
   | "PRIMITIVE" "ID" "LPAREN" tyfields "RPAREN" "COLON" type_id 
   ;
