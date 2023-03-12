@@ -49,7 +49,7 @@ array "ARRAY"
 : "COLON"
 ; "SEMICOLON"
 , "COMMA"
-"(?:\\\\|\\"|\\a|\\b|\\f|\\n|\\r|\\t|\\v|\\[0-3][0-7][0-7]|\\x[A-Fa-f0-9][A-Fa-f0-9]|[[:print:]])*" "STRING"
+"(?:\\\\|\\"|[^"])*" "STRING"
 <COMMENT,INITIAL>/\*    <+COMMENT>;
 <COMMENT>.              ;
 <COMMENT>\n             ;
