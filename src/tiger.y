@@ -37,8 +37,8 @@ exp :
   | "STRING"
 
   /* Array and record creations. */
-  | type_id "LBRACK" exp "RBRACK" "OF" exp
-  | type_id "LBRACE" field_value_list "RBRACE"
+  | "ID" "LBRACK" exp "RBRACK" "OF" exp
+  | "ID" "LBRACE" field_value_list "RBRACE"
 
   /* Variables, field, elements of an array. */
   | lvalue
@@ -91,6 +91,8 @@ args_helper :
 
 lvalue :
     "ID"
+  | "ID" "DOT" "ID"
+  | "ID" "LBRACK" exp "RBRACK"
   /* Record field access. */
   | lvalue "DOT" "ID"
   /* Array subscript. */
@@ -113,7 +115,7 @@ chunk :
 /* Variable declaration. */
 vardec : 
     "VAR" "ID" "ASSIGN" exp 
-    | "VAR" "ID" "COLON" type_id "ASSIGN" exp 
+    | "VAR" "ID" "COLON" "ID" "ASSIGN" exp 
     ;
 
 /* Type declaration. */
@@ -123,20 +125,20 @@ tydec : "TYPE" "ID" "EQ" ty
 /* Function declaration. */
 fundec :
     "FUNCTION" "ID" "LPAREN" tyfields "RPAREN" "EQ" exp
-  |  "FUNCTION" "ID" "LPAREN" tyfields "RPAREN" "COLON" type_id "EQ" exp
+  |  "FUNCTION" "ID" "LPAREN" tyfields "RPAREN" "COLON" "ID" "EQ" exp
   | "PRIMITIVE" "ID" "LPAREN" tyfields "RPAREN" 
-  | "PRIMITIVE" "ID" "LPAREN" tyfields "RPAREN" "COLON" type_id 
+  | "PRIMITIVE" "ID" "LPAREN" tyfields "RPAREN" "COLON" "ID" 
   ;
 
 
 /* === Types. === */
 ty :
    /* Type alias. */
-     type_id
+     "ID"
    /* Record type definition. */
    | "LBRACE" tyfields "RBRACE"
    /* Array type definition. */
-   | "ARRAY" "OF" type_id
+   | "ARRAY" "OF" "ID"
    ;
 
 tyfields : /* Empty */
@@ -144,9 +146,8 @@ tyfields : /* Empty */
     ;
 
 tyfields_helper :
-    "ID" "COLON" type_id 
-    | tyfields_helper "COMMA" "ID" "COLON" type_id 
+    "ID" "COLON" "ID" 
+    | tyfields_helper "COMMA" "ID" "COLON" "ID" 
     ;
 
-type_id : "ID" ;
 %%
