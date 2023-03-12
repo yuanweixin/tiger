@@ -1,4 +1,4 @@
-%start program
+%start  program
 
 %token "UMINUS"
 
@@ -14,140 +14,146 @@
 %left "UMINUS"
 
 %%
-program :
-    exp
-  | chunks
+program -> Result<u64, ()>:
+    exp { Ok(42) }
+  | chunks { Ok(42) }
+  | "UMINUS"  { Ok(42) }
   ;
 
 
 /* === Expressions. === */
-exps : /* Empty */
-    | exps_helper
+exps -> Result<u64, ()>: /* Empty */ { Ok(42) }
+    | exps_helper { Ok(42) }
     ;
     
-exps_helper : 
-    exp 
-    | exps_helper "SEMICOLON" exp 
+exps_helper -> Result<u64, ()>: 
+    exp  { Ok(42) }
+    | exps_helper "SEMICOLON" exp  { Ok(42) }
     ;
 
-exp :
+exp -> Result<u64, ()>:
   /* Literals. */
-    "NIL"
-  | "INT"
-  | "STRING"
+    "NIL" { Ok(42) }
+  | "INT" { Ok(42) }
+  | "STRING" { Ok(42) }
 
   /* Array and record creations. */
-  | "ID" "LBRACK" exp "RBRACK" "OF" exp
-  | "ID" "LBRACE" field_value_list "RBRACE"
+  | "ID" "LBRACK" exp "RBRACK" "OF" exp { Ok(42) }
+  | "ID" "LBRACE" field_value_list "RBRACE" { Ok(42) }
 
   /* Variables, field, elements of an array. */
-  | lvalue
+  | lvalue { Ok(42) }
 
   /* Function call. */
-  | "ID" "LPAREN" args "RPAREN"
+  | "ID" "LPAREN" args "RPAREN" { Ok(42) }
 
   /* Operations. */
-  | "MINUS" exp %prec "UMINUS"
-  | exp "OR" exp
-  | exp "AND" exp 
-  | exp "EQ" exp 
-  | exp "NEQ" exp 
-  | exp "LT" exp 
-  | exp "LE" exp 
-  | exp "GT" exp 
-  | exp "GE" exp 
-  | exp "PLUS" exp 
-  | exp "MINUS" exp 
-  | exp "TIMES" exp 
-  | exp "DIVIDE" exp 
+  | "MINUS" exp %prec "UMINUS" { Ok(42) }
+  | exp "OR" exp { Ok(42) }
+  | exp "AND" exp  { Ok(42) }
+  | exp "EQ" exp  { Ok(42) }
+  | exp "NEQ" exp  { Ok(42) }
+  | exp "LT" exp  { Ok(42) }
+  | exp "LE" exp  { Ok(42) }
+  | exp "GT" exp  { Ok(42) }
+  | exp "GE" exp  { Ok(42) }
+  | exp "PLUS" exp  { Ok(42) }
+  | exp "MINUS" exp  { Ok(42) }
+  | exp "TIMES" exp  { Ok(42) }
+  | exp "DIVIDE" exp  { Ok(42) }
 
-  | "LPAREN" exps "RPAREN"
+  | "LPAREN" exps "RPAREN" { Ok(42) }
 
   /* Assignment. */
-  | lvalue "ASSIGN" exp
+  | lvalue "ASSIGN" exp { Ok(42) }
 
   /* Control structures. */
-  | "IF" exp "THEN" exp
-  | "IF" exp "THEN" exp "ELSE" exp
-  | "WHILE" exp "DO" exp
-  | "FOR" "ID" "ASSIGN" exp "TO" exp "DO" exp
-  | "BREAK"
-  | "LET" chunks "IN" exps "END"
+  | "IF" exp "THEN" exp { Ok(42) }
+  | "IF" exp "THEN" exp "ELSE" exp { Ok(42) }
+  | "WHILE" exp "DO" exp { Ok(42) }
+  | "FOR" "ID" "ASSIGN" exp "TO" exp "DO" exp { Ok(42) }
+  | "BREAK" { Ok(42) }
+  | "LET" chunks "IN" exps "END" { Ok(42) }
   ;
 
-field_value_list : /* Empty */
-    | "ID" "EQ" exp 
-    | field_value_list "COMMA" "ID" "EQ" exp 
+field_value_list -> Result<u64, ()>: /* Empty */ { Ok(42) }
+    | "ID" "EQ" exp  { Ok(42) }
+    | field_value_list "COMMA" "ID" "EQ" exp  { Ok(42) }
     ;
 
-args : /* Empty */
-    | args_helper
+args -> Result<u64, ()>: /* Empty */ { Ok(42) }
+    | args_helper { Ok(42) }
     ;
 
-args_helper :
-    exp 
-    | args_helper "COMMA" exp
+args_helper -> Result<u64, ()>:
+    exp  { Ok(42) }
+    | args_helper "COMMA" exp { Ok(42) }
     ;
 
-lvalue :
-    "ID"
-  | "ID" "DOT" "ID"
-  | "ID" "LBRACK" exp "RBRACK"
+lvalue -> Result<u64, ()>:
+    "ID" { Ok(42) }
+  | "ID" "DOT" "ID" { Ok(42) }
+  | "ID" "LBRACK" exp "RBRACK" { Ok(42) }
   /* Record field access. */
-  | lvalue "DOT" "ID"
+  | lvalue "DOT" "ID" { Ok(42) }
   /* Array subscript. */
-  | lvalue "LBRACK" exp "RBRACK"
+  | lvalue "LBRACK" exp "RBRACK" { Ok(42) }
   ;
 
 /* === Chunks of declarations. === */
-chunks : /* Empty */
-  | chunk
-  | chunks chunk
+chunks -> Result<u64, ()>: /* Empty */ { Ok(42) }
+  | chunk_helper { Ok(42) }
   ;
 
-chunk :
-  tydec 
-  | fundec
-  | vardec
-  | "IMPORT" "STRING"
+chunk_helper -> Result<u64, ()>:
+  | tydec { Ok(42) }
+  | fundec { Ok(42) }
+  | vardec  { Ok(42) }
+  | "IMPORT" "STRING" { Ok(42) }
+  | chunk_helper tydec { Ok(42) }
+  | chunk_helper fundec  { Ok(42) }
+  | chunk_helper vardec { Ok(42) }
+  | chunk_helper "IMPORT" "STRING" { Ok(42) }
   ;
+
 
 /* Variable declaration. */
-vardec : 
-    "VAR" "ID" "ASSIGN" exp 
-    | "VAR" "ID" "COLON" "ID" "ASSIGN" exp 
+vardec -> Result<u64, ()>: 
+    "VAR" "ID" "ASSIGN" exp  { Ok(42) }
+    | "VAR" "ID" "COLON" "ID" "ASSIGN" exp  { Ok(42) }
     ;
 
 /* Type declaration. */
-tydec : "TYPE" "ID" "EQ" ty 
+tydec -> Result<u64, ()>: 
+  "TYPE" "ID" "EQ" ty  { Ok(42) }
 ;
 
 /* Function declaration. */
-fundec :
-    "FUNCTION" "ID" "LPAREN" tyfields "RPAREN" "EQ" exp
-  |  "FUNCTION" "ID" "LPAREN" tyfields "RPAREN" "COLON" "ID" "EQ" exp
-  | "PRIMITIVE" "ID" "LPAREN" tyfields "RPAREN" 
-  | "PRIMITIVE" "ID" "LPAREN" tyfields "RPAREN" "COLON" "ID" 
+fundec -> Result<u64, ()>:
+    "FUNCTION" "ID" "LPAREN" tyfields "RPAREN" "EQ" exp { Ok(42) }
+  |  "FUNCTION" "ID" "LPAREN" tyfields "RPAREN" "COLON" "ID" "EQ" exp { Ok(42) }
+  | "PRIMITIVE" "ID" "LPAREN" tyfields "RPAREN"  { Ok(42) }
+  | "PRIMITIVE" "ID" "LPAREN" tyfields "RPAREN" "COLON" "ID"  { Ok(42) }
   ;
 
 
 /* === Types. === */
-ty :
+ty -> Result<u64, ()>:
    /* Type alias. */
-     "ID"
+     "ID" { Ok(42) }
    /* Record type definition. */
-   | "LBRACE" tyfields "RBRACE"
+   | "LBRACE" tyfields "RBRACE" { Ok(42) }
    /* Array type definition. */
-   | "ARRAY" "OF" "ID"
+   | "ARRAY" "OF" "ID" { Ok(42) }
    ;
 
-tyfields : /* Empty */
-    | tyfields_helper
+tyfields -> Result<u64, ()>: /* Empty */ { Ok(42) }
+    | tyfields_helper { Ok(42) }
     ;
 
-tyfields_helper :
-    "ID" "COLON" "ID" 
-    | tyfields_helper "COMMA" "ID" "COLON" "ID" 
+tyfields_helper -> Result<u64, ()>:
+    "ID" "COLON" "ID"  { Ok(42) }
+    | tyfields_helper "COMMA" "ID" "COLON" "ID"  { Ok(42) }
     ;
 
 %%
