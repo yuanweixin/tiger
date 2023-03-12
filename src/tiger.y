@@ -21,9 +21,13 @@ program :
 
 
 /* === Expressions. === */
-exps :
+exps : /* Empty */
+    | exps_helper
+    ;
+    
+exps_helper : 
     exp 
-    | exps "SEMICOLON" exp 
+    | exps_helper "SEMICOLON" exp 
     ;
 
 exp :
@@ -56,6 +60,7 @@ exp :
   | exp "MINUS" exp 
   | exp "TIMES" exp 
   | exp "DIVIDE" exp 
+
   | "LPAREN" exps "RPAREN"
 
   /* Assignment. */
