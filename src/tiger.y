@@ -106,7 +106,7 @@ chunks -> Result<u64, ()>: /* Empty */ { Ok(42) }
   ;
 
 chunk_helper -> Result<u64, ()>:
-  | tydec { Ok(42) }
+   tydec { Ok(42) }
   | fundec { Ok(42) }
   | vardec  { Ok(42) }
   | "IMPORT" "STRING" { Ok(42) }
