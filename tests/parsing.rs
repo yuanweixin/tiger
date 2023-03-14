@@ -1,6 +1,6 @@
 use std::fs;
-use lrlex::{lrlex_mod, DefaultLexeme, LRLexError};
-use lrpar::{lrpar_mod, NonStreamingLexer, Span};
+use lrlex::{lrlex_mod};
+use lrpar::{lrpar_mod};
 
 lrlex_mod!("tiger.l");
 lrpar_mod!("tiger.y");
