@@ -1,5 +1,6 @@
 %start  program
 
+%token "STRING"
 %token "UMINUS"
 
 %right "OF"
@@ -15,56 +16,60 @@
 
 %%
 program -> Result<Box<Exp>, ()>:
-    exp { Ok($1) }
-  | "UMINUS"  { Ok(Box::new(Exp::NilExp)) } /* this exists solely to satisfy grmtool's draconian insistence that a token is used in the grammar. sometimes toolmakers get ahead of themselves trying to be smart */
+    exp { Ok($1?) }
+  | "UMINUS"  { panic!("UMINUS should have been impossible to match") } /* this exists solely to satisfy grmtool's draconian insistence that a token is used in the grammar. sometimes toolmakers get ahead of themselves trying to be smart */
   ;
 
 /* === Expressions. === */
 exps -> Result<Box<Exp>, ()>: /* Empty */ { Ok(Box::new(Exp::SeqExp(Vec::new()))) }
-    | exps_helper { Ok($1) }
+    | exps_helper { Ok($1?) }
     ;
     
 exps_helper -> Result<Box<Exp>, ()>: 
     exp  { 
-      let expList = vec![$1];
+      let expList = vec![($1?, 42)];
       Ok(Box::new(Exp::SeqExp(expList)))
       }
-    | exps_helper "SEMICOLON" exp  {  Ok($1) }
+    | exps_helper "SEMICOLON" exp  {  Ok($1?) }
     ;
 
 exp -> Result<Box<Exp>, ()>:
   /* Literals. */
     "NIL" { Ok(Box::new(Exp::NilExp)) }
-  | "INT" { Ok(Box::new(Exp::IntExp(42))) } /* TODO */
-  | "STRING" { Ok(Box::new(Exp::StringExp("TODO", 42))) }
+  | "INT" { Ok(Box::new(Exp::IntExp(42))) } /* TODO span */
+  | "STRING" { 
+    let dl = $1.map_err(|_| ())?;
+    let exp = Exp::StringExp(dl.span(), 42);
+    Ok(Box::new(exp)) 
+  }
 
   /* Array and record creations. */
   | "ID" "LBRACK" exp "RBRACK" "OF" exp { 
       Ok(Box::new(Exp::ArrayExp 
         {
           typ: 42, 
-          size: Box::new($3),
-          init: Box::new($6),
+          size: $3?,
+          init: $6?,
           pos: 42
         }))
   }
   | "ID" "LBRACE" field_value_list "RBRACE" { 
       Ok(Box::new(Exp::RecordExp 
         {
-          fields: $3,
+          fields: $3?,
           typ: 42, 
           pos: 42
         }))
     }
 
   /* Variables, field, elements of an array. */
-  | lvalue { Ok(Box::new(Exp::VarExp($1))) }
+  | lvalue { Ok(Box::new(Exp::VarExp($1?))) }
 
   /* Function call. */
   | "ID" "LPAREN" args "RPAREN" { Ok(
       Box::new(Exp::CallExp {
-        func: $1,
-        args: $3, 
+        func: $1?,
+        args: $3?, 
         pos: 42
       })
   ) }
@@ -75,112 +80,112 @@ exp -> Result<Box<Exp>, ()>:
       Ok(Box::new(Exp::OpExp {
         left: Boxed::new(Exp::IntExp(0)),
         oper: Oper::MinusOp,
-        right: $2,
+        right: $2?,
       }))
     }
   | exp "OR" exp { 
       Ok(Box::new(Exp::IfExp {
-        test: $1, 
+        test: $1?, 
         then: Box::new(Exp::IntExp(1)),
-        els: Some($3),
+        els: Some($3?),
         pos: 42
       }))
    }
   | exp "AND" exp  {     
       Ok(Box::new(Exp::IfExp {
-        test: $1, 
-        then: $3, 
+        test: $1?, 
+        then: $3?, 
         els: Some(Box::new(Exp::IntExp(0))),
         pos: 42
       }))
  }
   | exp "EQ" exp  { 
       Ok(Box::new(Exp::OpExp {
-          left: $1,
+          left: $1?,
           oper: Oper::EqOp,
-          right: $3
+          right: $3?
       }))
   }
   | exp "NEQ" exp  { 
       Ok(Box::new(Exp::OpExp {
-          left: $1,
+          left: $1?,
           oper: Oper::NeqOp,
-          right: $3
+          right: $3?
       }))
 
   }
   | exp "LT" exp  { 
       Ok(Box::new(Exp::OpExp {
-          left: $1,
+          left: $1?,
           oper: Oper::LtOp,
-          right: $3
+          right: $3?
       }))
 
    }
   | exp "LE" exp  { 
       Ok(Box::new(Exp::OpExp {
-          left: $1,
+          left: $1?,
           oper: Oper::LeOp,
-          right: $3
+          right: $3?
       }))
   }
   | exp "GT" exp  { 
       Ok(Box::new(Exp::OpExp {
-          left: $1,
+          left: $1?,
           oper: Oper::GtOp,
-          right: $3
+          right: $3?
       }))
   }
   | exp "GE" exp  { 
           Ok(Box::new(Exp::OpExp {
-          left: $1,
+          left: $1?,
           oper: Oper::GeOp,
-          right: $3
+          right: $3?
       }))
   }
   | exp "PLUS" exp  { 
           Ok(Box::new(Exp::OpExp {
-          left: $1,
+          left: $1?,
           oper: Oper::PlusOp,
-          right: $3
+          right: $3?
       }))
   }
   | exp "MINUS" exp  { 
         Ok(Box::new(Exp::OpExp {
-          left: $1,
+          left: $1?,
           oper: Oper::MinusOp,
-          right: $3
+          right: $3?
       }))
   }
   | exp "TIMES" exp  { 
       Ok(Box::new(Exp::OpExp {
-          left: $1,
+          left: $1?,
           oper: Oper::TimesOp,
-          right: $3
+          right: $3?
       }))
   }
   | exp "DIVIDE" exp  { 
         Ok(Box::new(Exp::OpExp {
-          left: $1,
+          left: $1?,
           oper: Oper::DivideOp,
-          right: $3
+          right: $3?
       }))
   }
-  | "LPAREN" exps "RPAREN" { Ok{$1} }
+  | "LPAREN" exps "RPAREN" { Ok($1?) }
 
   /* Assignment. */
   | lvalue "ASSIGN" exp { 
       Ok(Boxed::new(Exp::AssignExp {
-        var : $1, 
-        exp: $3, 
+        var : $1?, 
+        exp: $3?, 
         pos: 42
       })) 
   }
   /* Control structures. */
   | "IF" exp "THEN" exp { Ok(
         Box::new(Exp::IfExp {
-          test: $2,
-          then: $4, 
+          test: $2?,
+          then: $4?, 
           els: None,
           pos: 42
         }
@@ -189,9 +194,9 @@ exp -> Result<Box<Exp>, ()>:
   | "IF" exp "THEN" exp "ELSE" exp { 
     Ok(
         Box::new(Exp::IfExp {
-          test: $2,
-          then: $4, 
-          els: Some($6),
+          test: $2?,
+          then: $4?, 
+          els: Some($6?),
           pos: 42
         }
       ))
@@ -199,8 +204,8 @@ exp -> Result<Box<Exp>, ()>:
   | "WHILE" exp "DO" exp { 
       Ok(
         Box::new(Exp::WhileExp {
-          test: $2,
-          body: $4,
+          test: $2?,
+          body: $4?,
           pos: 42
         }
       ))
@@ -210,100 +215,162 @@ exp -> Result<Box<Exp>, ()>:
         Box::new(Exp::ForExp {
           var: 42, // TODO 
           escape: false,
-          lo: $4, 
-          hi: $6, 
-          body: $8, 
+          lo: $4?, 
+          hi: $6?, 
+          body: $8?, 
           pos: 42
         }
       ))
   }
   | "BREAK" { Ok(Box::new(Exp::BreakExp(42))) }
-  | "LET" chunks "IN" exps "END" { Ok(Box::new(Exp::LetExp {
-      decs: $2, 
-      body: $4, 
+  | "LET" decs "IN" exps "END" { Ok(Box::new(Exp::LetExp {
+      decs: $2?, 
+      body: $4?, 
       pos: 42
     })) }
   ;
 
-field_value_list -> Result<u64, ()>: /* Empty */ { Ok(42) }
-    | "ID" "EQ" exp  { Ok(42) }
-    | field_value_list "COMMA" "ID" "EQ" exp  { Ok(42) }
+field_value_list -> Result<Vec<(Symbol, Box<Exp>, Pos)>, ()>: /* Empty */ { Ok(Vec::new()) }
+    | "ID" "EQ" exp  { 
+      Ok(vec![(42, $3?, 42)])
+      
+    }
+    | field_value_list "COMMA" "ID" "EQ" exp  { 
+        Ok(flatten($1, (42, $5?, 42)))
+      }
     ;
 
-args -> Result<u64, ()>: /* Empty */ { Ok(42) }
-    | args_helper { Ok(42) }
+args -> Result<Vec<Box<Exp>>, ()>: /* Empty */ { Ok(Vec::new()) }
+    | args_helper { Ok($1?) }
     ;
 
-args_helper -> Result<u64, ()>:
-    exp  { Ok(42) }
-    | args_helper "COMMA" exp { Ok(42) }
+args_helper -> Result<Vec<Box<Exp>>, ()>:
+    exp  { Ok(vec![$1?]) }
+    | args_helper "COMMA" exp { 
+        Ok(flatten($1, $3))
+    }
     ;
 
-lvalue -> Result<u64, ()>:
-    "ID" { Ok(42) }
-  | "ID" "DOT" "ID" { Ok(42) }
-  | "ID" "LBRACK" exp "RBRACK" { Ok(42) }
+lvalue -> Result<Box<Var>, ()>:
+    "ID" { Ok(Box::new(Var::SimpleVar(42))) }
+  | "ID" "DOT" "ID" { Ok(Box::new(Var::SimpleVar(42))) }
+  | "ID" "LBRACK" exp "RBRACK" { Ok(Box::new(Var::SimpleVar(42))) }
   /* Record field access. */
-  | lvalue "DOT" "ID" { Ok(42) }
+  | lvalue "DOT" "ID" { Ok(Box::new(Var::FieldVar($1?, 42, 42))) }
   /* Array subscript. */
-  | lvalue "LBRACK" exp "RBRACK" { Ok(42) }
+  | lvalue "LBRACK" exp "RBRACK" { Ok(Box::new(Var::SubscriptVar($1?, $3?, 42))) }
   ;
 
-/* === Chunks of declarations. === */
-chunks -> Result<u64, ()>: /* Empty */ { Ok(42) }
-  | chunk_helper { Ok(42) }
+/* === declarations. === */
+decs -> Result<Vec<Box<Dec>>, ()>: /* Empty */ { Ok(Vec::new()) }
+  | dec_helper { Ok($1?) }
   ;
 
-chunk_helper -> Result<u64, ()>:
-   tydec { Ok(42) }
-  | fundec { Ok(42) }
-  | vardec  { Ok(42) }
-  | chunk_helper tydec { Ok(42) }
-  | chunk_helper fundec  { Ok(42) }
-  | chunk_helper vardec { Ok(42) }
+dec_helper -> Result<Vec<Box<Dec>>, ()>:
+   tydec { Ok(vec![$1?]) }
+  | fundec { Ok(vec![$1?]) }
+  | vardec  { Ok(vec![$1?]) }
+  | dec_helper tydec { Ok(flatten($1, $2)) }
+  | dec_helper fundec  { Ok(flatten($1, $2)) }
+  | dec_helper vardec { Ok(flatten($1, $2)) }
   ;
 
 
 /* Variable declaration. */
-vardec -> Result<u64, ()>: 
-    "VAR" "ID" "ASSIGN" exp  { Ok(42) }
-    | "VAR" "ID" "COLON" "ID" "ASSIGN" exp  { Ok(42) }
+vardec -> Result<Box<Dec>, ()>: 
+    "VAR" "ID" "ASSIGN" exp  { Ok(Box::new(Dec::VarDec {
+      name: 42,
+      escape: false,
+      typ : None,
+      init: $4?,
+      pos: 42
+    })) }
+    | "VAR" "ID" "COLON" "ID" "ASSIGN" exp  { 
+      Ok(Box::new(Dec::VarDec {
+        name: 42,
+        escape: false,
+        typ: $3?,
+        init: $5?,
+        pos: 42
+      })) 
+    }
     ;
 
 /* Type declaration. */
-tydec -> Result<u64, ()>: 
-  "TYPE" "ID" "EQ" ty  { Ok(42) }
+tydec -> Result<Box<Dec>, ()>: 
+  "TYPE" "ID" "EQ" ty  { Ok(Box::new(
+      Dec::TyDec {
+        name: 42,
+        ty: $4?,
+        pos: 42
+      }
+  )) }
 ;
 
 /* Function declaration. */
-fundec -> Result<u64, ()>:
-    "FUNCTION" "ID" "LPAREN" tyfields "RPAREN" "EQ" exp { Ok(42) }
-  |  "FUNCTION" "ID" "LPAREN" tyfields "RPAREN" "COLON" "ID" "EQ" exp { Ok(42) }
-  | "PRIMITIVE" "ID" "LPAREN" tyfields "RPAREN"  { Ok(42) }
-  | "PRIMITIVE" "ID" "LPAREN" tyfields "RPAREN" "COLON" "ID"  { Ok(42) }
+fundec -> Result<Box<Dec>, ()>:
+    "FUNCTION" "ID" "LPAREN" tyfields "RPAREN" "EQ" exp { 
+      Ok(
+        Box::new(Dec::Fundec {
+          name: 42, 
+          params: $4?, 
+          result: None,
+          body: $7?,
+          pos: 42
+        })
+    ) }
+  |  "FUNCTION" "ID" "LPAREN" tyfields "RPAREN" "COLON" "ID" "EQ" exp { Ok(
+    Box::new(Dec::Fundec {
+      name: 42, 
+      params: $5?, 
+      result: Some (42, 42), 
+      body: $9?,
+      pos: 42
+    })
+  ) }
   ;
 
 
 /* === Types. === */
-ty -> Result<u64, ()>:
+ty -> Result<Box<Ty>, ()>:
    /* Type alias. */
-     "ID" { Ok(42) }
+     "ID" { Ok(Box::new(Ty::NameTy(42,42))) }
    /* Record type definition. */
-   | "LBRACE" tyfields "RBRACE" { Ok(42) }
+   | "LBRACE" tyfields "RBRACE" { Ok(Box::new(Ty::RecordTy(vec![$2?]))) }
    /* Array type definition. */
-   | "ARRAY" "OF" "ID" { Ok(42) }
+   | "ARRAY" "OF" "ID" { Ok(Box::new(Ty::ArrayTy(42,42))) }
    ;
 
-tyfields -> Result<u64, ()>: /* Empty */ { Ok(42) }
-    | tyfields_helper { Ok(42) }
+tyfields -> Result<Vec<Box<Field>>, ()>: 
+    /* Empty */ { 
+      Ok(Vec::new()) 
+    }
+    | tyfields_helper { Ok($1?) }
     ;
 
-tyfields_helper -> Result<u64, ()>:
-    "ID" "COLON" "ID"  { Ok(42) }
-    | tyfields_helper "COMMA" "ID" "COLON" "ID"  { Ok(42) }
+tyfields_helper -> Result<Vec<Box<Field>>, ()>:
+    "ID" "COLON" "ID"  { 
+      Ok(Box::new(Field {
+        name: 42,
+        escape: false, 
+        typ: 42, 
+        pos: 42
+      })) }
+    | tyfields_helper "COMMA" "ID" "COLON" "ID"  { 
+        let mut fl = $1?;
+        fl.insert(Field {
+          name: 42, 
+          escape: false, 
+          typ: 42,
+          pos: 42
+        });
+        Ok(fl)
+    }
     ;
 
 %%
+
+use cfgrammar::Span;
 
 type Symbol = i32; 
 type Pos = u32;
@@ -370,7 +437,7 @@ pub enum Exp {
     VarExp(Box<Var>),
     NilExp,
     IntExp(i32), 
-    StringExp(String, Pos),
+    StringExp(Span, Pos),
     CallExp {
         func: Symbol,
         args: Vec<Box<Exp>>, 
@@ -425,4 +492,9 @@ pub enum Exp {
     }
 }
 
-
+fn flatten<T>(lhs: Result<Vec<T>, ()>, rhs: Result<T,()>) -> Result<Vec<T>, ()> 
+{
+  let mut flt = lhs?;
+  flt.push(rhs?);
+  Ok(flt)
+}

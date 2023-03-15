@@ -3,12 +3,6 @@
 %%
 [\n] ;
 [ \t\r\n] ;
-import "IMPORT"
-primitive "PRIMITIVE"
-class "CLASS"
-extends "EXTENDS"
-method "METHOD"
-new "NEW"
 type "TYPE"
 var "VAR"
 function "FUNCTION"
