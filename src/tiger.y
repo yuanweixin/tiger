@@ -316,15 +316,29 @@ vardec -> Result<Box<Dec>, ()>:
 
 /* Type declaration. TODO repeated */
 tydec -> Result<Box<Dec>, ()>: 
+  tydec_helper {
+    Ok(Box::new(Dec::TypeDec($1?)))
+  }
+  ;
+
+tydec_helper -> Result<Vec<TyDec>, ()>:
   "TYPE" "ID" "EQ" ty  { 
-      Ok(Box::new(
-        Dec::TypeDec(
-          vec![
+      Ok(
+         vec![
             TyDec {
             name: span($2)?,
             ty: $4?,
             pos: 42
-          }])))
+          }]
+      )
+  }
+  |
+  tydec_helper "TYPE" "ID" "EQ" ty  { 
+      flatten($1, Ok(TyDec {
+            name: span($3)?,
+            ty: $5?,
+            pos: 42
+      }))
   }
   ;
 
