@@ -16,30 +16,42 @@
 
 %%
 program -> Result<Box<Exp>, ()>:
-    exp { Ok($1?) }
+    exp { $1 }
   | "UMINUS"  { panic!("UMINUS should have been impossible to match") } /* this exists solely to satisfy grmtool's draconian insistence that a token is used in the grammar. sometimes toolmakers get ahead of themselves trying to be smart */
   ;
 
 /* === Expressions. === */
 exps -> Result<Box<Exp>, ()>: /* Empty */ { Ok(Box::new(Exp::SeqExp(Vec::new()))) }
-    | exps_helper { Ok($1?) }
+    | exps_helper { Ok(Box::new(Exp::SeqExp($1?))) }
     ;
     
-exps_helper -> Result<Box<Exp>, ()>: 
+exps_helper -> Result<Vec<(Box<Exp>, Pos)>, ()>: 
     exp  { 
       let expList = vec![($1?, 42)];
-      Ok(Box::new(Exp::SeqExp(expList)))
+      Ok(expList)
+    }
+    | exps_helper "SEMICOLON" exp  { 
+        flatten($1, Ok(($3?, 42)))
       }
-    | exps_helper "SEMICOLON" exp  {  Ok($1?) }
     ;
 
 exp -> Result<Box<Exp>, ()>:
   /* Literals. */
     "NIL" { Ok(Box::new(Exp::NilExp)) }
-  | "INT" { Ok(Box::new(Exp::IntExp(42))) } /* TODO span */
+  | "INT" { 
+    match $lexer.span_str($1.map_err(|_| ())?.span()).parse::<i32>() {
+      Ok(val) => Ok(Box::new(Exp::IntExp(val))),
+      Err(_) => {
+        let ((line, col), _) = $lexer.line_col(span($1)?);
+        eprintln!("Unable to parse {} as int at line {} column {}", 
+          $lexer.span_str($1.map_err(|_| ())?.span()), line, col);
+        Err(())
+      }
+    }
+
+  }
   | "STRING" { 
-    let dl = $1.map_err(|_| ())?;
-    let exp = Exp::StringExp(dl.span(), 42);
+    let exp = Exp::StringExp(span($1)?, 42);
     Ok(Box::new(exp)) 
   }
 
@@ -47,7 +59,7 @@ exp -> Result<Box<Exp>, ()>:
   | "ID" "LBRACK" exp "RBRACK" "OF" exp { 
       Ok(Box::new(Exp::ArrayExp 
         {
-          typ: 42, 
+          typ: span($1)?,
           size: $3?,
           init: $6?,
           pos: 42
@@ -57,7 +69,7 @@ exp -> Result<Box<Exp>, ()>:
       Ok(Box::new(Exp::RecordExp 
         {
           fields: $3?,
-          typ: 42, 
+          typ: span($1)?, 
           pos: 42
         }))
     }
@@ -68,7 +80,7 @@ exp -> Result<Box<Exp>, ()>:
   /* Function call. */
   | "ID" "LPAREN" args "RPAREN" { Ok(
       Box::new(Exp::CallExp {
-        func: $1?,
+        func: span($1)?,
         args: $3?, 
         pos: 42
       })
@@ -78,7 +90,7 @@ exp -> Result<Box<Exp>, ()>:
   | "MINUS" exp %prec "UMINUS" { 
       let zeroExp = Exp::IntExp(0);
       Ok(Box::new(Exp::OpExp {
-        left: Boxed::new(Exp::IntExp(0)),
+        left: Box::new(Exp::IntExp(0)),
         oper: Oper::MinusOp,
         right: $2?,
       }))
@@ -171,11 +183,11 @@ exp -> Result<Box<Exp>, ()>:
           right: $3?
       }))
   }
-  | "LPAREN" exps "RPAREN" { Ok($1?) }
+  | "LPAREN" exps "RPAREN" { Ok($2?) }
 
   /* Assignment. */
   | lvalue "ASSIGN" exp { 
-      Ok(Boxed::new(Exp::AssignExp {
+      Ok(Box::new(Exp::AssignExp {
         var : $1?, 
         exp: $3?, 
         pos: 42
@@ -213,7 +225,7 @@ exp -> Result<Box<Exp>, ()>:
   | "FOR" "ID" "ASSIGN" exp "TO" exp "DO" exp { 
       Ok(
         Box::new(Exp::ForExp {
-          var: 42, // TODO 
+          var: span($1)?, 
           escape: false,
           lo: $4?, 
           hi: $6?, 
@@ -230,13 +242,12 @@ exp -> Result<Box<Exp>, ()>:
     })) }
   ;
 
-field_value_list -> Result<Vec<(Symbol, Box<Exp>, Pos)>, ()>: /* Empty */ { Ok(Vec::new()) }
+field_value_list -> Result<Vec<(Span, Box<Exp>, Pos)>, ()>: /* Empty */ { Ok(Vec::new()) }
     | "ID" "EQ" exp  { 
-      Ok(vec![(42, $3?, 42)])
-      
+      Ok(vec![(span($1)?, $3?, 42)])
     }
     | field_value_list "COMMA" "ID" "EQ" exp  { 
-        Ok(flatten($1, (42, $5?, 42)))
+        flatten($1, Ok((span($3)?, $5?, 42)))
       }
     ;
 
@@ -247,19 +258,26 @@ args -> Result<Vec<Box<Exp>>, ()>: /* Empty */ { Ok(Vec::new()) }
 args_helper -> Result<Vec<Box<Exp>>, ()>:
     exp  { Ok(vec![$1?]) }
     | args_helper "COMMA" exp { 
-        Ok(flatten($1, $3))
+        flatten($1, $3)
     }
     ;
 
 lvalue -> Result<Box<Var>, ()>:
-    "ID" { Ok(Box::new(Var::SimpleVar(42))) }
-  | "ID" "DOT" "ID" { Ok(Box::new(Var::SimpleVar(42))) }
-  | "ID" "LBRACK" exp "RBRACK" { Ok(Box::new(Var::SimpleVar(42))) }
+    "ID" { Ok(Box::new(Var::SimpleVar(span($1)?, 42))) }
+  | "ID" "DOT" "ID" { 
+      let sv = Box::new(Var::SimpleVar(span($1)?, 42));
+      Ok(Box::new(Var::FieldVar(sv, span($3)?, 42)))
+    }
+  | "ID" "LBRACK" exp "RBRACK" { 
+      let sv = Box::new(Var::SimpleVar(span($1)?, 42));
+      Ok(Box::new(Var::SubscriptVar(sv, $3?, 42)))
+    }
   /* Record field access. */
-  | lvalue "DOT" "ID" { Ok(Box::new(Var::FieldVar($1?, 42, 42))) }
+  | lvalue "DOT" "ID" { Ok(Box::new(Var::FieldVar($1?, span($3)?, 42))) }
   /* Array subscript. */
   | lvalue "LBRACK" exp "RBRACK" { Ok(Box::new(Var::SubscriptVar($1?, $3?, 42))) }
   ;
+
 
 /* === declarations. === */
 decs -> Result<Vec<Box<Dec>>, ()>: /* Empty */ { Ok(Vec::new()) }
@@ -270,16 +288,16 @@ dec_helper -> Result<Vec<Box<Dec>>, ()>:
    tydec { Ok(vec![$1?]) }
   | fundec { Ok(vec![$1?]) }
   | vardec  { Ok(vec![$1?]) }
-  | dec_helper tydec { Ok(flatten($1, $2)) }
-  | dec_helper fundec  { Ok(flatten($1, $2)) }
-  | dec_helper vardec { Ok(flatten($1, $2)) }
+  | dec_helper tydec { flatten($1, $2) }
+  | dec_helper fundec  { flatten($1, $2) }
+  | dec_helper vardec { flatten($1, $2) }
   ;
 
 
 /* Variable declaration. */
 vardec -> Result<Box<Dec>, ()>: 
     "VAR" "ID" "ASSIGN" exp  { Ok(Box::new(Dec::VarDec {
-      name: 42,
+      name: span($2)?,
       escape: false,
       typ : None,
       init: $4?,
@@ -287,97 +305,107 @@ vardec -> Result<Box<Dec>, ()>:
     })) }
     | "VAR" "ID" "COLON" "ID" "ASSIGN" exp  { 
       Ok(Box::new(Dec::VarDec {
-        name: 42,
+        name: span($2)?,
         escape: false,
-        typ: $3?,
-        init: $5?,
+        typ: Some ((span($4)?, 42)),
+        init: $6?,
         pos: 42
       })) 
     }
     ;
 
-/* Type declaration. */
+/* Type declaration. TODO repeated */
 tydec -> Result<Box<Dec>, ()>: 
-  "TYPE" "ID" "EQ" ty  { Ok(Box::new(
-      Dec::TyDec {
-        name: 42,
-        ty: $4?,
-        pos: 42
-      }
-  )) }
-;
+  "TYPE" "ID" "EQ" ty  { 
+      Ok(Box::new(
+        Dec::TypeDec(
+          vec![
+            TyDec {
+            name: span($2)?,
+            ty: $4?,
+            pos: 42
+          }])))
+  }
+  ;
 
-/* Function declaration. */
+/* Function declaration. TODO repeated */
 fundec -> Result<Box<Dec>, ()>:
     "FUNCTION" "ID" "LPAREN" tyfields "RPAREN" "EQ" exp { 
       Ok(
-        Box::new(Dec::Fundec {
-          name: 42, 
-          params: $4?, 
-          result: None,
-          body: $7?,
-          pos: 42
-        })
-    ) }
-  |  "FUNCTION" "ID" "LPAREN" tyfields "RPAREN" "COLON" "ID" "EQ" exp { Ok(
-    Box::new(Dec::Fundec {
-      name: 42, 
-      params: $5?, 
-      result: Some (42, 42), 
-      body: $9?,
-      pos: 42
-    })
-  ) }
+        Box::new(
+          Dec::FunctionDec(
+            vec![
+              Fundec {
+                name: span($2)?, 
+                params: $4?, 
+                result: None,
+                body: $7?,
+                pos: 42
+              }]
+            ))) 
+    }
+  |  "FUNCTION" "ID" "LPAREN" tyfields "RPAREN" "COLON" "ID" "EQ" exp { 
+    Ok(
+      Box::new(
+        Dec::FunctionDec(
+          vec![ 
+            Fundec {
+            name: span($2)?, 
+            params: $4?, 
+            result: Some ((span($7)?, 42)), 
+            body: $9?,
+            pos: 42
+          }])))
+    }
   ;
 
 
 /* === Types. === */
 ty -> Result<Box<Ty>, ()>:
    /* Type alias. */
-     "ID" { Ok(Box::new(Ty::NameTy(42,42))) }
+     "ID" { Ok(Box::new(Ty::NameTy(span($1)?,42))) }
    /* Record type definition. */
-   | "LBRACE" tyfields "RBRACE" { Ok(Box::new(Ty::RecordTy(vec![$2?]))) }
+   | "LBRACE" tyfields "RBRACE" { Ok(Box::new(Ty::RecordTy($2?))) }
    /* Array type definition. */
-   | "ARRAY" "OF" "ID" { Ok(Box::new(Ty::ArrayTy(42,42))) }
+   | "ARRAY" "OF" "ID" { Ok(Box::new(Ty::ArrayTy(span($3)?,42))) }
    ;
 
-tyfields -> Result<Vec<Box<Field>>, ()>: 
+tyfields -> Result<Vec<Field>, ()>: 
     /* Empty */ { 
       Ok(Vec::new()) 
     }
-    | tyfields_helper { Ok($1?) }
+    | tyfields_helper { $1 }
     ;
 
-tyfields_helper -> Result<Vec<Box<Field>>, ()>:
+tyfields_helper -> Result<Vec<Field>, ()>:
     "ID" "COLON" "ID"  { 
-      Ok(Box::new(Field {
-        name: 42,
+      Ok(vec![Field {
+        name: span($1)?,
         escape: false, 
-        typ: 42, 
+        typ: span($3)?, 
         pos: 42
-      })) }
+      }])
+    }
     | tyfields_helper "COMMA" "ID" "COLON" "ID"  { 
-        let mut fl = $1?;
-        fl.insert(Field {
-          name: 42, 
-          escape: false, 
-          typ: 42,
-          pos: 42
-        });
-        Ok(fl)
+        flatten($1, Ok(Field {
+                        name: span($3)?, 
+                        escape: false, 
+                        typ: span($5)?,
+                        pos: 42
+        }))
     }
     ;
 
 %%
 
 use cfgrammar::Span;
+use lrlex::DefaultLexeme;
 
-type Symbol = i32; 
 type Pos = u32;
 
 pub enum Var {
-    SimpleVar(Symbol),
-    FieldVar(Box<Var>, Symbol, Pos),
+    SimpleVar(Span, Pos),
+    FieldVar(Box<Var>, Span, Pos),
     SubscriptVar(Box<Var>, Box<Exp>, Pos),
 }
 
@@ -395,51 +423,51 @@ pub enum Oper {
 }
 
 pub enum Ty {
-    NameTy(Symbol, Pos),
+    NameTy(Span, Pos),
     RecordTy(Vec<Field>),
-    ArrayTy(Symbol, Pos)
+    ArrayTy(Span, Pos)
 }
 
 pub enum Dec {
-    FunctionDec(Vec<Box<Fundec>>),
+    FunctionDec(Vec<Fundec>),
     VarDec {
-        name: Symbol,
+        name: Span,
         escape: bool,
-        typ: Option<(Symbol, Pos)>,
+        typ: Option<(Span, Pos)>,
         init: Box<Exp>,
         pos: Pos
     },
-    TypeDec(Vec<Box<TyDec>>)
+    TypeDec(Vec<TyDec>)
 }
 
 pub struct Fundec {
-  name: Symbol,
-  params: Vec<Box<Field>>,
-  result: Option<(Symbol, Pos)>,
+  name: Span,
+  params: Vec<Field>,
+  result: Option<(Span, Pos)>,
   body: Box<Exp>,
   pos: Pos
 }
 
 pub struct Field {
-  name: Symbol, 
+  name: Span, 
   escape: bool,
-  typ: Symbol,
+  typ: Span,
   pos: Pos
 }
 
 pub struct TyDec {
-    name: Symbol,
-    ty: Ty,
+    name: Span,
+    ty: Box<Ty>,
     pos: Pos
 }
 
 pub enum Exp {
     VarExp(Box<Var>),
     NilExp,
-    IntExp(i32), 
+    IntExp(i32),
     StringExp(Span, Pos),
     CallExp {
-        func: Symbol,
+        func: Span,
         args: Vec<Box<Exp>>, 
         pos: Pos
     },
@@ -449,8 +477,8 @@ pub enum Exp {
         right: Box<Exp>
     },
     RecordExp {
-        fields: Vec<(Symbol, Box<Exp>, Pos)>,
-        typ: Symbol, 
+        fields: Vec<(Span, Box<Exp>, Pos)>,
+        typ: Span, 
         pos: Pos
     },
     SeqExp(Vec<(Box<Exp>, Pos)>),
@@ -471,7 +499,7 @@ pub enum Exp {
         pos: Pos
     },
     ForExp {
-        var: Symbol,
+        var: Span,
         escape: bool,
         lo: Box<Exp>,
         hi: Box<Exp>,
@@ -479,13 +507,13 @@ pub enum Exp {
         pos: Pos
     },
     BreakExp(Pos),
-    LetEx {
+    LetExp {
         decs: Vec<Box<Dec>>,
         body: Box<Exp>,
         pos: Pos
     },
     ArrayExp {
-        typ: Symbol,
+        typ: Span,
         size: Box<Exp>,
         init: Box<Exp>,
         pos: Pos
@@ -497,4 +525,8 @@ fn flatten<T>(lhs: Result<Vec<T>, ()>, rhs: Result<T,()>) -> Result<Vec<T>, ()>
   let mut flt = lhs?;
   flt.push(rhs?);
   Ok(flt)
+}
+
+fn span(dl: Result<DefaultLexeme, DefaultLexeme>) -> Result<Span, ()> {
+  Ok(dl.map_err(|_| ())?.span())
 }
