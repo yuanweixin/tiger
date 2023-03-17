@@ -314,7 +314,7 @@ vardec -> Result<Box<Dec>, ()>:
     }
     ;
 
-/* Type declaration. TODO repeated */
+/* Type declaration. */
 tydec -> Result<Box<Dec>, ()>: 
   tydec_helper {
     Ok(Box::new(Dec::TypeDec($1?)))
@@ -342,35 +342,67 @@ tydec_helper -> Result<Vec<TyDec>, ()>:
   }
   ;
 
-/* Function declaration. TODO repeated */
+/* Function declaration. */
 fundec -> Result<Box<Dec>, ()>:
+  fundec_helper {
+    Ok(
+      Box::new(
+        Dec::FunctionDec($1?)
+      )
+    )
+  }
+  ;
+
+fundec_helper -> Result<Vec<Fundec>, ()>: 
     "FUNCTION" "ID" "LPAREN" tyfields "RPAREN" "EQ" exp { 
       Ok(
-        Box::new(
-          Dec::FunctionDec(
-            vec![
-              Fundec {
-                name: span($2)?, 
-                params: $4?, 
-                result: None,
-                body: $7?,
-                pos: 42
-              }]
-            ))) 
+        vec![
+          Fundec {
+            name: span($2)?, 
+            params: $4?, 
+            result: None,
+            body: $7?,
+            pos: 42
+          }]
+        )
     }
   |  "FUNCTION" "ID" "LPAREN" tyfields "RPAREN" "COLON" "ID" "EQ" exp { 
     Ok(
-      Box::new(
-        Dec::FunctionDec(
-          vec![ 
-            Fundec {
-            name: span($2)?, 
-            params: $4?, 
-            result: Some ((span($7)?, 42)), 
-            body: $9?,
-            pos: 42
-          }])))
+      vec![ 
+        Fundec {
+        name: span($2)?, 
+        params: $4?, 
+        result: Some ((span($7)?, 42)), 
+        body: $9?,
+        pos: 42
+      }])
     }
+  | 
+  fundec_helper "FUNCTION" "ID" "LPAREN" tyfields "RPAREN" "EQ" exp { 
+    flatten($1, Ok(
+          Fundec {
+            name: span($3)?, 
+            params: $5?, 
+            result: None,
+            body: $8?,
+            pos: 42
+          }
+        )
+    )
+  }
+  | 
+  fundec_helper  "FUNCTION" "ID" "LPAREN" tyfields "RPAREN" "COLON" "ID" "EQ" exp { 
+    flatten($1, Ok(
+        Fundec {
+          name: span($3)?, 
+          params: $5?, 
+          result: Some ((span($8)?, 42)), 
+          body: $10?,
+          pos: 42
+        }
+      )
+    )
+  }
   ;
 
 
