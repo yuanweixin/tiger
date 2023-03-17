@@ -46,7 +46,7 @@ fn main() {
         util::exit(util::ReturnCode::SyntaxError);
     }
 
-    if let Some(Ok(r)) = res {
+    if let Some(Ok(_)) = res {
         // TODO further process 
     }
 }
