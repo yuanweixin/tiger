@@ -6,6 +6,7 @@ use clap::Parser;
 use std::fs;
 
 mod util;
+mod absyn;
 
 #[derive(Parser, Debug)]
 #[command(author="Wei Xin Yuan", version="0.0.1", about="Tiger Compiler", long_about = None, override_usage="tc [Option] file")]
@@ -46,9 +47,8 @@ fn main() {
         util::exit(util::ReturnCode::SyntaxError);
     }
 
-    if let Some(Ok(_)) = res {
-        // TODO further process 
-    }
+    
+    
 }
 
 

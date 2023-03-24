@@ -28,14 +28,14 @@ exps -> Result<Box<Exp>, ()>:
     exps_helper { Ok(Box::new(Exp::SeqExp($1?))) }
     ;
     
-exps_helper -> Result<Vec<(Box<Exp>, Pos)>, ()>: 
+exps_helper -> Result<Vec<Box<Exp>>, ()>: 
     exp  { 
-      let expList = vec![($1?, 42)];
+      let expList = vec![($1?)];
       Ok(expList)
     }
     | 
     exps_helper "SEMICOLON" exp  { 
-        flatten($1, Ok(($3?, 42)))
+        flatten($1, Ok($3?))
     }
     ;
 
@@ -44,19 +44,19 @@ exp -> Result<Box<Exp>, ()>:
   "NIL" { Ok(Box::new(Exp::NilExp)) }
   | 
   "INT" { 
-    match $lexer.span_str($1.map_err(|_| ())?.span()).parse::<i32>() {
+    match $lexer.span_str(span($1)?).parse::<i32>() {
       Ok(val) => Ok(Box::new(Exp::IntExp(val))),
       Err(_) => {
         let ((line, col), _) = $lexer.line_col(span($1)?);
         eprintln!("Unable to parse {} as int at line {} column {}", 
-          $lexer.span_str($1.map_err(|_| ())?.span()), line, col);
+          $lexer.span_str(span($1)?), line, col);
         Err(())
       }
     }
   }
   | 
   "STRING" { 
-    let exp = Exp::StringExp(span($1)?, 42);
+    let exp = Exp::StringExp(span($1)?, $lexer.line_col(span($1)?));
     Ok(Box::new(exp)) 
   }
   | 
@@ -67,7 +67,7 @@ exp -> Result<Box<Exp>, ()>:
           typ: span($1)?,
           size: $3?,
           init: $6?,
-          pos: 42
+          pos: $lexer.line_col(span($1)?)
         }))
   }
   | 
@@ -76,7 +76,7 @@ exp -> Result<Box<Exp>, ()>:
         {
           fields: $3?,
           typ: span($1)?, 
-          pos: 42
+          pos: $lexer.line_col(span($1)?)
         }))
     }
   | 
@@ -89,7 +89,7 @@ exp -> Result<Box<Exp>, ()>:
       Box::new(Exp::CallExp {
         func: span($1)?,
         args: $3?, 
-        pos: 42
+        pos: $lexer.line_col(span($1)?)
       })
     ) 
   }
@@ -101,6 +101,7 @@ exp -> Result<Box<Exp>, ()>:
         left: Box::new(Exp::IntExp(0)),
         oper: Oper::MinusOp,
         right: $2?,
+        pos: $lexer.line_col(span($1)?)
       }))
     }
   | 
@@ -109,7 +110,7 @@ exp -> Result<Box<Exp>, ()>:
         test: $1?, 
         then: Box::new(Exp::IntExp(1)),
         els: Some($3?),
-        pos: 42
+        pos: $lexer.line_col(span($2)?)
       }))
    }
   | 
@@ -118,7 +119,7 @@ exp -> Result<Box<Exp>, ()>:
         test: $1?, 
         then: $3?, 
         els: Some(Box::new(Exp::IntExp(0))),
-        pos: 42
+        pos: $lexer.line_col(span($2)?)
       }))
   }
   | 
@@ -126,7 +127,8 @@ exp -> Result<Box<Exp>, ()>:
       Ok(Box::new(Exp::OpExp {
           left: $1?,
           oper: Oper::EqOp,
-          right: $3?
+          right: $3?,
+          pos: $lexer.line_col(span($2)?)
       }))
   }
   | 
@@ -134,7 +136,8 @@ exp -> Result<Box<Exp>, ()>:
       Ok(Box::new(Exp::OpExp {
           left: $1?,
           oper: Oper::NeqOp,
-          right: $3?
+          right: $3?,
+          pos: $lexer.line_col(span($2)?)
       }))
 
   }
@@ -143,7 +146,9 @@ exp -> Result<Box<Exp>, ()>:
       Ok(Box::new(Exp::OpExp {
           left: $1?,
           oper: Oper::LtOp,
-          right: $3?
+          right: $3?,
+          pos: $lexer.line_col(span($2)?)
+
       }))
 
    }
@@ -152,7 +157,9 @@ exp -> Result<Box<Exp>, ()>:
       Ok(Box::new(Exp::OpExp {
           left: $1?,
           oper: Oper::LeOp,
-          right: $3?
+          right: $3?,
+          pos: $lexer.line_col(span($2)?)
+
       }))
   }
   | 
@@ -160,7 +167,9 @@ exp -> Result<Box<Exp>, ()>:
       Ok(Box::new(Exp::OpExp {
           left: $1?,
           oper: Oper::GtOp,
-          right: $3?
+          right: $3?,
+          pos: $lexer.line_col(span($2)?)
+
       }))
   }
   | 
@@ -168,7 +177,9 @@ exp -> Result<Box<Exp>, ()>:
           Ok(Box::new(Exp::OpExp {
           left: $1?,
           oper: Oper::GeOp,
-          right: $3?
+          right: $3?,
+          pos: $lexer.line_col(span($2)?)
+
       }))
   }
   | 
@@ -176,7 +187,9 @@ exp -> Result<Box<Exp>, ()>:
           Ok(Box::new(Exp::OpExp {
           left: $1?,
           oper: Oper::PlusOp,
-          right: $3?
+          right: $3?,
+          pos: $lexer.line_col(span($2)?)
+
       }))
   }
   | 
@@ -184,7 +197,9 @@ exp -> Result<Box<Exp>, ()>:
         Ok(Box::new(Exp::OpExp {
           left: $1?,
           oper: Oper::MinusOp,
-          right: $3?
+          right: $3?,
+          pos: $lexer.line_col(span($2)?)
+
       }))
   }
   | 
@@ -192,7 +207,8 @@ exp -> Result<Box<Exp>, ()>:
       Ok(Box::new(Exp::OpExp {
           left: $1?,
           oper: Oper::TimesOp,
-          right: $3?
+          right: $3?,
+          pos: $lexer.line_col(span($2)?)
       }))
   }
   | 
@@ -200,7 +216,8 @@ exp -> Result<Box<Exp>, ()>:
         Ok(Box::new(Exp::OpExp {
           left: $1?,
           oper: Oper::DivideOp,
-          right: $3?
+          right: $3?,
+          pos: $lexer.line_col(span($2)?)
       }))
   }
   | 
@@ -211,7 +228,7 @@ exp -> Result<Box<Exp>, ()>:
       Ok(Box::new(Exp::AssignExp {
         var : $1?, 
         exp: $3?, 
-        pos: 42
+        pos: $lexer.line_col(span($2)?)
       })) 
   }
   | 
@@ -222,7 +239,8 @@ exp -> Result<Box<Exp>, ()>:
           test: $2?,
           then: $4?, 
           els: None,
-          pos: 42
+          pos: $lexer.line_col(span($1)?)
+
         }
       ))
   }
@@ -233,7 +251,7 @@ exp -> Result<Box<Exp>, ()>:
           test: $2?,
           then: $4?, 
           els: Some($6?),
-          pos: 42
+          pos: $lexer.line_col(span($1)?)
         }
       ))
   }
@@ -243,7 +261,7 @@ exp -> Result<Box<Exp>, ()>:
         Box::new(Exp::WhileExp {
           test: $2?,
           body: $4?,
-          pos: 42
+          pos: $lexer.line_col(span($1)?)
         }
       ))
   }
@@ -256,12 +274,12 @@ exp -> Result<Box<Exp>, ()>:
           lo: $4?, 
           hi: $6?, 
           body: $8?, 
-          pos: 42
+          pos: $lexer.line_col(span($1)?)
         }
       ))
   }
   | 
-  "BREAK" { Ok(Box::new(Exp::BreakExp(42))) }
+  "BREAK" { Ok(Box::new(Exp::BreakExp($lexer.line_col(span($1)?)))) }
   | 
   "LET" decs "IN" exps "END" { 
     Ok(
@@ -269,7 +287,7 @@ exp -> Result<Box<Exp>, ()>:
         Exp::LetExp {
           decs: $2?, 
           body: $4?, 
-          pos: 42
+          pos: $lexer.line_col(span($1)?)
         }
       )
     ) 
@@ -280,11 +298,11 @@ field_value_list -> Result<Vec<(Span, Box<Exp>, Pos)>, ()>:
   /* Empty */ { Ok(Vec::new()) }
   | 
   "ID" "EQ" exp  { 
-      Ok(vec![(span($1)?, $3?, 42)])
+      Ok(vec![(span($1)?, $3?, $lexer.line_col(span($1)?))])
     }
   | 
   field_value_list "COMMA" "ID" "EQ" exp  { 
-        flatten($1, Ok((span($3)?, $5?, 42)))
+        flatten($1, Ok((span($3)?, $5?, $lexer.line_col(span($3)?))))
     }
   ;
 
@@ -302,23 +320,23 @@ args_helper -> Result<Vec<Box<Exp>>, ()>:
     ;
 
 lvalue -> Result<Box<Var>, ()>:
-    "ID" { Ok(Box::new(Var::SimpleVar(span($1)?, 42))) }
+    "ID" { Ok(Box::new(Var::SimpleVar(span($1)?, $lexer.line_col(span($1)?)))) }
   | 
   "ID" "DOT" "ID" { 
-      let sv = Box::new(Var::SimpleVar(span($1)?, 42));
-      Ok(Box::new(Var::FieldVar(sv, span($3)?, 42)))
+      let sv = Box::new(Var::SimpleVar(span($1)?, $lexer.line_col(span($1)?)));
+      Ok(Box::new(Var::FieldVar(sv, span($3)?, $lexer.line_col(span($2)?))))
     }
   | 
   "ID" "LBRACK" exp "RBRACK" { 
-      let sv = Box::new(Var::SimpleVar(span($1)?, 42));
-      Ok(Box::new(Var::SubscriptVar(sv, $3?, 42)))
+      let sv = Box::new(Var::SimpleVar(span($1)?, $lexer.line_col(span($1)?)));
+      Ok(Box::new(Var::SubscriptVar(sv, $3?, $lexer.line_col(span($2)?))))
     }
   | 
   /* Record field access. */
-  lvalue "DOT" "ID" { Ok(Box::new(Var::FieldVar($1?, span($3)?, 42))) }
+  lvalue "DOT" "ID" { Ok(Box::new(Var::FieldVar($1?, span($3)?, $lexer.line_col(span($2)?)))) }
   | 
   /* Array subscript. */
-  lvalue "LBRACK" exp "RBRACK" { Ok(Box::new(Var::SubscriptVar($1?, $3?, 42))) }
+  lvalue "LBRACK" exp "RBRACK" { Ok(Box::new(Var::SubscriptVar($1?, $3?, $lexer.line_col(span($2)?)))) }
   ;
 
 
@@ -354,7 +372,7 @@ vardec -> Result<Box<Dec>, ()>:
             escape: false,
             typ : None,
             init: $4?,
-            pos: 42
+            pos: $lexer.line_col(span($1)?)
           })) 
     }
     | 
@@ -362,9 +380,9 @@ vardec -> Result<Box<Dec>, ()>:
       Ok(Box::new(Dec::VarDec {
         name: span($2)?,
         escape: false,
-        typ: Some ((span($4)?, 42)),
+        typ: Some ((span($4)?, $lexer.line_col(span($4)?))),
         init: $6?,
-        pos: 42
+        pos: $lexer.line_col(span($1)?)
       })) 
     }
     ;
@@ -383,7 +401,7 @@ tydec_helper -> Result<Vec<TyDec>, ()>:
             TyDec {
             name: span($2)?,
             ty: $4?,
-            pos: 42
+            pos: $lexer.line_col(span($1)?)
           }]
       )
   }
@@ -392,7 +410,7 @@ tydec_helper -> Result<Vec<TyDec>, ()>:
       flatten($1, Ok(TyDec {
             name: span($3)?,
             ty: $5?,
-            pos: 42
+            pos: $lexer.line_col(span($2)?)
       }))
   }
   ;
@@ -417,7 +435,7 @@ fundec_helper -> Result<Vec<Fundec>, ()>:
             params: $4?, 
             result: None,
             body: $7?,
-            pos: 42
+            pos: $lexer.line_col(span($1)?)
           }]
         )
     }
@@ -428,9 +446,9 @@ fundec_helper -> Result<Vec<Fundec>, ()>:
         Fundec {
         name: span($2)?, 
         params: $4?, 
-        result: Some ((span($7)?, 42)), 
+        result: Some ((span($7)?, $lexer.line_col(span($7)?))), 
         body: $9?,
-        pos: 42
+        pos: $lexer.line_col(span($1)?)
       }])
     }
   | 
@@ -441,7 +459,7 @@ fundec_helper -> Result<Vec<Fundec>, ()>:
             params: $5?, 
             result: None,
             body: $8?,
-            pos: 42
+            pos: $lexer.line_col(span($2)?)
           }
         )
     )
@@ -452,9 +470,9 @@ fundec_helper -> Result<Vec<Fundec>, ()>:
         Fundec {
           name: span($3)?, 
           params: $5?, 
-          result: Some ((span($8)?, 42)), 
+          result: Some ((span($8)?, $lexer.line_col(span($8)?))), 
           body: $10?,
-          pos: 42
+          pos: $lexer.line_col(span($2)?)
         }
       )
     )
@@ -465,13 +483,13 @@ fundec_helper -> Result<Vec<Fundec>, ()>:
 /* === Types. === */
 ty -> Result<Box<Ty>, ()>:
    /* Type alias. */
-     "ID" { Ok(Box::new(Ty::NameTy(span($1)?,42))) }
+     "ID" { Ok(Box::new(Ty::NameTy(span($1)?, $lexer.line_col(span($1)?)))) }
    /* Record type definition. */
    | 
    "LBRACE" tyfields "RBRACE" { Ok(Box::new(Ty::RecordTy($2?))) }
    /* Array type definition. */
    | 
-   "ARRAY" "OF" "ID" { Ok(Box::new(Ty::ArrayTy(span($3)?,42))) }
+   "ARRAY" "OF" "ID" { Ok(Box::new(Ty::ArrayTy(span($3)?, $lexer.line_col(span($3)?)))) }
    ;
 
 tyfields -> Result<Vec<Field>, ()>: 
@@ -488,7 +506,7 @@ tyfields_helper -> Result<Vec<Field>, ()>:
         name: span($1)?,
         escape: false, 
         typ: span($3)?, 
-        pos: 42
+        pos: $lexer.line_col(span($1)?)
       }])
     }
     | 
@@ -497,134 +515,16 @@ tyfields_helper -> Result<Vec<Field>, ()>:
                         name: span($3)?, 
                         escape: false, 
                         typ: span($5)?,
-                        pos: 42
+                        pos: $lexer.line_col(span($3)?)
         }))
     }
     ;
 
 %%
 
-use cfgrammar::Span;
+use crate::absyn::*;
 use lrlex::DefaultLexeme;
-
-type Pos = u32;
-
-pub enum Var {
-    SimpleVar(Span, Pos),
-    FieldVar(Box<Var>, Span, Pos),
-    SubscriptVar(Box<Var>, Box<Exp>, Pos),
-}
-
-pub enum Oper {
-    PlusOp, 
-    MinusOp, 
-    TimesOp, 
-    DivideOp,
-    EqOp,
-    NeqOp,
-    LtOp,
-    LeOp,
-    GtOp,
-    GeOp
-}
-
-pub enum Ty {
-    NameTy(Span, Pos),
-    RecordTy(Vec<Field>),
-    ArrayTy(Span, Pos)
-}
-
-pub enum Dec {
-    FunctionDec(Vec<Fundec>),
-    VarDec {
-        name: Span,
-        escape: bool,
-        typ: Option<(Span, Pos)>,
-        init: Box<Exp>,
-        pos: Pos
-    },
-    TypeDec(Vec<TyDec>)
-}
-
-pub struct Fundec {
-  name: Span,
-  params: Vec<Field>,
-  result: Option<(Span, Pos)>,
-  body: Box<Exp>,
-  pos: Pos
-}
-
-pub struct Field {
-  name: Span, 
-  escape: bool,
-  typ: Span,
-  pos: Pos
-}
-
-pub struct TyDec {
-    name: Span,
-    ty: Box<Ty>,
-    pos: Pos
-}
-
-pub enum Exp {
-    VarExp(Box<Var>),
-    NilExp,
-    IntExp(i32),
-    StringExp(Span, Pos),
-    CallExp {
-        func: Span,
-        args: Vec<Box<Exp>>, 
-        pos: Pos
-    },
-    OpExp {
-        left: Box<Exp>,
-        oper: Oper,
-        right: Box<Exp>
-    },
-    RecordExp {
-        fields: Vec<(Span, Box<Exp>, Pos)>,
-        typ: Span, 
-        pos: Pos
-    },
-    SeqExp(Vec<(Box<Exp>, Pos)>),
-    AssignExp {
-        var: Box<Var>,
-        exp: Box<Exp>,
-        pos: Pos
-    },
-    IfExp {
-        test: Box<Exp>,
-        then: Box<Exp>,
-        els: Option<Box<Exp>>,
-        pos: Pos
-    },
-    WhileExp {
-        test: Box<Exp>,
-        body: Box<Exp>,
-        pos: Pos
-    },
-    ForExp {
-        var: Span,
-        escape: bool,
-        lo: Box<Exp>,
-        hi: Box<Exp>,
-        body: Box<Exp>,
-        pos: Pos
-    },
-    BreakExp(Pos),
-    LetExp {
-        decs: Vec<Box<Dec>>,
-        body: Box<Exp>,
-        pos: Pos
-    },
-    ArrayExp {
-        typ: Span,
-        size: Box<Exp>,
-        init: Box<Exp>,
-        pos: Pos
-    }
-}
+use lrpar::{NonStreamingLexer, LexerTypes};
 
 fn flatten<T>(lhs: Result<Vec<T>, ()>, rhs: Result<T,()>) -> Result<Vec<T>, ()> 
 {
