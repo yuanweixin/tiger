@@ -30,8 +30,8 @@ exps -> Result<Box<Exp>, ()>:
     
 exps_helper -> Result<Vec<Box<Exp>>, ()>: 
     exp  { 
-      let expList = vec![($1?)];
-      Ok(expList)
+      let exp_list = vec![($1?)];
+      Ok(exp_list)
     }
     | 
     exps_helper "SEMICOLON" exp  { 
@@ -524,7 +524,6 @@ tyfields_helper -> Result<Vec<Field>, ()>:
 
 use crate::absyn::*;
 use lrlex::DefaultLexeme;
-use lrpar::{NonStreamingLexer, LexerTypes};
 
 fn flatten<T>(lhs: Result<Vec<T>, ()>, rhs: Result<T,()>) -> Result<Vec<T>, ()> 
 {

@@ -1,0 +1,122 @@
+pub use cfgrammar::Span;
+
+/// ((start line, start column), (end line, end column))
+pub type Pos =((usize,usize), (usize,usize));
+
+pub enum Var {
+    SimpleVar(Span, Pos),
+    FieldVar(Box<Var>, Span, Pos),
+    SubscriptVar(Box<Var>, Box<Exp>, Pos),
+}
+
+pub enum Oper {
+    PlusOp, 
+    MinusOp, 
+    TimesOp, 
+    DivideOp,
+    EqOp,
+    NeqOp,
+    LtOp,
+    LeOp,
+    GtOp,
+    GeOp
+}
+
+pub enum Ty {
+    NameTy(Span, Pos),
+    RecordTy(Vec<Field>),
+    ArrayTy(Span, Pos)
+}
+
+pub enum Dec {
+    FunctionDec(Vec<Fundec>),
+    VarDec {
+        name: Span,
+        escape: bool,
+        typ: Option<(Span, Pos)>,
+        init: Box<Exp>,
+        pos: Pos
+    },
+    TypeDec(Vec<TyDec>)
+}
+
+pub struct Fundec {
+  pub name: Span,
+  pub params: Vec<Field>,
+  pub result: Option<(Span, Pos)>,
+  pub body: Box<Exp>,
+  pub pos: Pos
+}
+
+pub struct Field {
+    pub name: Span, 
+    pub escape: bool,
+    pub typ: Span,
+    pub pos: Pos
+}
+
+pub struct TyDec {
+    pub  name: Span,
+    pub  ty: Box<Ty>,
+    pub pos: Pos
+}
+
+pub enum Exp {
+    VarExp(Box<Var>),
+    NilExp,
+    IntExp(i32),
+    StringExp(Span, Pos),
+    CallExp {
+        func: Span,
+        args: Vec<Box<Exp>>, 
+        pos: Pos
+    },
+    OpExp {
+        left: Box<Exp>,
+        oper: Oper,
+        right: Box<Exp>,
+        pos: Pos
+    },
+    RecordExp {
+        fields: Vec<(Span, Box<Exp>, Pos)>,
+        typ: Span, 
+        pos: Pos
+    },
+    SeqExp(Vec<Box<Exp>>),
+    AssignExp {
+        var: Box<Var>,
+        exp: Box<Exp>,
+        pos: Pos
+    },
+    IfExp {
+        test: Box<Exp>,
+        then: Box<Exp>,
+        els: Option<Box<Exp>>,
+        pos: Pos
+    },
+    WhileExp {
+        test: Box<Exp>,
+        body: Box<Exp>,
+        pos: Pos
+    },
+    ForExp {
+        var: Span,
+        escape: bool,
+        lo: Box<Exp>,
+        hi: Box<Exp>,
+        body: Box<Exp>,
+        pos: Pos
+    },
+    BreakExp(Pos),
+    LetExp {
+        decs: Vec<Box<Dec>>,
+        body: Box<Exp>,
+        pos: Pos
+    },
+    ArrayExp {
+        typ: Span,
+        size: Box<Exp>,
+        init: Box<Exp>,
+        pos: Pos
+    }
+}

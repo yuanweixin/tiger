@@ -7,6 +7,7 @@ use std::fs;
 
 mod util;
 mod absyn;
+mod symbol;
 
 #[derive(Parser, Debug)]
 #[command(author="Wei Xin Yuan", version="0.0.1", about="Tiger Compiler", long_about = None, override_usage="tc [Option] file")]
@@ -38,7 +39,7 @@ fn main() {
 
     let lexer = lexerdef.lexer(input.as_ref().unwrap());
 
-    let (res, errs) = tiger_y::parse(&lexer);
+    let (_, errs) = tiger_y::parse(&lexer);
 
     if errs.len() > 0 {
         for e in errs {
@@ -46,9 +47,6 @@ fn main() {
         }
         util::exit(util::ReturnCode::SyntaxError);
     }
-
-    
-    
 }
 
 
