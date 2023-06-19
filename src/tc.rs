@@ -7,13 +7,13 @@ use std::fs;
 
 mod util;
 mod absyn;
-mod symbol;
+mod symtab;
 
 #[derive(Parser, Debug)]
 #[command(author="Wei Xin Yuan", version="0.0.1", about="Tiger Compiler", long_about = None, override_usage="tc [Option] file")]
 struct Args {
-   /// The file to compile. 
-   // Option because license needs to be specified alone. 
+   /// The file to compile.
+   // Option because license needs to be specified alone.
    file: Option<String>,
 }
 
@@ -29,7 +29,7 @@ fn main() {
     }
 
     let input = fs::read_to_string(args.file.as_ref().unwrap());
-    
+
     if let Err( ref err) = input {
         eprintln!("Unable to read file {}, got error {}", args.file.as_ref().unwrap(), err);
         util::exit(util::ReturnCode::OtherErrors);
