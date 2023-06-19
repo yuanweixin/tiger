@@ -14,6 +14,7 @@ cfgrammar = "0.13.1"
 clap = { version = "4.1.8", features = ["derive"] }
 lrlex = "0.13.1"
 lrpar = "0.13.1"
+string-interner = "0.14.0"
 
 [build-dependencies]
 cfgrammar = "0.13.1"
