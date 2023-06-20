@@ -11,7 +11,7 @@ path = "src/tc.rs"
 
 [dependencies]
 cfgrammar = "0.13.1"
-clap = { version = "4.1.8", features = ["derive"] }
+clap = { version = "4.1.8", features = ["cargo"] }
 lrlex = "0.13.1"
 lrpar = "0.13.1"
 string-interner = "0.14.0"
