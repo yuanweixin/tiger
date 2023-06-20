@@ -2,36 +2,32 @@ use std::env;
 
 use lrlex::lrlex_mod;
 use lrpar::lrpar_mod;
-use clap::Parser;
+use clap::{command, Arg};
 use std::fs;
 
 mod util;
 mod absyn;
 mod symtab;
 
-#[derive(Parser, Debug)]
-#[command(author="Wei Xin Yuan", version="0.0.1", about="Tiger Compiler", long_about = None, override_usage="tc [Option] file")]
-struct Args {
-   /// The file to compile.
-   // Option because license needs to be specified alone.
-   file: Option<String>,
-}
-
 lrlex_mod!("tiger.l");
 lrpar_mod!("tiger.y");
 
 fn main() {
-    let args = Args::parse();
 
-    if let None = args.file {
-        eprintln!("Missing required argument <file>");
-        util::exit(util::ReturnCode::ExUsage);
+    let matches = command!()
+        .arg(Arg::new("file"))
+        .get_matches();
+
+    let file = matches.get_one::<String>("file");
+    if let None = file {
+            eprintln!("Missing required argument <file>");
+            util::exit(util::ReturnCode::ExUsage);
     }
 
-    let input = fs::read_to_string(args.file.as_ref().unwrap());
+    let input = fs::read_to_string(file.unwrap());
 
     if let Err( ref err) = input {
-        eprintln!("Unable to read file {}, got error {}", args.file.as_ref().unwrap(), err);
+        eprintln!("Unable to read file {}, got error {}", file.unwrap(), err);
         util::exit(util::ReturnCode::OtherErrors);
     }
 
