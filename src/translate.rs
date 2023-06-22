@@ -55,3 +55,6 @@ pub fn binop(o: &Oper, lhs: TrExp, rhs: TrExp) -> TrExp {
 pub fn string_cmp(is_equality: bool, lhs: TrExp, rhs: TrExp) -> TrExp {
     todo!();
 }
+
+pub fn call_exp(func: Label, caller_level: &Level, args: Vec<TrExp>, called_level: &Level) -> TrExp { todo!(); }
+
