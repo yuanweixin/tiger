@@ -77,7 +77,7 @@ pub enum Exp {
     StringExp(Span, Pos),
     CallExp {
         func: Span,
-        args: Vec<Box<Exp>>,
+        args: Vec<Exp>,
         pos: Pos
     },
     OpExp {
@@ -87,11 +87,11 @@ pub enum Exp {
         pos: Pos
     },
     RecordExp {
-        fields: Vec<(Span, Box<Exp>, Pos)>,
+        fields: Vec<(Span, Exp, Pos)>,
         typ: Span,
         pos: Pos
     },
-    SeqExp(Vec<Box<Exp>>),
+    SeqExp(Vec<Exp>),
     AssignExp {
         var: Box<Var>,
         exp: Box<Exp>,
@@ -118,7 +118,7 @@ pub enum Exp {
     },
     BreakExp(Pos),
     LetExp {
-        decs: Vec<Box<Dec>>,
+        decs: Vec<Dec>,
         body: Box<Exp>,
         pos: Pos
     },

@@ -1,6 +1,7 @@
 use std::fs;
 use lrlex::{lrlex_mod};
 use lrpar::{lrpar_mod};
+use tiger_lang::absyn;
 
 lrlex_mod!("tiger.l");
 lrpar_mod!("tiger.y");
