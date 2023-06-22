@@ -1,4 +1,5 @@
 use cfgrammar::Span;
+use std::rc::Rc;
 
 use crate::{
     absyn::{Dec, Exp, Field, Fundec, Oper, Ty, TyDec, Var},
@@ -7,14 +8,13 @@ use crate::{
     temp::Label,
     translate,
     translate::{TrExp, ERROR_TR_EXP},
-
 };
 use strum_macros::Display;
 
-#[derive(Eq, PartialEq)]
+#[derive(Eq, PartialEq, Copy, Clone)]
 pub struct ArrayTypeOrdinal(usize);
 
-#[derive(Eq, PartialEq)]
+#[derive(Eq, PartialEq, Copy, Clone)]
 pub struct RecordTypeOrdinal(usize);
 
 pub struct TypeCheckingContext<'a> {
@@ -48,15 +48,19 @@ impl<'a> TypeCheckingContext<'a> {
     fn has_error(&self) -> bool {
         self.has_err
     }
+
+    fn resolve_unchecked(&self, s: &Symbol) -> &str {
+        self.symbols.resolve(s).unwrap()
+    }
 }
 
-#[derive(Eq, PartialEq, Display)]
+#[derive(Eq, PartialEq, Display, Clone)]
 pub enum Type {
-    Record(Vec<(Symbol, Box<Type>)>, RecordTypeOrdinal),
+    Record(Rc<Vec<(Symbol, Type)>>, RecordTypeOrdinal),
     Nil,
     Int,
     String,
-    Array(Box<Type>, ArrayTypeOrdinal),
+    Array(Rc<Box<Type>>, ArrayTypeOrdinal),
     Unit,
     Name,
     Error,
@@ -177,7 +181,9 @@ fn trans_exp(ctx: &mut TypeCheckingContext, n: &Exp, break_label: Option<Label>)
             match oper {
                 Oper::PlusOp | Oper::MinusOp | Oper::TimesOp | Oper::DivideOp => {
                     match (lhs_ty, rhs_ty) {
-                        (Type::Int, Type::Int) => (translate::binop(oper, lhs_ir, rhs_ir), Type::Int),
+                        (Type::Int, Type::Int) => {
+                            (translate::binop(oper, lhs_ir, rhs_ir), Type::Int)
+                        }
                         (Type::Error, _) | (_, Type::Error) => (ERROR_TR_EXP, Type::Error),
                         (Type::Int, _) => {
                             ctx.flag_error_with_msg(format!(
@@ -306,8 +312,66 @@ fn trans_exp(ctx: &mut TypeCheckingContext, n: &Exp, break_label: Option<Label>)
                 }
             }
         }
-        Exp::RecordExp { .. } => {
-            todo!()
+        Exp::RecordExp { fields, typ, pos } => {
+            let rec_entry_opt = ctx.type_env.look(ctx.intern(typ));
+            if rec_entry_opt.is_none() {
+                ctx.flag_error_with_msg(format!("{} has not been declared.", ctx.get_span(typ)));
+                (ERROR_TR_EXP, Type::Error)
+            } else if !matches!(rec_entry_opt.unwrap(), Type::Record(..)) {
+                ctx.flag_error_with_msg(format!("{} is not a record type.", ctx.get_span(typ)));
+                (ERROR_TR_EXP, Type::Error)
+            } else {
+                let Type::Record(name_types, ord) = rec_entry_opt.unwrap();
+                if name_types.len() != fields.len() {
+                    ctx.flag_error_with_msg(format!(
+                        "Record {} is declared with {} fields, but {} are given at instantiation site",
+                        ctx.get_span(typ),
+                        name_types.len(),
+                        fields.len()
+                    ));
+                    (ERROR_TR_EXP, Type::Error)
+                } else {
+                    let mut site_irs = Vec::new();
+
+                    for (decl_sym, decl_typ) in name_types {
+                        let mut found = false;
+                        for (site_sym_span, site_typ_exp, _) in fields {
+                            let site_sym = ctx.intern(site_sym_span);
+                            if *decl_sym == site_sym {
+                                found = true;
+                                let (site_ir, site_ty) = trans_exp(ctx, site_typ_exp, break_label);
+                                if !site_ty.compatible_with(decl_typ) {
+                                    ctx.flag_error();
+                                    if !matches!(Type::Error, site_ty) {
+                                        ctx.flag_error_with_msg(format!("field {} is declared with type {} but is used with type {}", ctx.get_span(site_sym_span), decl_typ, site_ty));
+                                    } else {
+                                        // only push when no type error occur.
+                                        // this means we can check length vs the declared number of record fields
+                                        // to see if type check error happened.
+                                        site_irs.push(site_ir);
+                                    }
+                                    break;
+                                }
+                            }
+                            if !found {
+                                ctx.flag_error_with_msg(format!(
+                                    "record field {} is declared but not used",
+                                    ctx.resolve_unchecked(decl_sym)
+                                ));
+                            }
+                        }
+                    }
+
+                    if site_irs.len() != fields.len() {
+                        (ERROR_TR_EXP, Type::Error)
+                    } else {
+                        (
+                            translate::record_exp(site_irs),
+                            Type::Record(name_types.clone(), *ord),
+                        )
+                    }
+                }
+            }
         }
         Exp::SeqExp(..) => {
             todo!()
