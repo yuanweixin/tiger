@@ -13,6 +13,10 @@ impl Interner {
     pub fn new() -> Self {
         Interner(StringInterner::new())
     }
+
+    pub fn resolve(&self, s: &Symbol) -> Option<&str> {
+        self.0.resolve(s.0)
+    }
 }
 
 impl Symbol {
