@@ -14,7 +14,10 @@ cfgrammar = "0.13.1"
 clap = { version = "4.1.8", features = ["cargo"] }
 lrlex = "0.13.1"
 lrpar = "0.13.1"
+proc-macro2 = "1.0.60"
 string-interner = "0.14.0"
+strum = {version = "0.25.0", features=["derive"]}
+strum_macros = "0.25.0"
 
 [build-dependencies]
 cfgrammar = "0.13.1"

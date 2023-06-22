@@ -1,18 +1,21 @@
 pub use cfgrammar::Span;
+use strum_macros::Display;
 
 /// ((start line, start column), (end line, end column))
 pub type Pos =((usize,usize), (usize,usize));
 
+#[derive(Display, Debug)]
 pub enum Var {
     SimpleVar(Span, Pos),
     FieldVar(Box<Var>, Span, Pos),
     SubscriptVar(Box<Var>, Box<Exp>, Pos),
 }
 
+#[derive(Display, Debug)]
 pub enum Oper {
-    PlusOp, 
-    MinusOp, 
-    TimesOp, 
+    PlusOp,
+    MinusOp,
+    TimesOp,
     DivideOp,
     EqOp,
     NeqOp,
@@ -22,12 +25,14 @@ pub enum Oper {
     GeOp
 }
 
+#[derive(Display, Debug)]
 pub enum Ty {
     NameTy(Span, Pos),
     RecordTy(Vec<Field>),
     ArrayTy(Span, Pos)
 }
 
+#[derive(Display, Debug)]
 pub enum Dec {
     FunctionDec(Vec<Fundec>),
     VarDec {
@@ -40,6 +45,7 @@ pub enum Dec {
     TypeDec(Vec<TyDec>)
 }
 
+#[derive(Debug)]
 pub struct Fundec {
   pub name: Span,
   pub params: Vec<Field>,
@@ -48,19 +54,22 @@ pub struct Fundec {
   pub pos: Pos
 }
 
+#[derive(Debug)]
 pub struct Field {
-    pub name: Span, 
+    pub name: Span,
     pub escape: bool,
     pub typ: Span,
     pub pos: Pos
 }
 
+#[derive(Debug)]
 pub struct TyDec {
     pub  name: Span,
     pub  ty: Box<Ty>,
     pub pos: Pos
 }
 
+#[derive(Display, Debug)]
 pub enum Exp {
     VarExp(Box<Var>),
     NilExp,
@@ -68,7 +77,7 @@ pub enum Exp {
     StringExp(Span, Pos),
     CallExp {
         func: Span,
-        args: Vec<Box<Exp>>, 
+        args: Vec<Box<Exp>>,
         pos: Pos
     },
     OpExp {
@@ -79,7 +88,7 @@ pub enum Exp {
     },
     RecordExp {
         fields: Vec<(Span, Box<Exp>, Pos)>,
-        typ: Span, 
+        typ: Span,
         pos: Pos
     },
     SeqExp(Vec<Box<Exp>>),
@@ -120,3 +129,4 @@ pub enum Exp {
         pos: Pos
     }
 }
+

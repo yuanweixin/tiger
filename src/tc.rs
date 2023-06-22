@@ -8,6 +8,12 @@ use std::fs;
 mod util;
 mod absyn;
 mod symtab;
+mod symbol;
+mod temp;
+mod ir;
+mod translate;
+mod frame;
+mod semant;
 
 lrlex_mod!("tiger.l");
 lrpar_mod!("tiger.y");
