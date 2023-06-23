@@ -552,6 +552,7 @@ fn trans_exp(ctx: &mut TypeCheckingContext, n: &Exp, break_label: Option<Label>)
 
             let mut var_init_irs = Vec::new();
             for dec in decs {
+
                 if let Some(var_init_ir) = trans_dec(ctx, dec) {
                     var_init_irs.push(var_init_ir);
                 }
@@ -607,7 +608,7 @@ fn trans_var(ctx: &mut TypeCheckingContext, var: &Var) -> ExpTy {
     todo!()
 }
 
-fn trans_dec(ctx: &mut TypeCheckingContext, dec: &Dec) -> Vec<TrExp> {
+fn trans_dec(ctx: &mut TypeCheckingContext, dec: &Dec) -> Option<TrExp> {
     todo!()
 }
 
