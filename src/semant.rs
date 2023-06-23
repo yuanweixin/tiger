@@ -43,8 +43,12 @@ impl<'a> TypeCheckingContext<'a> {
         &self.input[s.start()..s.end()]
     }
 
-    fn intern(&self, s: &Span) -> Symbol {
-        self.symbols.intern(self.get_span(s))
+    fn intern(&mut self, s: &Span) -> Symbol {
+        // cannot call get_span here because it will borrow the self parameter as a immutable ref.
+        // otoh, we can borrow the self.input here since it's a "separate" chunk of memory.
+        // fucking pita.
+        let x = &self.input[s.start()..s.end()];
+        self.symbols.intern(x)
     }
 
     fn has_error(&self) -> bool {
@@ -80,9 +84,16 @@ impl Type {
 // The translated IR and the result of the type check.
 type ExpTy = (TrExp, Type);
 
+#[derive(Clone)]
 enum EnvEntry {
-    VarEntry { ty: Type, readonly: bool },
-    FunEntry { formals: Vec<Type>, result: Type },
+    VarEntry {
+        ty: Type,
+        readonly: bool,
+    },
+    FunEntry {
+        formals: Rc<Vec<Type>>,
+        result: Type,
+    },
 }
 
 fn base_env_type_env(pool: &mut Interner) -> SymbolTable<Type> {
@@ -99,70 +110,70 @@ fn base_varfun_env(pool: &mut Interner) -> SymbolTable<EnvEntry> {
     res.enter(
         pool.intern("print"),
         EnvEntry::FunEntry {
-            formals: vec![Type::String],
+            formals: Rc::new(vec![Type::String]),
             result: Type::String,
         },
     );
     res.enter(
         pool.intern("flush"),
         EnvEntry::FunEntry {
-            formals: vec![],
+            formals: Rc::new(vec![]),
             result: Type::Unit,
         },
     );
     res.enter(
         pool.intern("getchar"),
         EnvEntry::FunEntry {
-            formals: vec![],
+            formals: Rc::new(vec![]),
             result: Type::String,
         },
     );
     res.enter(
         pool.intern("ord"),
         EnvEntry::FunEntry {
-            formals: vec![Type::String],
+            formals: Rc::new(vec![Type::String]),
             result: Type::Int,
         },
     );
     res.enter(
         pool.intern("chr"),
         EnvEntry::FunEntry {
-            formals: vec![Type::Int],
+            formals: Rc::new(vec![Type::Int]),
             result: Type::String,
         },
     );
     res.enter(
         pool.intern("size"),
         EnvEntry::FunEntry {
-            formals: vec![Type::String],
+            formals: Rc::new(vec![Type::String]),
             result: Type::Int,
         },
     );
     res.enter(
         pool.intern("substring"),
         EnvEntry::FunEntry {
-            formals: vec![Type::String, Type::Int, Type::Int],
+            formals: Rc::new(vec![Type::String, Type::Int, Type::Int]),
             result: Type::String,
         },
     );
     res.enter(
         pool.intern("concat"),
         EnvEntry::FunEntry {
-            formals: vec![Type::String, Type::String],
+            formals: Rc::new(vec![Type::String, Type::String]),
             result: Type::String,
         },
     );
     res.enter(
         pool.intern("not"),
         EnvEntry::FunEntry {
-            formals: vec![Type::Int],
+            formals: Rc::new(vec![Type::Int]),
             result: Type::Int,
         },
     );
     res.enter(
         pool.intern("exit"),
         EnvEntry::FunEntry {
-            formals: vec![Type::Int],
+            formals: Rc::new(vec![Type::Int]),
             result: Type::Unit,
         },
     );
@@ -265,119 +276,136 @@ fn trans_exp(ctx: &mut TypeCheckingContext, n: &Exp, break_label: Option<Label>)
         Exp::VarExp(v) => trans_var(ctx, v, break_label),
         Exp::StringExp(s, pos) => (translate::string_exp(ctx.get_span(s)), Type::String),
         Exp::CallExp { func, args, pos } => {
-            let fentry_opt = ctx.varfun_env.look(ctx.intern(func));
-            if fentry_opt.is_none() {
-                ctx.flag_error_with_msg(&format!(
-                    "Trying to call undeclared function {}",
-                    ctx.get_span(func)
-                ));
-                return (ERROR_TR_EXP, Type::Error);
-            } else if !matches!(fentry_opt.unwrap(), EnvEntry::FunEntry { .. }) {
-                ctx.flag_error_with_msg(&format!("{} is not a function!", ctx.get_span(func)));
-                return (ERROR_TR_EXP, Type::Error);
-            } else {
-                let Some(EnvEntry::FunEntry { formals, result }) = fentry_opt.unwrap();
-                if formals.len() != args.len() {
-                    ctx.flag_error_with_msg(&format!(
-                        "Expected {} args for function {} but got {}",
-                        formals.len(),
-                        ctx.get_span(func),
-                        args.len()
-                    ));
-                    return (ERROR_TR_EXP, Type::Error);
-                } else {
-                    let mut arg_irs = Vec::new();
+            let sym = ctx.intern(func);
+            let fentry_opt = ctx.varfun_env.look(sym).map(|e| e.clone());
 
-                    for i in 0..args.len() {
-                        let (arg_ir, arg_ty) = trans_exp(ctx, args.get(i).unwrap(), None);
-                        if matches!(Type::Error, arg_ty)
-                            || matches!(formals.get(i).unwrap(), Type::Error)
-                        {
-                            ctx.flag_error();
-                            break;
-                        } else if !arg_ty.compatible_with(formals.get(i).unwrap()) {
-                            ctx.flag_error_with_msg(&format!(
+            match fentry_opt {
+                None => {
+                    ctx.flag_error_with_msg(&format!(
+                        "Trying to call undeclared function {}",
+                        ctx.get_span(func)
+                    ));
+                    (ERROR_TR_EXP, Type::Error)
+                }
+                Some(EnvEntry::FunEntry { formals, result }) => {
+                    if formals.len() != args.len() {
+                        ctx.flag_error_with_msg(&format!(
+                            "Expected {} args for function {} but got {}",
+                            formals.len(),
+                            ctx.get_span(func),
+                            args.len()
+                        ));
+                        return (ERROR_TR_EXP, Type::Error);
+                    } else {
+                        let mut arg_irs = Vec::new();
+
+                        for i in 0..args.len() {
+                            let (arg_ir, arg_ty) = trans_exp(ctx, args.get(i).unwrap(), None);
+                            if matches!(arg_ty, Type::Error)
+                                || matches!(formals.get(i).unwrap(), Type::Error)
+                            {
+                                ctx.flag_error();
+                                break;
+                            } else if !arg_ty.compatible_with(formals.get(i).unwrap()) {
+                                ctx.flag_error_with_msg(&format!(
                                 "Call to {} expects argument of type {} at position {} but got {}",
                                 ctx.get_span(func),
                                 formals.get(i).unwrap(),
                                 i + 1,
                                 arg_ty
                             ));
+                            }
+                            arg_irs.push(arg_ir);
                         }
-                        arg_irs.push(arg_ir);
+                        if ctx.has_error() {
+                            (ERROR_TR_EXP, Type::Error)
+                        } else {
+                            (translate::call_exp(), result.clone())
+                        }
                     }
-                    if ctx.has_error() {
-                        (ERROR_TR_EXP, Type::Error)
-                    } else {
-                        (translate::call_exp(), *result)
-                    }
+                }
+                Some(_) => {
+                    ctx.flag_error_with_msg(&format!("{} is not a function!", ctx.get_span(func)));
+                    (ERROR_TR_EXP, Type::Error)
                 }
             }
         }
         Exp::RecordExp { fields, typ, pos } => {
-            let rec_entry_opt = ctx.type_env.look(ctx.intern(typ));
-            if rec_entry_opt.is_none() {
-                ctx.flag_error_with_msg(&format!("{} has not been declared.", ctx.get_span(typ)));
-                (ERROR_TR_EXP, Type::Error)
-            } else if !matches!(rec_entry_opt.unwrap(), Type::Record(..)) {
-                ctx.flag_error_with_msg(&format!("{} is not a record type.", ctx.get_span(typ)));
-                (ERROR_TR_EXP, Type::Error)
-            } else {
-                let Type::Record(name_types, ord) = rec_entry_opt.unwrap();
-                if name_types.len() != fields.len() {
+            let sym = ctx.intern(typ);
+            let rec_entry_opt = ctx.type_env.look(sym).map(|e| e.clone());
+
+            match rec_entry_opt {
+                None => {
                     ctx.flag_error_with_msg(&format!(
+                        "{} has not been declared.",
+                        ctx.get_span(typ)
+                    ));
+                    (ERROR_TR_EXP, Type::Error)
+                }
+                Some(Type::Record(name_types, ord)) => {
+                    if name_types.len() != fields.len() {
+                        ctx.flag_error_with_msg(&format!(
                         "Record {} is declared with {} fields, but {} are given at instantiation site",
                         ctx.get_span(typ),
                         name_types.len(),
                         fields.len()
                     ));
-                    (ERROR_TR_EXP, Type::Error)
-                } else {
-                    let mut site_irs = Vec::new();
-
-                    for (decl_sym, decl_typ) in name_types.as_ref() {
-                        let mut found = false;
-                        for (site_sym_span, site_typ_exp, _) in fields {
-                            let site_sym = ctx.intern(site_sym_span);
-                            if *decl_sym == site_sym {
-                                found = true;
-                                let (site_ir, site_ty) = trans_exp(ctx, site_typ_exp, break_label);
-                                if !site_ty.compatible_with(decl_typ) {
-                                    ctx.flag_error();
-                                    if !matches!(Type::Error, site_ty) {
-                                        ctx.flag_error_with_msg(&format!("field {} is declared with type {} but is used with type {}", ctx.get_span(site_sym_span), decl_typ, site_ty));
-                                    } else {
-                                        // only push when no type error occur.
-                                        // this means we can check length vs the declared number of record fields
-                                        // to see if type check error happened.
-                                        site_irs.push(site_ir);
-                                    }
-                                    break;
-                                }
-                            }
-                            if !found {
-                                ctx.flag_error_with_msg(&format!(
-                                    "record field {} is declared but not used",
-                                    ctx.resolve_unchecked(decl_sym)
-                                ));
-                            }
-                        }
-                    }
-
-                    if site_irs.len() != fields.len() {
                         (ERROR_TR_EXP, Type::Error)
                     } else {
-                        (
-                            translate::record_exp(site_irs),
-                            Type::Record(name_types.clone(), *ord),
-                        )
+                        let mut site_irs = Vec::new();
+
+                        for (decl_sym, decl_typ) in name_types.as_ref() {
+                            let mut found = false;
+                            for (site_sym_span, site_typ_exp, _) in fields {
+                                let site_sym = ctx.intern(site_sym_span);
+                                if *decl_sym == site_sym {
+                                    found = true;
+                                    let (site_ir, site_ty) =
+                                        trans_exp(ctx, site_typ_exp, break_label);
+                                    if !site_ty.compatible_with(decl_typ) {
+                                        ctx.flag_error();
+                                        if !matches!(Type::Error, site_ty) {
+                                            ctx.flag_error_with_msg(&format!("field {} is declared with type {} but is used with type {}", ctx.get_span(site_sym_span), decl_typ, site_ty));
+                                        } else {
+                                            // only push when no type error occur.
+                                            // this means we can check length vs the declared number of record fields
+                                            // to see if type check error happened.
+                                            site_irs.push(site_ir);
+                                        }
+                                        break;
+                                    }
+                                }
+                                if !found {
+                                    ctx.flag_error_with_msg(&format!(
+                                        "record field {} is declared but not used",
+                                        ctx.resolve_unchecked(decl_sym)
+                                    ));
+                                }
+                            }
+                        }
+
+                        if site_irs.len() != fields.len() {
+                            (ERROR_TR_EXP, Type::Error)
+                        } else {
+                            (
+                                translate::record_exp(site_irs),
+                                Type::Record(name_types.clone(), ord.clone()),
+                            )
+                        }
                     }
+                }
+                _ => {
+                    ctx.flag_error_with_msg(&format!(
+                        "{} is not a record type.",
+                        ctx.get_span(typ)
+                    ));
+                    (ERROR_TR_EXP, Type::Error)
                 }
             }
         }
         Exp::SeqExp(exps) => {
             let mut ret_val = Type::Unit;
-            let exp_irs = Vec::new();
+            let mut exp_irs = Vec::new();
             for exp in exps {
                 let (exp_ir, exp_ty) = trans_exp(ctx, exp, break_label);
                 ret_val = exp_ty;
@@ -392,6 +420,7 @@ fn trans_exp(ctx: &mut TypeCheckingContext, n: &Exp, break_label: Option<Label>)
             // nil can be assigned to record types.
             let (dst_ir, dst_ty) = trans_var(ctx, var, break_label);
             let (src_ir, src_ty) = trans_exp(ctx, exp, break_label);
+
             if matches!(dst_ty, Type::Error) || matches!(src_ty, Type::Error) {
                 (ERROR_TR_EXP, Type::Error)
             } else if matches!(src_ty, Type::Nil) && !matches!(dst_ty, Type::Record(..)) {
@@ -409,17 +438,31 @@ fn trans_exp(ctx: &mut TypeCheckingContext, n: &Exp, break_label: Option<Label>)
             } else {
                 match var.as_ref() {
                     Var::SimpleVar(span, pos) => {
-                        let var_entry = ctx.varfun_env.look(ctx.intern(span));
-                        assert!(var_entry.is_some(), "Impl bug: missing var entry");
-                        let EnvEntry::VarEntry { ty, readonly } = var_entry.unwrap();
+                        let sym = ctx.intern(span);
+                        let var_entry = ctx.varfun_env.look(sym).map(|e| e.clone());
 
-                        if *readonly {
-                            ctx.flag_error_with_msg("Cannot assign to readonly location");
-                            (ERROR_TR_EXP, Type::Error)
-                        } else if matches!(ty, Type::Error) {
-                            (ERROR_TR_EXP, Type::Error)
-                        } else {
-                            (translate::assignment(dst_ir, src_ir), Type::Unit)
+                        match var_entry {
+                            None => {
+                                ctx.flag_error_with_msg(&format!(
+                                    "the variable {} needs to be declared before being assigned to",
+                                    ctx.get_span(span)
+                                ));
+                                (ERROR_TR_EXP, Type::Error)
+                            }
+                            Some(EnvEntry::FunEntry { .. }) => {
+                                ctx.flag_error_with_msg("Cannot assign to a function");
+                                (ERROR_TR_EXP, Type::Error)
+                            }
+                            Some(EnvEntry::VarEntry { ty, readonly }) => {
+                                if readonly {
+                                    ctx.flag_error_with_msg("Cannot assign to readonly location");
+                                    (ERROR_TR_EXP, Type::Error)
+                                } else if matches!(ty, Type::Error) {
+                                    (ERROR_TR_EXP, Type::Error)
+                                } else {
+                                    (translate::assignment(dst_ir, src_ir), Type::Unit)
+                                }
+                            }
                         }
                     }
                     _ => (translate::assignment(dst_ir, src_ir), Type::Unit),
@@ -452,12 +495,15 @@ fn trans_exp(ctx: &mut TypeCheckingContext, n: &Exp, break_label: Option<Label>)
                         (translate::conditional(cond_ir, then_ir, None), then_ty)
                     }
                 } else {
-                    let (else_ir, else_ty) = trans_exp(ctx, els.unwrap().as_ref(), break_label);
+                    let (else_ir, else_ty) = trans_exp(ctx, els.as_ref().unwrap(), break_label);
                     if !else_ty.compatible_with(&then_ty) {
                         ctx.flag_error_with_msg(&format!("if-then-else branches have incompatible types: then has type {}, else has type {}", then_ty, else_ty));
                         (ERROR_TR_EXP, Type::Error)
                     } else {
-                        (translate::conditional(cond_ir, then_ir, Some(else_ir)), then_ty)
+                        (
+                            translate::conditional(cond_ir, then_ir, Some(else_ir)),
+                            then_ty,
+                        )
                     }
                 }
             }
@@ -509,9 +555,10 @@ fn trans_exp(ctx: &mut TypeCheckingContext, n: &Exp, break_label: Option<Label>)
 
             ctx.varfun_env.begin_scope();
 
+            let sym = ctx.intern(var);
             // TODO Level stuff, refer to nim code
             ctx.varfun_env.enter(
-                ctx.intern(var),
+                sym,
                 EnvEntry::VarEntry {
                     ty: Type::Int,
                     readonly: true,
@@ -551,7 +598,6 @@ fn trans_exp(ctx: &mut TypeCheckingContext, n: &Exp, break_label: Option<Label>)
 
             let mut var_init_irs = Vec::new();
             for dec in decs {
-
                 if let Some(var_init_ir) = trans_dec(ctx, dec) {
                     var_init_irs.push(var_init_ir);
                 }
@@ -569,25 +615,26 @@ fn trans_exp(ctx: &mut TypeCheckingContext, n: &Exp, break_label: Option<Label>)
             init,
             pos,
         } => {
-            let arr_ty_opt = ctx.type_env.look(ctx.intern(typ));
+            let sym = ctx.intern(typ);
+            let arr_ty_opt = ctx.type_env.look(sym).map(|e| e.clone());
             if arr_ty_opt.is_none() {
                 ctx.flag_error_with_msg(&format!(
                     "Trying to use an undeclared array type {}",
                     ctx.get_span(typ)
                 ));
-                return (ERROR_TR_EXP, Type::Error)
+                return (ERROR_TR_EXP, Type::Error);
             } else {
-                match arr_ty_opt.unwrap() {
+                match arr_ty_opt.as_ref().unwrap() {
                     Type::Array(ele_ty, b) => {
                         let (init_val_ir, init_val_ty) = trans_exp(ctx, init, break_label);
-                        if !init_val_ty.compatible_with(ele_ty) {
+                        if !init_val_ty.compatible_with(&**ele_ty) {
                             ctx.flag_error_with_msg(&format!(
                                 "array initialized with type {} but declared with type {}",
                                 init_val_ty, ele_ty
                             ));
-                            return (ERROR_TR_EXP, Type::Error)
+                            return (ERROR_TR_EXP, Type::Error);
                         } else {
-                            return (translate::array_exp(), *arr_ty_opt.unwrap())
+                            return (translate::array_exp(), arr_ty_opt.unwrap().clone());
                         }
                     }
                     _ => {
@@ -595,7 +642,7 @@ fn trans_exp(ctx: &mut TypeCheckingContext, n: &Exp, break_label: Option<Label>)
                             "{} is not of array type!",
                             ctx.get_span(typ)
                         ));
-                        return (ERROR_TR_EXP, Type::Error)
+                        return (ERROR_TR_EXP, Type::Error);
                     }
                 }
             }
