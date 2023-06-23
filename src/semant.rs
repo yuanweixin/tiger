@@ -1,5 +1,4 @@
 use cfgrammar::Span;
-use std::mem;
 use std::rc::Rc;
 
 use crate::{
@@ -262,9 +261,9 @@ fn trans_exp(ctx: &mut TypeCheckingContext, n: &Exp, break_label: Option<Label>)
             }
         }
         Exp::NilExp => (translate::nil_exp(), Type::Nil),
-        Exp::IntExp(i) => (translate::int_exp(i), Type::Int),
-        Exp::VarExp(v) => trans_var(ctx, v),
-        Exp::StringExp(s, pos) => (translate::string_exp(ctx, s), Type::String),
+        Exp::IntExp(i) => (translate::int_exp(*i), Type::Int),
+        Exp::VarExp(v) => trans_var(ctx, v, break_label),
+        Exp::StringExp(s, pos) => (translate::string_exp(ctx.get_span(s)), Type::String),
         Exp::CallExp { func, args, pos } => {
             let fentry_opt = ctx.varfun_env.look(ctx.intern(func));
             if fentry_opt.is_none() {
@@ -277,7 +276,7 @@ fn trans_exp(ctx: &mut TypeCheckingContext, n: &Exp, break_label: Option<Label>)
                 ctx.flag_error_with_msg(&format!("{} is not a function!", ctx.get_span(func)));
                 return (ERROR_TR_EXP, Type::Error);
             } else {
-                let Some(EnvEntry::FunEntry { formals, result }) = fentry_opt;
+                let Some(EnvEntry::FunEntry { formals, result }) = fentry_opt.unwrap();
                 if formals.len() != args.len() {
                     ctx.flag_error_with_msg(&format!(
                         "Expected {} args for function {} but got {}",
@@ -310,7 +309,7 @@ fn trans_exp(ctx: &mut TypeCheckingContext, n: &Exp, break_label: Option<Label>)
                     if ctx.has_error() {
                         (ERROR_TR_EXP, Type::Error)
                     } else {
-                        (translate::call_exp("TODO"), *result)
+                        (translate::call_exp(), *result)
                     }
                 }
             }
@@ -385,7 +384,7 @@ fn trans_exp(ctx: &mut TypeCheckingContext, n: &Exp, break_label: Option<Label>)
                 exp_irs.push(exp_ir);
             }
             (
-                translate.seq_exp(exp_irs, !matches!(ret_val, Type::Unit)),
+                translate::seq_exp(exp_irs, !matches!(ret_val, Type::Unit)),
                 ret_val,
             )
         }
@@ -450,7 +449,7 @@ fn trans_exp(ctx: &mut TypeCheckingContext, n: &Exp, break_label: Option<Label>)
                         ));
                         (ERROR_TR_EXP, Type::Error)
                     } else {
-                        (translate::conditional(cond_ir, then_ir), then_ty)
+                        (translate::conditional(cond_ir, then_ir, None), then_ty)
                     }
                 } else {
                     let (else_ir, else_ty) = trans_exp(ctx, els.unwrap().as_ref(), break_label);
@@ -458,7 +457,7 @@ fn trans_exp(ctx: &mut TypeCheckingContext, n: &Exp, break_label: Option<Label>)
                         ctx.flag_error_with_msg(&format!("if-then-else branches have incompatible types: then has type {}, else has type {}", then_ty, else_ty));
                         (ERROR_TR_EXP, Type::Error)
                     } else {
-                        (translate::conditional(cond_ir, then_ir, else_ir), then_ty)
+                        (translate::conditional(cond_ir, then_ir, Some(else_ir)), then_ty)
                     }
                 }
             }
@@ -476,7 +475,7 @@ fn trans_exp(ctx: &mut TypeCheckingContext, n: &Exp, break_label: Option<Label>)
                 let (body_ir, body_ty) = trans_exp(ctx, body, while_done_label);
                 match body_ty {
                     Type::Unit => (
-                        translate::while_loop(cond_ir, body_ir, while_done_label),
+                        translate::while_loop(cond_ir, body_ir, while_done_label.unwrap()),
                         Type::Unit,
                     ),
                     _ => {
@@ -527,7 +526,7 @@ fn trans_exp(ctx: &mut TypeCheckingContext, n: &Exp, break_label: Option<Label>)
                         (ERROR_TR_EXP, Type::Error)
                     } else {
                         (
-                            translate::for_loop(lo_ir, hi_ir, body_ir, for_done_label),
+                            translate::for_loop(lo_ir, hi_ir, body_ir, for_done_label.unwrap()),
                             Type::Unit,
                         )
                     }
@@ -604,7 +603,7 @@ fn trans_exp(ctx: &mut TypeCheckingContext, n: &Exp, break_label: Option<Label>)
     }
 }
 
-fn trans_var(ctx: &mut TypeCheckingContext, var: &Var) -> ExpTy {
+fn trans_var(ctx: &mut TypeCheckingContext, var: &Var, break_label: Option<Label>) -> ExpTy {
     todo!()
 }
 

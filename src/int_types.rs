@@ -1,0 +1,1 @@
+pub type tiger_int = i32;

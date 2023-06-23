@@ -1,5 +1,6 @@
 pub use cfgrammar::Span;
 use strum_macros::Display;
+use crate::int_types::tiger_int;
 
 /// ((start line, start column), (end line, end column))
 pub type Pos =((usize,usize), (usize,usize));
@@ -73,7 +74,7 @@ pub struct TyDec {
 pub enum Exp {
     VarExp(Box<Var>),
     NilExp,
-    IntExp(i32),
+    IntExp(tiger_int),
     StringExp(Span, Pos),
     CallExp {
         func: Span,

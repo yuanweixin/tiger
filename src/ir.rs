@@ -1,9 +1,10 @@
 // appel's tree ir language
 use crate::temp;
 use crate::absyn::{Oper};
+use crate::int_types::tiger_int;
 
 pub enum IrExp {
-    Const(i32), // hmm, arbitrarily cap this at 32bit
+    Const(tiger_int),
     Name(temp::Label),
     Temp(temp::Temp),
     Binop(IrBinop, Box<IrExp>, Box<IrExp>),

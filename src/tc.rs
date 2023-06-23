@@ -5,6 +5,7 @@ use lrpar::lrpar_mod;
 use clap::{command, Arg};
 use std::fs;
 
+mod int_types;
 mod util;
 mod absyn;
 mod symtab;

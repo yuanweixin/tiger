@@ -44,7 +44,7 @@ exp -> Result<Exp, ()>:
   "NIL" { Ok(Exp::NilExp) }
   |
   "INT" {
-    match $lexer.span_str(span($1)?).parse::<i32>() {
+    match $lexer.span_str(span($1)?).parse::<tiger_int>() {
       Ok(val) => Ok(Exp::IntExp(val)),
       Err(_) => {
         let ((line, col), _) = $lexer.line_col(span($1)?);
@@ -512,6 +512,7 @@ tyfields_helper -> Result<Vec<Field>, ()>:
 
 use crate::absyn::*;
 use lrlex::DefaultLexeme;
+use crate::int_types::tiger_int;
 
 fn flatten<T>(lhs: Result<Vec<T>, ()>, rhs: Result<T,()>) -> Result<Vec<T>, ()>
 {
