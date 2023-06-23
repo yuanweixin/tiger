@@ -109,3 +109,14 @@ pub fn conditional(cond_ir: TrExp, then_ir: TrExp, else_ir: Option<TrExp>) -> Tr
     todo!()
 }
 
+pub fn simple_var() -> TrExp {
+    todo!()
+}
+
+pub fn record_field(lhs_var_ir: TrExp, field_pos: usize) -> TrExp {
+    todo!()
+}
+
+pub fn subscript_var(lhs_ir: TrExp, idx_ir: TrExp, exit_label: Label) -> TrExp {
+    todo!()
+}

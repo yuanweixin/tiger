@@ -30,6 +30,120 @@ pub struct TypeCheckingContext<'a> {
 }
 
 impl<'a> TypeCheckingContext<'a> {
+    fn new(input: &'a str) -> Self {
+        let ta = TempAuthority::new();
+        let mut la = LabelAuthority::new();
+        let mut symbols = Interner::new();
+        let type_env = Self::base_env_type_env(&mut symbols);
+        let varfun_env = Self::base_varfun_env(&mut symbols, &mut la);
+        Self {
+            next_array_ord: 0,
+            next_record_ord: 0,
+            type_env: type_env,
+            varfun_env: varfun_env,
+            has_err: false,
+            symbols: symbols,
+            input: input,
+            ta: ta,
+            la: la
+        }
+    }
+
+
+fn base_env_type_env(pool: &mut Interner) -> SymbolTable<Type> {
+    let mut res = SymbolTable::empty();
+    res.begin_scope();
+    res.enter(pool.intern("int"), Type::Int);
+    res.enter(pool.intern("string"), Type::String);
+    res
+}
+
+fn base_varfun_env(pool: &mut Interner, la: &mut LabelAuthority) -> SymbolTable<EnvEntry> {
+    let mut res = SymbolTable::empty();
+    res.begin_scope();
+    res.enter(
+        pool.intern("print"),
+        EnvEntry::FunEntry {
+            formals: Rc::new(vec![Type::String]),
+            result: Type::String,
+            label: la.new_label(pool)
+        },
+    );
+    res.enter(
+        pool.intern("flush"),
+        EnvEntry::FunEntry {
+            formals: Rc::new(vec![]),
+            result: Type::Unit,
+            label: la.new_label(pool)
+        },
+    );
+    res.enter(
+        pool.intern("getchar"),
+        EnvEntry::FunEntry {
+            formals: Rc::new(vec![]),
+            result: Type::String,
+            label: la.new_label(pool)
+        },
+    );
+    res.enter(
+        pool.intern("ord"),
+        EnvEntry::FunEntry {
+            formals: Rc::new(vec![Type::String]),
+            result: Type::Int,
+            label: la.new_label(pool)
+        },
+    );
+    res.enter(
+        pool.intern("chr"),
+        EnvEntry::FunEntry {
+            formals: Rc::new(vec![Type::Int]),
+            result: Type::String,
+            label: la.new_label(pool)
+        },
+    );
+    res.enter(
+        pool.intern("size"),
+        EnvEntry::FunEntry {
+            formals: Rc::new(vec![Type::String]),
+            result: Type::Int,
+            label: la.new_label(pool)
+        },
+    );
+    res.enter(
+        pool.intern("substring"),
+        EnvEntry::FunEntry {
+            formals: Rc::new(vec![Type::String, Type::Int, Type::Int]),
+            result: Type::String,
+            label: la.new_label(pool)
+        },
+    );
+    res.enter(
+        pool.intern("concat"),
+        EnvEntry::FunEntry {
+            formals: Rc::new(vec![Type::String, Type::String]),
+            result: Type::String,
+            label: la.new_label(pool)
+        },
+    );
+    res.enter(
+        pool.intern("not"),
+        EnvEntry::FunEntry {
+            formals: Rc::new(vec![Type::Int]),
+            result: Type::Int,
+            label: la.new_label(pool)
+        },
+    );
+    res.enter(
+        pool.intern("exit"),
+        EnvEntry::FunEntry {
+            formals: Rc::new(vec![Type::Int]),
+            result: Type::Unit,
+            label: la.new_label(pool)
+        },
+    );
+    res
+}
+
     fn flag_error_with_msg(&mut self, msg: &str) {
         self.has_err = true;
         println!("{}", msg);
@@ -84,101 +198,19 @@ impl Type {
 // The translated IR and the result of the type check.
 type ExpTy = (TrExp, Type);
 
-#[derive(Clone)]
+#[derive(Clone, Display)]
 enum EnvEntry {
     VarEntry {
         ty: Type,
         readonly: bool,
     },
     FunEntry {
+        label: Label,
         formals: Rc<Vec<Type>>,
         result: Type,
     },
 }
 
-fn base_env_type_env(pool: &mut Interner) -> SymbolTable<Type> {
-    let mut res = SymbolTable::empty();
-    res.begin_scope();
-    res.enter(pool.intern("int"), Type::Int);
-    res.enter(pool.intern("string"), Type::String);
-    res
-}
-
-fn base_varfun_env(pool: &mut Interner) -> SymbolTable<EnvEntry> {
-    let mut res = SymbolTable::empty();
-    res.begin_scope();
-    res.enter(
-        pool.intern("print"),
-        EnvEntry::FunEntry {
-            formals: Rc::new(vec![Type::String]),
-            result: Type::String,
-        },
-    );
-    res.enter(
-        pool.intern("flush"),
-        EnvEntry::FunEntry {
-            formals: Rc::new(vec![]),
-            result: Type::Unit,
-        },
-    );
-    res.enter(
-        pool.intern("getchar"),
-        EnvEntry::FunEntry {
-            formals: Rc::new(vec![]),
-            result: Type::String,
-        },
-    );
-    res.enter(
-        pool.intern("ord"),
-        EnvEntry::FunEntry {
-            formals: Rc::new(vec![Type::String]),
-            result: Type::Int,
-        },
-    );
-    res.enter(
-        pool.intern("chr"),
-        EnvEntry::FunEntry {
-            formals: Rc::new(vec![Type::Int]),
-            result: Type::String,
-        },
-    );
-    res.enter(
-        pool.intern("size"),
-        EnvEntry::FunEntry {
-            formals: Rc::new(vec![Type::String]),
-            result: Type::Int,
-        },
-    );
-    res.enter(
-        pool.intern("substring"),
-        EnvEntry::FunEntry {
-            formals: Rc::new(vec![Type::String, Type::Int, Type::Int]),
-            result: Type::String,
-        },
-    );
-    res.enter(
-        pool.intern("concat"),
-        EnvEntry::FunEntry {
-            formals: Rc::new(vec![Type::String, Type::String]),
-            result: Type::String,
-        },
-    );
-    res.enter(
-        pool.intern("not"),
-        EnvEntry::FunEntry {
-            formals: Rc::new(vec![Type::Int]),
-            result: Type::Int,
-        },
-    );
-    res.enter(
-        pool.intern("exit"),
-        EnvEntry::FunEntry {
-            formals: Rc::new(vec![Type::Int]),
-            result: Type::Unit,
-        },
-    );
-    res
-}
 
 fn trans_exp(ctx: &mut TypeCheckingContext, n: &Exp, break_label: Option<Label>) -> ExpTy {
     match n {
@@ -287,7 +319,11 @@ fn trans_exp(ctx: &mut TypeCheckingContext, n: &Exp, break_label: Option<Label>)
                     ));
                     (ERROR_TR_EXP, Type::Error)
                 }
-                Some(EnvEntry::FunEntry { formals, result }) => {
+                Some(EnvEntry::FunEntry {
+                    formals,
+                    result,
+                    label,
+                }) => {
                     if formals.len() != args.len() {
                         ctx.flag_error_with_msg(&format!(
                             "Expected {} args for function {} but got {}",
@@ -622,7 +658,7 @@ fn trans_exp(ctx: &mut TypeCheckingContext, n: &Exp, break_label: Option<Label>)
                     "Trying to use an undeclared array type {}",
                     ctx.get_span(typ)
                 ));
-                return (ERROR_TR_EXP, Type::Error);
+                (ERROR_TR_EXP, Type::Error)
             } else {
                 match arr_ty_opt.as_ref().unwrap() {
                     Type::Array(ele_ty, b) => {
@@ -632,9 +668,9 @@ fn trans_exp(ctx: &mut TypeCheckingContext, n: &Exp, break_label: Option<Label>)
                                 "array initialized with type {} but declared with type {}",
                                 init_val_ty, ele_ty
                             ));
-                            return (ERROR_TR_EXP, Type::Error);
+                            (ERROR_TR_EXP, Type::Error)
                         } else {
-                            return (translate::array_exp(), arr_ty_opt.unwrap().clone());
+                            (translate::array_exp(), arr_ty_opt.unwrap().clone())
                         }
                     }
                     _ => {
@@ -642,7 +678,7 @@ fn trans_exp(ctx: &mut TypeCheckingContext, n: &Exp, break_label: Option<Label>)
                             "{} is not of array type!",
                             ctx.get_span(typ)
                         ));
-                        return (ERROR_TR_EXP, Type::Error);
+                        (ERROR_TR_EXP, Type::Error)
                     }
                 }
             }
@@ -651,25 +687,136 @@ fn trans_exp(ctx: &mut TypeCheckingContext, n: &Exp, break_label: Option<Label>)
 }
 
 fn trans_var(ctx: &mut TypeCheckingContext, var: &Var, break_label: Option<Label>) -> ExpTy {
-    todo!()
+    match var {
+        Var::SimpleVar(span, pos) => {
+            let sym = ctx.intern(span);
+            let entry_opt = ctx.varfun_env.look(sym);
+            match entry_opt {
+                None => {
+                    ctx.flag_error_with_msg(&format!(
+                        "use of undeclared variable {}",
+                        ctx.get_span(span)
+                    ));
+                    (ERROR_TR_EXP, Type::Error)
+                }
+                Some(EnvEntry::FunEntry { .. }) => {
+                    // this version of tiger does not support using functions as lvalues.
+                    // functions can only be called.
+                    // therefore, this is an error.
+                    ctx.flag_error_with_msg(&format!(
+                        "attempting to use function {} as a lvalue",
+                        ctx.get_span(span)
+                    ));
+                    (ERROR_TR_EXP, Type::Error)
+                }
+                Some(EnvEntry::VarEntry { ty, readonly }) => match ty {
+                    Type::Error => (ERROR_TR_EXP, Type::Error),
+                    _ => (translate::simple_var(), ty.clone()),
+                },
+            }
+        }
+        Var::FieldVar(lhs_var, rhs_span, pos) => {
+            let (lhs_var_ir, lhs_var_ty) = trans_var(ctx, lhs_var, break_label);
+            match lhs_var_ty {
+                Type::Record(field_types, ord) => {
+                    let sym = ctx.intern(rhs_span);
+                    let mut decl_ty = None;
+                    let mut field_offset = 0;
+                    for (field_sym, ty) in &*field_types {
+                        if *field_sym == sym {
+                            decl_ty = Some(ty);
+                            break;
+                        } else {
+                            field_offset += 1;
+                        }
+                    }
+                    match decl_ty {
+                        None => {
+                            ctx.flag_error_with_msg(&format!(
+                                "{} is not a field of the record",
+                                ctx.get_span(rhs_span)
+                            ));
+                            (ERROR_TR_EXP, Type::Error)
+                        }
+                        Some(dty) => {
+                            // in our cute toy language every record field
+                            //  is scalar or pointer so they have same
+                            //  size, so we don't even have to do any
+                            // extra work calculating the record size.
+                            (translate::record_field(lhs_var_ir, field_offset), dty.clone())
+                        }
+                    }
+                }
+                x => {
+                    ctx.flag_error_with_msg(&format!(
+                        "tried to access field of a non-record type {}",
+                        x
+                    ));
+                    (ERROR_TR_EXP, Type::Error)
+                }
+            }
+        }
+        Var::SubscriptVar(deref_var, index_exp, pos) => {
+            let (lhs_ir, lhs_ty) = trans_var(ctx, deref_var, break_label);
+            match lhs_ty {
+                Type::Array(ele_ty, ord) => {
+                    let (idx_ir, idx_ty) = trans_exp(ctx, index_exp, break_label);
+                    match idx_ty {
+                        Type::Int => {
+                            let sym = ctx.symbols.intern("exit");
+                            let exit_fn_entry = ctx.varfun_env.look(sym);
+                            match exit_fn_entry {
+                                None => {
+                                    panic!("bug in impl, missing the built-in exit procedure");
+                                }
+                                Some(EnvEntry::FunEntry { formals, result , label}) => {
+                                    (
+                                        translate::subscript_var(lhs_ir, idx_ir, *label),
+                                        (**ele_ty).clone(),
+                                    )
+                                }
+                                Some(x) => {
+                                    panic!("bug in impl, `exit` should be a FunEntry but is {}", x);
+                                }
+                            }
+                        }
+                        _ => {
+                            ctx.flag_error_with_msg("array index must be of Int type!");
+                            (ERROR_TR_EXP, Type::Error)
+                        }
+                    }
+                }
+                Type::Error => (ERROR_TR_EXP, Type::Error),
+                x => {
+                    ctx.flag_error_with_msg(&format!(
+                        "Subscript is only valid for array, used on {}",
+                        x
+                    ));
+                    (ERROR_TR_EXP, Type::Error)
+                }
+            }
+        }
+    }
 }
 
 fn trans_dec(ctx: &mut TypeCheckingContext, dec: &Dec) -> Option<TrExp> {
+    match dec {
+        Dec::FunctionDec(fundecs) => {}
+        Dec::VarDec {
+            name,
+            escape,
+            typ,
+            init,
+            pos,
+        } => {}
+
+        Dec::TypeDec(tydecs) => {}
+    }
     todo!()
 }
 
-fn translate(input: &str, ast: &Exp) -> Result<TrExp, ()> {
-    let mut ctx = TypeCheckingContext {
-        next_array_ord: 0,
-        next_record_ord: 0,
-        type_env: SymbolTable::empty(),
-        varfun_env: SymbolTable::empty(),
-        has_err: false,
-        symbols: Interner::new(),
-        input: input,
-        ta: TempAuthority::new(),
-        la: LabelAuthority::new(),
-    };
+pub fn translate(input: &str, ast: &Exp) -> Result<TrExp, ()> {
+    let mut ctx = TypeCheckingContext::new(input);
 
     let (exp, ty) = trans_exp(&mut ctx, ast, None);
     match ty {
