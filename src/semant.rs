@@ -1,5 +1,6 @@
 use cfgrammar::Span;
-use std::rc::Rc;
+use std::collections::HashMap;
+use std::{num::NonZeroUsize, rc::Rc};
 
 use crate::{
     absyn::{Dec, Exp, Field, Fundec, Oper, Ty, TyDec, Var},
@@ -11,15 +12,8 @@ use crate::{
 };
 use strum_macros::Display;
 
-#[derive(Eq, PartialEq, Copy, Clone)]
-pub struct ArrayTypeOrdinal(usize);
-
-#[derive(Eq, PartialEq, Copy, Clone)]
-pub struct RecordTypeOrdinal(usize);
-
 pub struct TypeCheckingContext<'a> {
-    next_array_ord: usize,
-    next_record_ord: usize,
+    next_array_record_ord: NonZeroUsize,
     type_env: SymbolTable<Type>,
     varfun_env: SymbolTable<EnvEntry>,
     has_err: bool,
@@ -37,112 +31,119 @@ impl<'a> TypeCheckingContext<'a> {
         let type_env = Self::base_env_type_env(&mut symbols);
         let varfun_env = Self::base_varfun_env(&mut symbols, &mut la);
         Self {
-            next_array_ord: 0,
-            next_record_ord: 0,
+            next_array_record_ord: NonZeroUsize::MIN,
             type_env: type_env,
             varfun_env: varfun_env,
             has_err: false,
             symbols: symbols,
             input: input,
             ta: ta,
-            la: la
+            la: la,
         }
     }
 
+    fn get_next_array_record_ord(&mut self) -> NonZeroUsize {
+        // This will panic if we wrap around. It is unlikely as we would have to exhaust
+        // the size of a usize first. Practically impossible on 64bit ints.
+        let ret = self.next_array_record_ord;
+        self.next_array_record_ord =
+            NonZeroUsize::new(self.next_array_record_ord.get().wrapping_add(1)).unwrap();
+        ret
+    }
 
-fn base_env_type_env(pool: &mut Interner) -> SymbolTable<Type> {
-    let mut res = SymbolTable::empty();
-    res.begin_scope();
-    res.enter(pool.intern("int"), Type::Int);
-    res.enter(pool.intern("string"), Type::String);
-    res
-}
+    fn base_env_type_env(pool: &mut Interner) -> SymbolTable<Type> {
+        let mut res = SymbolTable::empty();
+        res.begin_scope();
+        res.enter(pool.intern("int"), Type::Int);
+        res.enter(pool.intern("string"), Type::String);
+        res
+    }
 
-fn base_varfun_env(pool: &mut Interner, la: &mut LabelAuthority) -> SymbolTable<EnvEntry> {
-    let mut res = SymbolTable::empty();
-    res.begin_scope();
-    res.enter(
-        pool.intern("print"),
-        EnvEntry::FunEntry {
-            formals: Rc::new(vec![Type::String]),
-            result: Type::String,
-            label: la.new_label(pool)
-        },
-    );
-    res.enter(
-        pool.intern("flush"),
-        EnvEntry::FunEntry {
-            formals: Rc::new(vec![]),
-            result: Type::Unit,
-            label: la.new_label(pool)
-        },
-    );
-    res.enter(
-        pool.intern("getchar"),
-        EnvEntry::FunEntry {
-            formals: Rc::new(vec![]),
-            result: Type::String,
-            label: la.new_label(pool)
-        },
-    );
-    res.enter(
-        pool.intern("ord"),
-        EnvEntry::FunEntry {
-            formals: Rc::new(vec![Type::String]),
-            result: Type::Int,
-            label: la.new_label(pool)
-        },
-    );
-    res.enter(
-        pool.intern("chr"),
-        EnvEntry::FunEntry {
-            formals: Rc::new(vec![Type::Int]),
-            result: Type::String,
-            label: la.new_label(pool)
-        },
-    );
-    res.enter(
-        pool.intern("size"),
-        EnvEntry::FunEntry {
-            formals: Rc::new(vec![Type::String]),
-            result: Type::Int,
-            label: la.new_label(pool)
-        },
-    );
-    res.enter(
-        pool.intern("substring"),
-        EnvEntry::FunEntry {
-            formals: Rc::new(vec![Type::String, Type::Int, Type::Int]),
-            result: Type::String,
-            label: la.new_label(pool)
-        },
-    );
-    res.enter(
-        pool.intern("concat"),
-        EnvEntry::FunEntry {
-            formals: Rc::new(vec![Type::String, Type::String]),
-            result: Type::String,
-            label: la.new_label(pool)
-        },
-    );
-    res.enter(
-        pool.intern("not"),
-        EnvEntry::FunEntry {
-            formals: Rc::new(vec![Type::Int]),
-            result: Type::Int,
-            label: la.new_label(pool)
-        },
-    );
-    res.enter(
-        pool.intern("exit"),
-        EnvEntry::FunEntry {
-            formals: Rc::new(vec![Type::Int]),
-            result: Type::Unit,
-            label: la.new_label(pool)
-        },
-    );
-    res
-}
+    fn base_varfun_env(pool: &mut Interner, la: &mut LabelAuthority) -> SymbolTable<EnvEntry> {
+        let mut res = SymbolTable::empty();
+        res.begin_scope();
+        res.enter(
+            pool.intern("print"),
+            EnvEntry::FunEntry {
+                formals: Rc::new(vec![Type::String]),
+                result: Type::String,
+                label: la.new_label(pool),
+            },
+        );
+        res.enter(
+            pool.intern("flush"),
+            EnvEntry::FunEntry {
+                formals: Rc::new(vec![]),
+                result: Type::Unit,
+                label: la.new_label(pool),
+            },
+        );
+        res.enter(
+            pool.intern("getchar"),
+            EnvEntry::FunEntry {
+                formals: Rc::new(vec![]),
+                result: Type::String,
+                label: la.new_label(pool),
+            },
+        );
+        res.enter(
+            pool.intern("ord"),
+            EnvEntry::FunEntry {
+                formals: Rc::new(vec![Type::String]),
+                result: Type::Int,
+                label: la.new_label(pool),
+            },
+        );
+        res.enter(
+            pool.intern("chr"),
+            EnvEntry::FunEntry {
+                formals: Rc::new(vec![Type::Int]),
+                result: Type::String,
+                label: la.new_label(pool),
+            },
+        );
+        res.enter(
+            pool.intern("size"),
+            EnvEntry::FunEntry {
+                formals: Rc::new(vec![Type::String]),
+                result: Type::Int,
+                label: la.new_label(pool),
+            },
+        );
+        res.enter(
+            pool.intern("substring"),
+            EnvEntry::FunEntry {
+                formals: Rc::new(vec![Type::String, Type::Int, Type::Int]),
+                result: Type::String,
+                label: la.new_label(pool),
+            },
+        );
+        res.enter(
+            pool.intern("concat"),
+            EnvEntry::FunEntry {
+                formals: Rc::new(vec![Type::String, Type::String]),
+                result: Type::String,
+                label: la.new_label(pool),
+            },
+        );
+        res.enter(
+            pool.intern("not"),
+            EnvEntry::FunEntry {
+                formals: Rc::new(vec![Type::Int]),
+                result: Type::Int,
+                label: la.new_label(pool),
+            },
+        );
+        res.enter(
+            pool.intern("exit"),
+            EnvEntry::FunEntry {
+                formals: Rc::new(vec![Type::Int]),
+                result: Type::Unit,
+                label: la.new_label(pool),
+            },
+        );
+        res
+    }
 
     fn flag_error_with_msg(&mut self, msg: &str) {
         self.has_err = true;
@@ -176,13 +177,13 @@ fn base_varfun_env(pool: &mut Interner, la: &mut LabelAuthority) -> SymbolTable<
 
 #[derive(Eq, PartialEq, Display, Clone)]
 pub enum Type {
-    Record(Rc<Vec<(Symbol, Type)>>, RecordTypeOrdinal),
+    Record(Rc<Vec<(Symbol, Type)>>, NonZeroUsize),
     Nil,
     Int,
     String,
-    Array(Rc<Box<Type>>, ArrayTypeOrdinal),
+    Array(Rc<Box<Type>>, NonZeroUsize),
     Unit,
-    Name,
+    Name(Symbol),
     Error,
 }
 
@@ -210,7 +211,6 @@ enum EnvEntry {
         result: Type,
     },
 }
-
 
 fn trans_exp(ctx: &mut TypeCheckingContext, n: &Exp, break_label: Option<Label>) -> ExpTy {
     match n {
@@ -743,7 +743,10 @@ fn trans_var(ctx: &mut TypeCheckingContext, var: &Var, break_label: Option<Label
                             //  is scalar or pointer so they have same
                             //  size, so we don't even have to do any
                             // extra work calculating the record size.
-                            (translate::record_field(lhs_var_ir, field_offset), dty.clone())
+                            (
+                                translate::record_field(lhs_var_ir, field_offset),
+                                dty.clone(),
+                            )
                         }
                     }
                 }
@@ -769,12 +772,14 @@ fn trans_var(ctx: &mut TypeCheckingContext, var: &Var, break_label: Option<Label
                                 None => {
                                     panic!("bug in impl, missing the built-in exit procedure");
                                 }
-                                Some(EnvEntry::FunEntry { formals, result , label}) => {
-                                    (
-                                        translate::subscript_var(lhs_ir, idx_ir, *label),
-                                        (**ele_ty).clone(),
-                                    )
-                                }
+                                Some(EnvEntry::FunEntry {
+                                    formals,
+                                    result,
+                                    label,
+                                }) => (
+                                    translate::subscript_var(lhs_ir, idx_ir, *label),
+                                    (**ele_ty).clone(),
+                                ),
                                 Some(x) => {
                                     panic!("bug in impl, `exit` should be a FunEntry but is {}", x);
                                 }
@@ -799,6 +804,71 @@ fn trans_var(ctx: &mut TypeCheckingContext, var: &Var, break_label: Option<Label
     }
 }
 
+fn ty_to_type(ctx: &mut TypeCheckingContext, ty: Ty) -> Type {
+    match ty {
+        Ty::NameTy(span, pos) => {
+            let sym = ctx.intern(&span);
+            match ctx.type_env.look(sym) {
+                None => Type::Name(sym),
+                Some(x) => x.clone(),
+            }
+        }
+        Ty::ArrayTy(span, pos) => {
+            let sym = ctx.intern(&span);
+            match ctx.type_env.look(sym) {
+                // This case happen when array refers to a type that was not encountered yet
+                // but would expect to encounter later in a legal program.
+                None => Type::Array(
+                    Rc::new(Box::new(Type::Name(sym))),
+                    ctx.get_next_array_record_ord(),
+                ),
+                // This case happen when array refers to a type that was encountered already.
+                Some(x) => Type::Array(
+                    Rc::new(Box::new(x.clone())),
+                    ctx.get_next_array_record_ord(),
+                ),
+            }
+        }
+        Ty::RecordTy(fields) => {
+            let mut seen = HashMap::new();
+            let mut record_field_types = Vec::new();
+            let mut err = false;
+
+            for field in &fields {
+                // can't use get_span because it makes borrow checker think we have
+                // immutable ref to ctx and we later call a mutation method on ctx,
+                // but somehow accessing a field of ctx is okay. ¯_(ツ)_/¯
+                let field_name = &ctx.input[field.name.start()..field.name.end()];
+                if seen.contains_key(field_name) {
+                    err = true;
+                    ctx.flag_error_with_msg(&format!(
+                        "field {} declared more than once in record.",
+                        field_name
+                    ));
+                } else {
+                    seen.insert(field_name, ());
+                    let field_sym = ctx.intern(&field.name);
+                    let typ_sym = ctx.intern(&field.typ);
+                    let type_opt = ctx.type_env.look(typ_sym);
+                    match type_opt {
+                        None => {
+                            record_field_types.push((field_sym, Type::Name(typ_sym)));
+                        }
+                        Some(typ) => {
+                            record_field_types.push((field_sym, typ.clone()));
+                        }
+                    }
+                }
+            }
+            if err {
+                Type::Error
+            } else {
+                Type::Record(Rc::new(record_field_types), ctx.get_next_array_record_ord())
+            }
+        }
+    }
+}
+
 fn trans_dec(ctx: &mut TypeCheckingContext, dec: &Dec) -> Option<TrExp> {
     match dec {
         Dec::FunctionDec(fundecs) => {}
@@ -810,7 +880,47 @@ fn trans_dec(ctx: &mut TypeCheckingContext, dec: &Dec) -> Option<TrExp> {
             pos,
         } => {}
 
-        Dec::TypeDec(tydecs) => {}
+        Dec::TypeDec(tydecs) => {
+
+            // spec from appendix:
+            // mutually recursive types are declared by a conseq seq of type dec
+            // without intervening value or func dec. Each recursion cycle must
+            // pass through a record or array type.
+            // ...
+            // no two types in a seq of mutually recursive types may have the
+            // same name.
+            //
+            //
+            // var seen: HashSet[Symbol]
+            // var tofixup: seq[(Type, pos)]
+            // for dec in d.decs:
+            //     if dec.tdname in seen:
+            //         error hasErr, dec.tdpos, "the type name ", dec.tdname.name, " is declared more than once in a sequence of mutually recursive types, which is illegal."
+            //         tenv.enter dec.tdname, ErrorTy
+            //     else:
+            //         seen.incl dec.tdname
+            //         let ty = transTy(hasErr, tenv, dec.tdty)
+            //         tenv.enter dec.tdname, ty
+            //         tofixup.add (ty, dec.tdpos)
+            // devEcho "tofixup: ", $tofixup
+            // # cycle detection: if it's all NameT back to the dec it's bad.
+            // for dec in d.decs:
+            //     seen.clear # reuse.
+            //     var ty = (tenv.look dec.tdname).get
+            //     seen.incl dec.tdname
+            //     while ty.kind == NameT:
+            //         if ty.s in seen:
+            //             error hasErr, dec.tdpos,
+            //                     "circular type definition detected for type ",
+            //                     dec.tdname.name
+            //             break
+            //         seen.incl ty.s
+            //         ty = (tenv.look ty.s).get
+            // # now fix up the stuff we just added.
+            // for (tofix, pos) in tofixup.mitems():
+            //     fixup(hasErr, tenv, tofix, pos)
+            // devEcho "after fixup ", $tofixup
+        }
     }
     todo!()
 }
