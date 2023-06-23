@@ -1,11 +1,12 @@
 use cfgrammar::Span;
+use std::mem;
 use std::rc::Rc;
 
 use crate::{
     absyn::{Dec, Exp, Field, Fundec, Oper, Ty, TyDec, Var},
     symbol::{Interner, Symbol},
     symtab::SymbolTable,
-    temp::Label,
+    temp::{Label, LabelAuthority, Temp, TempAuthority},
     translate,
     translate::{TrExp, ERROR_TR_EXP},
 };
@@ -25,10 +26,12 @@ pub struct TypeCheckingContext<'a> {
     has_err: bool,
     symbols: Interner,
     input: &'a str,
+    ta: TempAuthority,
+    la: LabelAuthority,
 }
 
 impl<'a> TypeCheckingContext<'a> {
-    fn flag_error_with_msg(&mut self, msg: String) {
+    fn flag_error_with_msg(&mut self, msg: &str) {
         self.has_err = true;
         println!("{}", msg);
     }
@@ -79,7 +82,7 @@ impl Type {
 type ExpTy = (TrExp, Type);
 
 enum EnvEntry {
-    VarEntry { ty: Type },
+    VarEntry { ty: Type, readonly: bool },
     FunEntry { formals: Vec<Type>, result: Type },
 }
 
@@ -186,21 +189,21 @@ fn trans_exp(ctx: &mut TypeCheckingContext, n: &Exp, break_label: Option<Label>)
                         }
                         (Type::Error, _) | (_, Type::Error) => (ERROR_TR_EXP, Type::Error),
                         (Type::Int, _) => {
-                            ctx.flag_error_with_msg(format!(
+                            ctx.flag_error_with_msg(&format!(
                                 "Expected integer on rhs but got {}",
                                 right
                             ));
                             (ERROR_TR_EXP, Type::Error)
                         }
                         (_, Type::Int) => {
-                            ctx.flag_error_with_msg(format!(
+                            ctx.flag_error_with_msg(&format!(
                                 "Expected integer on lhs but got {}",
                                 left
                             ));
                             (ERROR_TR_EXP, Type::Error)
                         }
                         (_, _) => {
-                            ctx.flag_error_with_msg(format!(
+                            ctx.flag_error_with_msg(&format!(
                                 "Expected integer operands but got lhs={}, rhs={}",
                                 left, right
                             ));
@@ -212,14 +215,14 @@ fn trans_exp(ctx: &mut TypeCheckingContext, n: &Exp, break_label: Option<Label>)
                     (Type::Int, Type::Int) => (translate::binop(oper, lhs_ir, rhs_ir), Type::Int),
                     (Type::Error, _) | (_, Type::Error) => (ERROR_TR_EXP, Type::Error),
                     (Type::Int, _) => {
-                        ctx.flag_error_with_msg(format!(
+                        ctx.flag_error_with_msg(&format!(
                             "Expected integer on rhs but got {}",
                             right
                         ));
                         (ERROR_TR_EXP, Type::Error)
                     }
                     (_, Type::Int) => {
-                        ctx.flag_error_with_msg(format!(
+                        ctx.flag_error_with_msg(&format!(
                             "Expected integer on lhs but got {}",
                             right
                         ));
@@ -231,7 +234,7 @@ fn trans_exp(ctx: &mut TypeCheckingContext, n: &Exp, break_label: Option<Label>)
                     if Type::Error == lhs_ty || Type::Error == rhs_ty {
                         (ERROR_TR_EXP, Type::Error)
                     } else if !lhs_ty.compatible_with(&rhs_ty) {
-                        ctx.flag_error_with_msg(format!(
+                        ctx.flag_error_with_msg(&format!(
                             "Types not compatible for comparison, lhs={}, rhs={}",
                             left, right
                         ));
@@ -243,7 +246,7 @@ fn trans_exp(ctx: &mut TypeCheckingContext, n: &Exp, break_label: Option<Label>)
                         rhs_ty,
                         Type::Int | Type::Record(..) | Type::Array(..) | Type::String
                     ) {
-                        ctx.flag_error_with_msg(format!("{} only valid on Int, Record, Array or String types, but is used for {} and {}", oper, left, right));
+                        ctx.flag_error_with_msg(&format!("{} only valid on Int, Record, Array or String types, but is used for {} and {}", oper, left, right));
                         (ERROR_TR_EXP, Type::Error)
                     } else {
                         if let (Type::String, Type::String) = (lhs_ty, rhs_ty) {
@@ -261,22 +264,22 @@ fn trans_exp(ctx: &mut TypeCheckingContext, n: &Exp, break_label: Option<Label>)
         Exp::NilExp => (translate::nil_exp(), Type::Nil),
         Exp::IntExp(i) => (translate::int_exp(i), Type::Int),
         Exp::VarExp(v) => trans_var(ctx, v),
-        Exp::StringExp(s) => (translate::string_exp(ctx, s), Type::String),
+        Exp::StringExp(s, pos) => (translate::string_exp(ctx, s), Type::String),
         Exp::CallExp { func, args, pos } => {
             let fentry_opt = ctx.varfun_env.look(ctx.intern(func));
             if fentry_opt.is_none() {
-                ctx.flag_error_with_msg(format!(
+                ctx.flag_error_with_msg(&format!(
                     "Trying to call undeclared function {}",
                     ctx.get_span(func)
                 ));
                 return (ERROR_TR_EXP, Type::Error);
             } else if !matches!(fentry_opt.unwrap(), EnvEntry::FunEntry { .. }) {
-                ctx.flag_error_with_msg(format!("{} is not a function!", ctx.get_span(func)));
+                ctx.flag_error_with_msg(&format!("{} is not a function!", ctx.get_span(func)));
                 return (ERROR_TR_EXP, Type::Error);
             } else {
                 let Some(EnvEntry::FunEntry { formals, result }) = fentry_opt;
                 if formals.len() != args.len() {
-                    ctx.flag_error_with_msg(format!(
+                    ctx.flag_error_with_msg(&format!(
                         "Expected {} args for function {} but got {}",
                         formals.len(),
                         ctx.get_span(func),
@@ -289,12 +292,12 @@ fn trans_exp(ctx: &mut TypeCheckingContext, n: &Exp, break_label: Option<Label>)
                     for i in 0..args.len() {
                         let (arg_ir, arg_ty) = trans_exp(ctx, args.get(i).unwrap(), None);
                         if matches!(Type::Error, arg_ty)
-                            || matches!(Type::Error, formals.get(i).unwrap())
+                            || matches!(formals.get(i).unwrap(), Type::Error)
                         {
                             ctx.flag_error();
                             break;
                         } else if !arg_ty.compatible_with(formals.get(i).unwrap()) {
-                            ctx.flag_error_with_msg(format!(
+                            ctx.flag_error_with_msg(&format!(
                                 "Call to {} expects argument of type {} at position {} but got {}",
                                 ctx.get_span(func),
                                 formals.get(i).unwrap(),
@@ -307,7 +310,7 @@ fn trans_exp(ctx: &mut TypeCheckingContext, n: &Exp, break_label: Option<Label>)
                     if ctx.has_error() {
                         (ERROR_TR_EXP, Type::Error)
                     } else {
-                        (translate::call_exp("TODO"), result)
+                        (translate::call_exp("TODO"), *result)
                     }
                 }
             }
@@ -315,15 +318,15 @@ fn trans_exp(ctx: &mut TypeCheckingContext, n: &Exp, break_label: Option<Label>)
         Exp::RecordExp { fields, typ, pos } => {
             let rec_entry_opt = ctx.type_env.look(ctx.intern(typ));
             if rec_entry_opt.is_none() {
-                ctx.flag_error_with_msg(format!("{} has not been declared.", ctx.get_span(typ)));
+                ctx.flag_error_with_msg(&format!("{} has not been declared.", ctx.get_span(typ)));
                 (ERROR_TR_EXP, Type::Error)
             } else if !matches!(rec_entry_opt.unwrap(), Type::Record(..)) {
-                ctx.flag_error_with_msg(format!("{} is not a record type.", ctx.get_span(typ)));
+                ctx.flag_error_with_msg(&format!("{} is not a record type.", ctx.get_span(typ)));
                 (ERROR_TR_EXP, Type::Error)
             } else {
                 let Type::Record(name_types, ord) = rec_entry_opt.unwrap();
                 if name_types.len() != fields.len() {
-                    ctx.flag_error_with_msg(format!(
+                    ctx.flag_error_with_msg(&format!(
                         "Record {} is declared with {} fields, but {} are given at instantiation site",
                         ctx.get_span(typ),
                         name_types.len(),
@@ -333,7 +336,7 @@ fn trans_exp(ctx: &mut TypeCheckingContext, n: &Exp, break_label: Option<Label>)
                 } else {
                     let mut site_irs = Vec::new();
 
-                    for (decl_sym, decl_typ) in name_types {
+                    for (decl_sym, decl_typ) in name_types.as_ref() {
                         let mut found = false;
                         for (site_sym_span, site_typ_exp, _) in fields {
                             let site_sym = ctx.intern(site_sym_span);
@@ -343,7 +346,7 @@ fn trans_exp(ctx: &mut TypeCheckingContext, n: &Exp, break_label: Option<Label>)
                                 if !site_ty.compatible_with(decl_typ) {
                                     ctx.flag_error();
                                     if !matches!(Type::Error, site_ty) {
-                                        ctx.flag_error_with_msg(format!("field {} is declared with type {} but is used with type {}", ctx.get_span(site_sym_span), decl_typ, site_ty));
+                                        ctx.flag_error_with_msg(&format!("field {} is declared with type {} but is used with type {}", ctx.get_span(site_sym_span), decl_typ, site_ty));
                                     } else {
                                         // only push when no type error occur.
                                         // this means we can check length vs the declared number of record fields
@@ -354,7 +357,7 @@ fn trans_exp(ctx: &mut TypeCheckingContext, n: &Exp, break_label: Option<Label>)
                                 }
                             }
                             if !found {
-                                ctx.flag_error_with_msg(format!(
+                                ctx.flag_error_with_msg(&format!(
                                     "record field {} is declared but not used",
                                     ctx.resolve_unchecked(decl_sym)
                                 ));
@@ -373,11 +376,56 @@ fn trans_exp(ctx: &mut TypeCheckingContext, n: &Exp, break_label: Option<Label>)
                 }
             }
         }
-        Exp::SeqExp(..) => {
-            todo!()
+        Exp::SeqExp(exps) => {
+            let mut ret_val = Type::Unit;
+            let exp_irs = Vec::new();
+            for exp in exps {
+                let (exp_ir, exp_ty) = trans_exp(ctx, exp, break_label);
+                ret_val = exp_ty;
+                exp_irs.push(exp_ir);
+            }
+            (
+                translate.seq_exp(exp_irs, !matches!(ret_val, Type::Unit)),
+                ret_val,
+            )
         }
         Exp::AssignExp { var, exp, pos } => {
-            todo!()
+            // nil can be assigned to record types.
+            let (dst_ir, dst_ty) = trans_var(ctx, var, break_label);
+            let (src_ir, src_ty) = trans_exp(ctx, exp, break_label);
+            if matches!(dst_ty, Type::Error) || matches!(src_ty, Type::Error) {
+                (ERROR_TR_EXP, Type::Error)
+            } else if matches!(src_ty, Type::Nil) && !matches!(dst_ty, Type::Record(..)) {
+                ctx.flag_error_with_msg(&format!(
+                    "Nil can only be assigned to record type, but is assigned to {} here.",
+                    dst_ty
+                ));
+                (ERROR_TR_EXP, Type::Error)
+            } else if !dst_ty.compatible_with(&src_ty) {
+                ctx.flag_error_with_msg(&format!(
+                    "Assigning incompatible types: dst={}, src={}",
+                    dst_ty, src_ty
+                ));
+                (ERROR_TR_EXP, Type::Error)
+            } else {
+                match var.as_ref() {
+                    Var::SimpleVar(span, pos) => {
+                        let var_entry = ctx.varfun_env.look(ctx.intern(span));
+                        assert!(var_entry.is_some(), "Impl bug: missing var entry");
+                        let EnvEntry::VarEntry { ty, readonly } = var_entry.unwrap();
+
+                        if *readonly {
+                            ctx.flag_error_with_msg("Cannot assign to readonly location");
+                            (ERROR_TR_EXP, Type::Error)
+                        } else if matches!(ty, Type::Error) {
+                            (ERROR_TR_EXP, Type::Error)
+                        } else {
+                            (translate::assignment(dst_ir, src_ir), Type::Unit)
+                        }
+                    }
+                    _ => (translate::assignment(dst_ir, src_ir), Type::Unit),
+                }
+            }
         }
         Exp::IfExp {
             test,
@@ -385,10 +433,58 @@ fn trans_exp(ctx: &mut TypeCheckingContext, n: &Exp, break_label: Option<Label>)
             els,
             pos,
         } => {
-            todo!()
+            let (cond_ir, test_ty) = trans_exp(ctx, test.as_ref(), break_label);
+            if !matches!(test_ty, Type::Int) {
+                ctx.flag_error_with_msg(&format!(
+                    "Conditionals must evaluate to INT but got {} here",
+                    test_ty
+                ));
+                (ERROR_TR_EXP, Type::Error)
+            } else {
+                let (then_ir, then_ty) = trans_exp(ctx, then.as_ref(), break_label);
+                if els.is_none() {
+                    if !matches!(then_ty, Type::Unit) {
+                        ctx.flag_error_with_msg(&format!(
+                            "if-then must evaluate to Unit, but has type {} here",
+                            then_ty
+                        ));
+                        (ERROR_TR_EXP, Type::Error)
+                    } else {
+                        (translate::conditional(cond_ir, then_ir), then_ty)
+                    }
+                } else {
+                    let (else_ir, else_ty) = trans_exp(ctx, els.unwrap().as_ref(), break_label);
+                    if !else_ty.compatible_with(&then_ty) {
+                        ctx.flag_error_with_msg(&format!("if-then-else branches have incompatible types: then has type {}, else has type {}", then_ty, else_ty));
+                        (ERROR_TR_EXP, Type::Error)
+                    } else {
+                        (translate::conditional(cond_ir, then_ir, else_ir), then_ty)
+                    }
+                }
+            }
         }
         Exp::WhileExp { test, body, pos } => {
-            todo!()
+            let while_done_label = Some(ctx.la.new_label(&mut ctx.symbols));
+            // break is legal in expressions. so if they try to break in the condition
+            // of a while loop, it is interpreted as breaking to the end of this while loop,
+            // since logically, the while condition is re-evaluated each iteration.
+            let (cond_ir, cond_ty) = trans_exp(ctx, test, while_done_label);
+            if !matches!(cond_ty, Type::Int) {
+                ctx.flag_error_with_msg("while condition must be of Int");
+                (ERROR_TR_EXP, Type::Error)
+            } else {
+                let (body_ir, body_ty) = trans_exp(ctx, body, while_done_label);
+                match body_ty {
+                    Type::Unit => (
+                        translate::while_loop(cond_ir, body_ir, while_done_label),
+                        Type::Unit,
+                    ),
+                    _ => {
+                        ctx.flag_error_with_msg("while body must not produce a value");
+                        (ERROR_TR_EXP, Type::Error)
+                    }
+                }
+            }
         }
         Exp::ForExp {
             var,
@@ -398,13 +494,74 @@ fn trans_exp(ctx: &mut TypeCheckingContext, n: &Exp, break_label: Option<Label>)
             body,
             pos,
         } => {
-            todo!()
+            let for_done_label = Some(ctx.la.new_label(&mut ctx.symbols));
+            // if "break" happens in evaluating the for loop params, will just break the loop itself.
+            let (lo_ir, lo_ty) = trans_exp(ctx, lo, for_done_label);
+            let (hi_ir, hi_ty) = trans_exp(ctx, hi, for_done_label);
+            let mut err = false;
+            if !matches!(lo_ty, Type::Int) {
+                err = true;
+                ctx.flag_error_with_msg("lo in for loop range must be of integral type");
+            }
+            if !matches!(hi_ty, Type::Int) {
+                err = true;
+                ctx.flag_error_with_msg("lo in for loop range must be of integral type");
+            }
+
+            ctx.varfun_env.begin_scope();
+
+            // TODO Level stuff, refer to nim code
+            ctx.varfun_env.enter(
+                ctx.intern(var),
+                EnvEntry::VarEntry {
+                    ty: Type::Int,
+                    readonly: true,
+                },
+            );
+            let (body_ir, body_ty) = trans_exp(ctx, body, for_done_label);
+            ctx.varfun_env.end_scope();
+
+            match body_ty {
+                Type::Unit => {
+                    if err {
+                        (ERROR_TR_EXP, Type::Error)
+                    } else {
+                        (
+                            translate::for_loop(lo_ir, hi_ir, body_ir, for_done_label),
+                            Type::Unit,
+                        )
+                    }
+                }
+                _ => {
+                    ctx.flag_error_with_msg("for body must not produce a value");
+                    (ERROR_TR_EXP, Type::Error)
+                }
+            }
         }
-        Exp::BreakExp(..) => {
-            todo!()
+        Exp::BreakExp(pos) => {
+            if break_label.is_none() {
+                ctx.flag_error_with_msg("naked break statement");
+                (ERROR_TR_EXP, Type::Error)
+            } else {
+                (translate::break_stmt(break_label.unwrap()), Type::Unit)
+            }
         }
         Exp::LetExp { decs, body, pos } => {
-            todo!()
+            ctx.type_env.begin_scope();
+            ctx.varfun_env.begin_scope();
+
+            let mut var_init_irs = Vec::new();
+            for dec in decs {
+                if let Some(var_init_ir) = trans_dec(ctx, dec) {
+                    var_init_irs.push(var_init_ir);
+                }
+            }
+            let (let_body_ir, let_body_ty) = trans_exp(ctx, body, break_label);
+
+            ctx.type_env.end_scope();
+            ctx.varfun_env.end_scope();
+
+            (translate::let_exp(var_init_irs, let_body_ir), let_body_ty)
         }
         Exp::ArrayExp {
             typ,
@@ -412,12 +569,41 @@ fn trans_exp(ctx: &mut TypeCheckingContext, n: &Exp, break_label: Option<Label>)
             init,
             pos,
         } => {
-            todo!()
+            let arr_ty_opt = ctx.type_env.look(ctx.intern(typ));
+            if arr_ty_opt.is_none() {
+                ctx.flag_error_with_msg(&format!(
+                    "Trying to use an undeclared array type {}",
+                    ctx.get_span(typ)
+                ));
+                return (ERROR_TR_EXP, Type::Error)
+            } else {
+                match arr_ty_opt.unwrap() {
+                    Type::Array(ele_ty, b) => {
+                        let (init_val_ir, init_val_ty) = trans_exp(ctx, init, break_label);
+                        if !init_val_ty.compatible_with(ele_ty) {
+                            ctx.flag_error_with_msg(&format!(
+                                "array initialized with type {} but declared with type {}",
+                                init_val_ty, ele_ty
+                            ));
+                            return (ERROR_TR_EXP, Type::Error)
+                        } else {
+                            return (translate::array_exp(), *arr_ty_opt.unwrap())
+                        }
+                    }
+                    _ => {
+                        ctx.flag_error_with_msg(&format!(
+                            "{} is not of array type!",
+                            ctx.get_span(typ)
+                        ));
+                        return (ERROR_TR_EXP, Type::Error)
+                    }
+                }
+            }
         }
     }
 }
 
-fn trans_var(ctx: &mut TypeCheckingContext, var: &Var) -> TrExp {
+fn trans_var(ctx: &mut TypeCheckingContext, var: &Var) -> ExpTy {
     todo!()
 }
 
@@ -434,9 +620,11 @@ fn translate(input: &str, ast: &Exp) -> Result<TrExp, ()> {
         has_err: false,
         symbols: Interner::new(),
         input: input,
+        ta: TempAuthority::new(),
+        la: LabelAuthority::new(),
     };
 
-    let (exp, ty) = trans_exp(&mut ctx, n, None);
+    let (exp, ty) = trans_exp(&mut ctx, ast, None);
     match ty {
         Type::Error => Err(()),
         _ => Ok(exp),
