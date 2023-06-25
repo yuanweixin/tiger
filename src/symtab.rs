@@ -30,9 +30,9 @@ impl<T> SymbolTable<T> {
     pub fn enter(&mut self, symbol: Symbol, v: T) {
         let existing = self.tbl.get_mut(&symbol);
         if existing.is_none() {
-            self.tbl.insert(symbol, Vec::new());
+            self.tbl.insert(symbol, vec![v]);
         } else {
-            existing.unwrap().push(v); // unwrap is safe since we just added it if it didn't exist!
+            existing.unwrap().push(v);
         }
         self.stack.push(StackSymbol::Sym(symbol));
     }
@@ -66,3 +66,29 @@ impl<T> SymbolTable<T> {
         self.stack.pop();
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::symbol::Interner;
+
+    #[test]
+    fn nested_scopes() {
+        let mut pool = Interner::new();
+        let mut symtab = SymbolTable::empty();
+        let sym = pool.intern("x");
+        assert_eq!(None, symtab.look(sym));
+
+        symtab.enter(sym, 100);
+        println!("{:?}", symtab.tbl);
+        assert_eq!(Some(&100), symtab.look(sym));
+
+        symtab.begin_scope();
+
+        symtab.enter(sym, 101);
+        assert_eq!(Some(&101), symtab.look(sym));
+        symtab.end_scope();
+        assert_eq!(Some(&100), symtab.look(sym));
+    }
+}
+
