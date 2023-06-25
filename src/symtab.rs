@@ -28,11 +28,12 @@ impl<T> SymbolTable<T> {
     }
 
     pub fn enter(&mut self, symbol: Symbol, v: T) {
-        let mut existing = self.tbl.get(&symbol);
+        let existing = self.tbl.get_mut(&symbol);
         if existing.is_none() {
             self.tbl.insert(symbol, Vec::new());
+        } else {
+            existing.unwrap().push(v); // unwrap is safe since we just added it if it didn't exist!
         }
-        existing.as_mut().unwrap().push(v); // unwrap is safe since we just added it if it didn't exist!
         self.stack.push(StackSymbol::Sym(symbol));
     }
 

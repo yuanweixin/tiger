@@ -1,13 +1,21 @@
+// TODO
+#![allow(dead_code)]
+#![allow(unused_variables)]
+
+
 use crate::{
     absyn::Oper,
     frame,
     frame::Frame,
     int_types::TigerInt,
-    ir::{IrBinop, IrExp, IrStm},
+    ir::{IrExp, IrStm},
     symbol::Interner,
     temp::{GenTemporary, Label},
 };
-use std::rc::Rc;
+use std::{
+    rc::Rc,
+    cell::RefCell
+};
 
 type Conditional = fn(Label, Label) -> IrStm;
 
@@ -15,12 +23,13 @@ pub enum Level {
     Top,
     Nested {
         // use Rc because the Level objects form a dag where the child levels point back at the parent levels.
-        parent: Rc<Level>,
+        // this whole mechanism just to be able to mutate some shit is fucking crazy.
+        parent: Rc<RefCell<Level>>,
         frame: Box<dyn Frame>,
     },
 }
 
-pub type Access = (Rc<Level>, frame::Access);
+pub type Access = (Rc<RefCell<Level>>, frame::Access);
 
 pub enum TrExp {
     Ex(IrExp),
@@ -32,26 +41,26 @@ pub enum TrExp {
 pub const ERROR_TR_EXP: TrExp = TrExp::Ex(IrExp::Const(42));
 
 impl Level {
-    pub fn outermost() -> Rc<Self> {
-        Rc::new(Level::Top)
+    pub fn outermost() -> Rc<RefCell<Self>> {
+        Rc::new(RefCell::new(Level::Top))
     }
 
     pub fn alloc_local(&mut self, escape: bool) -> Access {
         todo!()
     }
 
-    pub fn new_level<T: Frame>(
-        parent: Rc<Level>,
+    pub fn new_level<T: Frame + 'static>(
+        parent: Rc<RefCell<Level>>,
         mut escapes: Vec<bool>,
         gen_temp_label: &mut GenTemporary,
         pool: &mut Interner,
-    ) -> Rc<Level> {
+    ) -> Rc<RefCell<Level>> {
         // prepend true for the static link
         escapes.insert(0, true);
-        Rc::new(Level::Nested {
+        Rc::new(RefCell::new(Level::Nested {
             parent: parent.clone(),
             frame: Box::new(T::new(gen_temp_label.new_label(pool), escapes)),
-        })
+        }))
     }
 }
 
@@ -159,6 +168,6 @@ pub fn subscript_var(lhs_ir: TrExp, idx_ir: TrExp, exit_label: Label) -> TrExp {
 
 // TODO
 // pub fn proc_entry_exit(fragments: &mut Vec<Fragment>, level: Level, body: TrExp) {
-pub fn proc_entry_exit(level: Rc<Level>, body: TrExp) {
+pub fn proc_entry_exit(level: Rc<RefCell<Level>>, body: TrExp) {
     todo!()
 }

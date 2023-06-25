@@ -1,6 +1,5 @@
 // appel's tree ir language
 use crate::temp;
-use crate::absyn::{Oper};
 use crate::int_types::TigerInt;
 
 pub enum IrExp {
