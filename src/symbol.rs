@@ -18,11 +18,3 @@ impl Interner {
         self.0.resolve(s.0)
     }
 }
-
-impl Symbol {
-    pub fn name<'a>(&'a self, interner: &'a Interner) -> &str {
-        // SAFETY: it is assumed that the caller provides a `Symbol`
-        // obtained by calling `symbol` fn.
-        interner.0.resolve(self.0).unwrap()
-    }
-}
