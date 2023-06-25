@@ -28,11 +28,11 @@ impl<T> SymbolTable<T> {
     }
 
     pub fn enter(&mut self, symbol: Symbol, v: T) {
-        let existing = self.tbl.get(&symbol);
+        let mut existing = self.tbl.get(&symbol);
         if existing.is_none() {
             self.tbl.insert(symbol, Vec::new());
         }
-        self.tbl.get_mut(&symbol).unwrap().push(v);
+        existing.as_mut().unwrap().push(v); // unwrap is safe since we just added it if it didn't exist!
         self.stack.push(StackSymbol::Sym(symbol));
     }
 
@@ -56,6 +56,7 @@ impl<T> SymbolTable<T> {
                 }
                 StackSymbol::Sym(s) => {
                     self.stack.pop();
+                    // it is a bug if the stack and the symbol table goes out of alignment.
                     self.tbl.get_mut(&s).unwrap().pop();
                 }
             }
