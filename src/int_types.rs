@@ -1,1 +1,1 @@
-pub type tiger_int = i32;
+pub type TigerInt = i32;

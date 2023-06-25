@@ -3,6 +3,7 @@ use crate::{
     ir::{IrStm}
 };
 
+#[derive(Clone)]
 pub enum Access {
     // FP + offset
     InFrame(i64),
@@ -10,7 +11,7 @@ pub enum Access {
     InReg(Temp)
 }
 
-pub struct Escapes(bool);
+pub type Escapes = bool;
 
 pub trait Frame {
     fn new(name: Label, formals: Vec<Escapes>) -> Self where Self:Sized; // Rust thing, to exclude this static fn from being considered for trait object vtable inclusion, so that `Frame` can be used as trait objects.

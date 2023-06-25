@@ -6,9 +6,10 @@ use crate::{
     absyn::{Dec, Exp, Field, Fundec, Oper, Ty, TyDec, Var},
     symbol::{Interner, Symbol},
     symtab::SymbolTable,
-    temp::{Label, LabelAuthority, Temp, TempAuthority},
+    temp::{GenTemporary, Label, Temp},
     translate,
-    translate::{TrExp, ERROR_TR_EXP},
+    frame::Frame,
+    translate::{Level, TrExp, ERROR_TR_EXP},
 };
 use strum_macros::Display;
 
@@ -19,17 +20,15 @@ pub struct TypeCheckingContext<'a> {
     has_err: bool,
     symbols: Interner,
     input: &'a str,
-    ta: TempAuthority,
-    la: LabelAuthority,
+    gen_temp_label: GenTemporary,
 }
 
 impl<'a> TypeCheckingContext<'a> {
     fn new(input: &'a str) -> Self {
-        let ta = TempAuthority::new();
-        let mut la = LabelAuthority::new();
+        let mut gen_temp_label = GenTemporary::new();
         let mut symbols = Interner::new();
         let type_env = Self::base_env_type_env(&mut symbols);
-        let varfun_env = Self::base_varfun_env(&mut symbols, &mut la);
+        let varfun_env = Self::base_varfun_env(&mut symbols, &mut gen_temp_label);
         Self {
             next_array_record_ord: NonZeroUsize::MIN,
             type_env: type_env,
@@ -37,8 +36,7 @@ impl<'a> TypeCheckingContext<'a> {
             has_err: false,
             symbols: symbols,
             input: input,
-            ta: ta,
-            la: la,
+            gen_temp_label: gen_temp_label,
         }
     }
 
@@ -59,12 +57,13 @@ impl<'a> TypeCheckingContext<'a> {
         res
     }
 
-    fn base_varfun_env(pool: &mut Interner, la: &mut LabelAuthority) -> SymbolTable<EnvEntry> {
+    fn base_varfun_env(pool: &mut Interner, la: &mut GenTemporary) -> SymbolTable<EnvEntry> {
         let mut res = SymbolTable::empty();
         res.begin_scope();
         res.enter(
             pool.intern("print"),
             EnvEntry::FunEntry {
+                level: Level::outermost(),
                 formals: Rc::new(vec![Type::String]),
                 result: Type::String,
                 label: la.new_label(pool),
@@ -73,6 +72,7 @@ impl<'a> TypeCheckingContext<'a> {
         res.enter(
             pool.intern("flush"),
             EnvEntry::FunEntry {
+                level: Level::outermost(),
                 formals: Rc::new(vec![]),
                 result: Type::Unit,
                 label: la.new_label(pool),
@@ -81,6 +81,7 @@ impl<'a> TypeCheckingContext<'a> {
         res.enter(
             pool.intern("getchar"),
             EnvEntry::FunEntry {
+                level: Level::outermost(),
                 formals: Rc::new(vec![]),
                 result: Type::String,
                 label: la.new_label(pool),
@@ -89,6 +90,7 @@ impl<'a> TypeCheckingContext<'a> {
         res.enter(
             pool.intern("ord"),
             EnvEntry::FunEntry {
+                level: Level::outermost(),
                 formals: Rc::new(vec![Type::String]),
                 result: Type::Int,
                 label: la.new_label(pool),
@@ -97,6 +99,7 @@ impl<'a> TypeCheckingContext<'a> {
         res.enter(
             pool.intern("chr"),
             EnvEntry::FunEntry {
+                level: Level::outermost(),
                 formals: Rc::new(vec![Type::Int]),
                 result: Type::String,
                 label: la.new_label(pool),
@@ -105,6 +108,7 @@ impl<'a> TypeCheckingContext<'a> {
         res.enter(
             pool.intern("size"),
             EnvEntry::FunEntry {
+                level: Level::outermost(),
                 formals: Rc::new(vec![Type::String]),
                 result: Type::Int,
                 label: la.new_label(pool),
@@ -113,6 +117,7 @@ impl<'a> TypeCheckingContext<'a> {
         res.enter(
             pool.intern("substring"),
             EnvEntry::FunEntry {
+                level: Level::outermost(),
                 formals: Rc::new(vec![Type::String, Type::Int, Type::Int]),
                 result: Type::String,
                 label: la.new_label(pool),
@@ -121,6 +126,7 @@ impl<'a> TypeCheckingContext<'a> {
         res.enter(
             pool.intern("concat"),
             EnvEntry::FunEntry {
+                level: Level::outermost(),
                 formals: Rc::new(vec![Type::String, Type::String]),
                 result: Type::String,
                 label: la.new_label(pool),
@@ -129,6 +135,7 @@ impl<'a> TypeCheckingContext<'a> {
         res.enter(
             pool.intern("not"),
             EnvEntry::FunEntry {
+                level: Level::outermost(),
                 formals: Rc::new(vec![Type::Int]),
                 result: Type::Int,
                 label: la.new_label(pool),
@@ -137,6 +144,7 @@ impl<'a> TypeCheckingContext<'a> {
         res.enter(
             pool.intern("exit"),
             EnvEntry::FunEntry {
+                level: Level::outermost(),
                 formals: Rc::new(vec![Type::Int]),
                 result: Type::Unit,
                 label: la.new_label(pool),
@@ -202,17 +210,24 @@ type ExpTy = (TrExp, Type);
 #[derive(Clone, Display)]
 enum EnvEntry {
     VarEntry {
+        access: translate::Access,
         ty: Type,
         readonly: bool,
     },
     FunEntry {
+        level: Rc<Level>,
         label: Label,
         formals: Rc<Vec<Type>>,
         result: Type,
     },
 }
 
-fn trans_exp(ctx: &mut TypeCheckingContext, n: &Exp, break_label: Option<Label>) -> ExpTy {
+fn trans_exp<T: Frame>(
+    ctx: &mut TypeCheckingContext,
+    level: Rc<Level>,
+    n: &Exp,
+    break_label: Option<Label>,
+) -> ExpTy {
     match n {
         Exp::OpExp {
             left,
@@ -220,8 +235,8 @@ fn trans_exp(ctx: &mut TypeCheckingContext, n: &Exp, break_label: Option<Label>)
             oper,
             pos,
         } => {
-            let (lhs_ir, lhs_ty) = trans_exp(ctx, left, break_label);
-            let (rhs_ir, rhs_ty) = trans_exp(ctx, right, break_label);
+            let (lhs_ir, lhs_ty) = trans_exp::<T>(ctx, level, left, break_label);
+            let (rhs_ir, rhs_ty) = trans_exp::<T>(ctx, level, right, break_label);
 
             match oper {
                 Oper::PlusOp | Oper::MinusOp | Oper::TimesOp | Oper::DivideOp => {
@@ -305,7 +320,7 @@ fn trans_exp(ctx: &mut TypeCheckingContext, n: &Exp, break_label: Option<Label>)
         }
         Exp::NilExp => (translate::nil_exp(), Type::Nil),
         Exp::IntExp(i) => (translate::int_exp(*i), Type::Int),
-        Exp::VarExp(v) => trans_var(ctx, v, break_label),
+        Exp::VarExp(v) => trans_var::<T>(ctx, level, v, break_label),
         Exp::StringExp(s, pos) => (translate::string_exp(ctx.get_span(s)), Type::String),
         Exp::CallExp { func, args, pos } => {
             let sym = ctx.intern(func);
@@ -320,9 +335,7 @@ fn trans_exp(ctx: &mut TypeCheckingContext, n: &Exp, break_label: Option<Label>)
                     (ERROR_TR_EXP, Type::Error)
                 }
                 Some(EnvEntry::FunEntry {
-                    formals,
-                    result,
-                    label,
+                    formals, result, ..
                 }) => {
                     if formals.len() != args.len() {
                         ctx.flag_error_with_msg(&format!(
@@ -336,7 +349,8 @@ fn trans_exp(ctx: &mut TypeCheckingContext, n: &Exp, break_label: Option<Label>)
                         let mut arg_irs = Vec::new();
 
                         for i in 0..args.len() {
-                            let (arg_ir, arg_ty) = trans_exp(ctx, args.get(i).unwrap(), None);
+                            let (arg_ir, arg_ty) =
+                                trans_exp::<T>(ctx, level, args.get(i).unwrap(), None);
                             if matches!(arg_ty, Type::Error)
                                 || matches!(formals.get(i).unwrap(), Type::Error)
                             {
@@ -397,7 +411,7 @@ fn trans_exp(ctx: &mut TypeCheckingContext, n: &Exp, break_label: Option<Label>)
                                 if *decl_sym == site_sym {
                                     found = true;
                                     let (site_ir, site_ty) =
-                                        trans_exp(ctx, site_typ_exp, break_label);
+                                        trans_exp::<T>(ctx, level, site_typ_exp, break_label);
                                     if !site_ty.compatible_with(decl_typ) {
                                         ctx.flag_error();
                                         if !matches!(Type::Error, site_ty) {
@@ -443,7 +457,7 @@ fn trans_exp(ctx: &mut TypeCheckingContext, n: &Exp, break_label: Option<Label>)
             let mut ret_val = Type::Unit;
             let mut exp_irs = Vec::new();
             for exp in exps {
-                let (exp_ir, exp_ty) = trans_exp(ctx, exp, break_label);
+                let (exp_ir, exp_ty) = trans_exp::<T>(ctx, level, exp, break_label);
                 ret_val = exp_ty;
                 exp_irs.push(exp_ir);
             }
@@ -454,8 +468,8 @@ fn trans_exp(ctx: &mut TypeCheckingContext, n: &Exp, break_label: Option<Label>)
         }
         Exp::AssignExp { var, exp, pos } => {
             // nil can be assigned to record types.
-            let (dst_ir, dst_ty) = trans_var(ctx, var, break_label);
-            let (src_ir, src_ty) = trans_exp(ctx, exp, break_label);
+            let (dst_ir, dst_ty) = trans_var::<T>(ctx, level, var, break_label);
+            let (src_ir, src_ty) = trans_exp::<T>(ctx, level, exp, break_label);
 
             if matches!(dst_ty, Type::Error) || matches!(src_ty, Type::Error) {
                 (ERROR_TR_EXP, Type::Error)
@@ -489,7 +503,7 @@ fn trans_exp(ctx: &mut TypeCheckingContext, n: &Exp, break_label: Option<Label>)
                                 ctx.flag_error_with_msg("Cannot assign to a function");
                                 (ERROR_TR_EXP, Type::Error)
                             }
-                            Some(EnvEntry::VarEntry { ty, readonly }) => {
+                            Some(EnvEntry::VarEntry { ty, readonly, .. }) => {
                                 if readonly {
                                     ctx.flag_error_with_msg("Cannot assign to readonly location");
                                     (ERROR_TR_EXP, Type::Error)
@@ -511,7 +525,7 @@ fn trans_exp(ctx: &mut TypeCheckingContext, n: &Exp, break_label: Option<Label>)
             els,
             pos,
         } => {
-            let (cond_ir, test_ty) = trans_exp(ctx, test.as_ref(), break_label);
+            let (cond_ir, test_ty) = trans_exp::<T>(ctx, level, test.as_ref(), break_label);
             if !matches!(test_ty, Type::Int) {
                 ctx.flag_error_with_msg(&format!(
                     "Conditionals must evaluate to INT but got {} here",
@@ -519,7 +533,7 @@ fn trans_exp(ctx: &mut TypeCheckingContext, n: &Exp, break_label: Option<Label>)
                 ));
                 (ERROR_TR_EXP, Type::Error)
             } else {
-                let (then_ir, then_ty) = trans_exp(ctx, then.as_ref(), break_label);
+                let (then_ir, then_ty) = trans_exp::<T>(ctx, level, then.as_ref(), break_label);
                 if els.is_none() {
                     if !matches!(then_ty, Type::Unit) {
                         ctx.flag_error_with_msg(&format!(
@@ -531,7 +545,8 @@ fn trans_exp(ctx: &mut TypeCheckingContext, n: &Exp, break_label: Option<Label>)
                         (translate::conditional(cond_ir, then_ir, None), then_ty)
                     }
                 } else {
-                    let (else_ir, else_ty) = trans_exp(ctx, els.as_ref().unwrap(), break_label);
+                    let (else_ir, else_ty) =
+                        trans_exp::<T>(ctx, level, els.as_ref().unwrap(), break_label);
                     if !else_ty.compatible_with(&then_ty) {
                         ctx.flag_error_with_msg(&format!("if-then-else branches have incompatible types: then has type {}, else has type {}", then_ty, else_ty));
                         (ERROR_TR_EXP, Type::Error)
@@ -545,16 +560,16 @@ fn trans_exp(ctx: &mut TypeCheckingContext, n: &Exp, break_label: Option<Label>)
             }
         }
         Exp::WhileExp { test, body, pos } => {
-            let while_done_label = Some(ctx.la.new_label(&mut ctx.symbols));
+            let while_done_label = Some(ctx.gen_temp_label.new_label(&mut ctx.symbols));
             // break is legal in expressions. so if they try to break in the condition
             // of a while loop, it is interpreted as breaking to the end of this while loop,
             // since logically, the while condition is re-evaluated each iteration.
-            let (cond_ir, cond_ty) = trans_exp(ctx, test, while_done_label);
+            let (cond_ir, cond_ty) = trans_exp::<T>(ctx, level, test, while_done_label);
             if !matches!(cond_ty, Type::Int) {
                 ctx.flag_error_with_msg("while condition must be of Int");
                 (ERROR_TR_EXP, Type::Error)
             } else {
-                let (body_ir, body_ty) = trans_exp(ctx, body, while_done_label);
+                let (body_ir, body_ty) = trans_exp::<T>(ctx, level, body, while_done_label);
                 match body_ty {
                     Type::Unit => (
                         translate::while_loop(cond_ir, body_ir, while_done_label.unwrap()),
@@ -575,10 +590,10 @@ fn trans_exp(ctx: &mut TypeCheckingContext, n: &Exp, break_label: Option<Label>)
             body,
             pos,
         } => {
-            let for_done_label = Some(ctx.la.new_label(&mut ctx.symbols));
+            let for_done_label = Some(ctx.gen_temp_label.new_label(&mut ctx.symbols));
             // if "break" happens in evaluating the for loop params, will just break the loop itself.
-            let (lo_ir, lo_ty) = trans_exp(ctx, lo, for_done_label);
-            let (hi_ir, hi_ty) = trans_exp(ctx, hi, for_done_label);
+            let (lo_ir, lo_ty) = trans_exp::<T>(ctx, level, lo, for_done_label);
+            let (hi_ir, hi_ty) = trans_exp::<T>(ctx, level, hi, for_done_label);
             let mut err = false;
             if !matches!(lo_ty, Type::Int) {
                 err = true;
@@ -592,15 +607,17 @@ fn trans_exp(ctx: &mut TypeCheckingContext, n: &Exp, break_label: Option<Label>)
             ctx.varfun_env.begin_scope();
 
             let sym = ctx.intern(var);
-            // TODO Level stuff, refer to nim code
+            let acc = level.alloc_local(*escape);
+
             ctx.varfun_env.enter(
                 sym,
                 EnvEntry::VarEntry {
+                    access: acc,
                     ty: Type::Int,
                     readonly: true,
                 },
             );
-            let (body_ir, body_ty) = trans_exp(ctx, body, for_done_label);
+            let (body_ir, body_ty) = trans_exp::<T>(ctx, level, body, for_done_label);
             ctx.varfun_env.end_scope();
 
             match body_ty {
@@ -634,11 +651,11 @@ fn trans_exp(ctx: &mut TypeCheckingContext, n: &Exp, break_label: Option<Label>)
 
             let mut var_init_irs = Vec::new();
             for dec in decs {
-                if let Some(var_init_ir) = trans_dec(ctx, dec) {
+                if let Some(var_init_ir) = trans_dec::<T>(ctx, level, dec, break_label) {
                     var_init_irs.push(var_init_ir);
                 }
             }
-            let (let_body_ir, let_body_ty) = trans_exp(ctx, body, break_label);
+            let (let_body_ir, let_body_ty) = trans_exp::<T>(ctx, level, body, break_label);
 
             ctx.type_env.end_scope();
             ctx.varfun_env.end_scope();
@@ -662,7 +679,7 @@ fn trans_exp(ctx: &mut TypeCheckingContext, n: &Exp, break_label: Option<Label>)
             } else {
                 match arr_ty_opt.as_ref().unwrap() {
                     Type::Array(ele_ty, b) => {
-                        let (init_val_ir, init_val_ty) = trans_exp(ctx, init, break_label);
+                        let (init_val_ir, init_val_ty) = trans_exp::<T>(ctx, level, init, break_label);
                         if !init_val_ty.compatible_with(&**ele_ty) {
                             ctx.flag_error_with_msg(&format!(
                                 "array initialized with type {} but declared with type {}",
@@ -686,7 +703,12 @@ fn trans_exp(ctx: &mut TypeCheckingContext, n: &Exp, break_label: Option<Label>)
     }
 }
 
-fn trans_var(ctx: &mut TypeCheckingContext, var: &Var, break_label: Option<Label>) -> ExpTy {
+fn trans_var<T: Frame>(
+    ctx: &mut TypeCheckingContext,
+    level: Rc<Level>,
+    var: &Var,
+    break_label: Option<Label>,
+) -> ExpTy {
     match var {
         Var::SimpleVar(span, pos) => {
             let sym = ctx.intern(span);
@@ -709,14 +731,14 @@ fn trans_var(ctx: &mut TypeCheckingContext, var: &Var, break_label: Option<Label
                     ));
                     (ERROR_TR_EXP, Type::Error)
                 }
-                Some(EnvEntry::VarEntry { ty, readonly }) => match ty {
+                Some(EnvEntry::VarEntry { ty, readonly, .. }) => match ty {
                     Type::Error => (ERROR_TR_EXP, Type::Error),
                     _ => (translate::simple_var(), ty.clone()),
                 },
             }
         }
         Var::FieldVar(lhs_var, rhs_span, pos) => {
-            let (lhs_var_ir, lhs_var_ty) = trans_var(ctx, lhs_var, break_label);
+            let (lhs_var_ir, lhs_var_ty) = trans_var::<T>(ctx, level, lhs_var, break_label);
             match lhs_var_ty {
                 Type::Record(field_types, ord) => {
                     let sym = ctx.intern(rhs_span);
@@ -760,10 +782,10 @@ fn trans_var(ctx: &mut TypeCheckingContext, var: &Var, break_label: Option<Label
             }
         }
         Var::SubscriptVar(deref_var, index_exp, pos) => {
-            let (lhs_ir, lhs_ty) = trans_var(ctx, deref_var, break_label);
+            let (lhs_ir, lhs_ty) = trans_var::<T>(ctx, level, deref_var, break_label);
             match lhs_ty {
                 Type::Array(ele_ty, ord) => {
-                    let (idx_ir, idx_ty) = trans_exp(ctx, index_exp, break_label);
+                    let (idx_ir, idx_ty) = trans_exp::<T>(ctx, level, index_exp, break_label);
                     match idx_ty {
                         Type::Int => {
                             let sym = ctx.symbols.intern("exit");
@@ -772,11 +794,7 @@ fn trans_var(ctx: &mut TypeCheckingContext, var: &Var, break_label: Option<Label
                                 None => {
                                     panic!("bug in impl, missing the built-in exit procedure");
                                 }
-                                Some(EnvEntry::FunEntry {
-                                    formals,
-                                    result,
-                                    label,
-                                }) => (
+                                Some(EnvEntry::FunEntry { label, .. }) => (
                                     translate::subscript_var(lhs_ir, idx_ir, *label),
                                     (**ele_ty).clone(),
                                 ),
@@ -804,7 +822,7 @@ fn trans_var(ctx: &mut TypeCheckingContext, var: &Var, break_label: Option<Label
     }
 }
 
-fn ty_to_type(ctx: &mut TypeCheckingContext, ty: Ty) -> Type {
+fn ty_to_type(ctx: &mut TypeCheckingContext, ty: &Ty) -> Type {
     match ty {
         Ty::NameTy(span, pos) => {
             let sym = ctx.intern(&span);
@@ -834,7 +852,7 @@ fn ty_to_type(ctx: &mut TypeCheckingContext, ty: Ty) -> Type {
             let mut record_field_types = Vec::new();
             let mut err = false;
 
-            for field in &fields {
+            for field in fields {
                 // can't use get_span because it makes borrow checker think we have
                 // immutable ref to ctx and we later call a mutation method on ctx,
                 // but somehow accessing a field of ctx is okay. ¯_(ツ)_/¯
@@ -869,19 +887,185 @@ fn ty_to_type(ctx: &mut TypeCheckingContext, ty: Ty) -> Type {
     }
 }
 
-fn trans_dec(ctx: &mut TypeCheckingContext, dec: &Dec) -> Option<TrExp> {
+fn resolve_name_type(ctx: &mut TypeCheckingContext, t: &Type) {
+    fn resolve_and_update(s: Symbol, ctx: &mut TypeCheckingContext) {
+        let resolved = ctx.type_env.look(s);
+        if resolved.is_none() {
+            ctx.flag_error_with_msg(&format!(
+                "{} is undeclared type",
+                ctx.symbols.resolve(&s).unwrap()
+            ));
+        } else {
+            ctx.type_env.enter(s, resolved.unwrap().clone());
+        }
+    }
+    // Mutates the type_env and updates the mapping for the Name types.
+    match t {
+        Type::Name(s) => {
+            resolve_and_update(*s, ctx);
+        }
+        Type::Array(ty, _) => match **ty.as_ref() {
+            Type::Name(s) => {
+                resolve_and_update(s, ctx);
+            }
+            _ => {}
+        },
+        Type::Record(field_types, _) => {
+            for (_, typ) in &**field_types {
+                match typ {
+                    Type::Name(s) => {
+                        resolve_and_update(*s, ctx);
+                    }
+                    _ => {}
+                }
+            }
+        }
+        _ => {}
+    }
+}
+
+fn trans_dec<T: Frame>(
+    ctx: &mut TypeCheckingContext,
+    level: Rc<Level>,
+    dec: &Dec,
+    break_label: Option<Label>,
+) -> Option<TrExp> {
     match dec {
-        Dec::FunctionDec(fundecs) => {}
+        Dec::FunctionDec(fundecs) => {
+            // no two functions in a sequence of mutually recursive functions
+            // may have the same name.
+            // functions may be recursive. mutually recursive functions and procs
+            // are declared by a seq of conseq func declarations with no intervening
+            // type or var decls.
+            let mut seen = HashMap::new();
+
+            // first pass: add the fun entry
+            for fundec in fundecs {
+                let name = ctx.get_span(&fundec.name);
+                if seen.contains_key(name) {
+                    ctx.flag_error_with_msg(&format!("{} is declared more than once in a sequence of mutually recursive functions", name));
+                } else {
+                    seen.insert(name, ());
+                }
+
+                let ret_ty = if fundec.result.is_none() {
+                    Type::Unit
+                } else {
+                    let (span, _) = fundec.result.unwrap();
+                    let sym = ctx.intern(&span);
+                    let result_type_opt = ctx.type_env.look(sym);
+                    if result_type_opt.is_none() {
+                        Type::Error
+                    } else {
+                        result_type_opt.unwrap().clone()
+                    }
+                };
+
+                let mut formal_types = Vec::new();
+                let mut escapes = Vec::new();
+                for field in fundec.params {
+                    let name = ctx.intern(&field.name);
+                    let field_type_opt = ctx.type_env.look(name);
+                    match field_type_opt {
+                        None => {
+                            formal_types.push(Type::Error);
+                        }
+                        Some(ty) => {
+                            formal_types.push(ty.clone());
+                        }
+                    }
+                    escapes.push(field.escape);
+                }
+                let new_level =
+                    Level::new_level::<T>(level, escapes, &mut ctx.gen_temp_label, &mut ctx.symbols);
+                let funentry = EnvEntry::FunEntry {
+                    level: new_level,
+                    label: level.get_label().unwrap(), // it is a bug if this does not have a label.
+                    formals: Rc::new(formal_types),
+                    result: ret_ty,
+                };
+                ctx.varfun_env.enter(ctx.intern(&fundec.name), funentry);
+            }
+
+            // second pass
+            for fundec in fundecs {
+                let sym = ctx.intern(&fundec.name);
+                let fun_entry = ctx.varfun_env.look(sym);
+                ctx.varfun_env.begin_scope();
+                match fun_entry {
+                    None | Some(EnvEntry::VarEntry { .. }) => {
+                        panic!(
+                            "Bug in impl. Expected FunEntry, which should have been just interned."
+                        );
+                    }
+                    Some(EnvEntry::FunEntry {
+                        level,
+                        label,
+                        formals,
+                        result,
+                    }) => {
+                        let formals_access = level.as_ref().formals();
+                        for i in 0..fundec.params.len() {
+                            let var_entry = EnvEntry::VarEntry {
+                                ty: formals[i],
+                                readonly: true,
+                                access: formals_access[i]
+                            };
+                            let sym = ctx.intern(&fundec.params[i].name);
+                            ctx.varfun_env.enter(sym, var_entry);
+                        }
+
+                        // the break label is not inherited in the function call
+                        let (fun_body_ir, fun_body_ty) = trans_exp::<T>(ctx, *level, &*fundec.body, None);
+                        if !fun_body_ty.compatible_with(result)
+                            && !matches!(Type::Error, fun_body_ty)
+                            && !matches!(Type::Error, result)
+                        {
+                            ctx.flag_error_with_msg(&format!(
+                                "expected return type {} for function but got {}",
+                                result, fun_body_ty
+                            ));
+                        }
+                        // TODO deal with the fragments crap when it comes to that
+                        translate::proc_entry_exit(*level, fun_body_ir);
+                    }
+                }
+                ctx.varfun_env.end_scope();
+            }
+            None
+        }
         Dec::VarDec {
             name,
             escape,
             typ,
             init,
             pos,
-        } => {}
+        } => {
+            let sym = ctx.intern(name);
+            let name = &ctx.input[name.start()..name.end()];
+            let (init_ir, init_ty) = trans_exp::<T>(ctx, level, init, break_label);
+            match typ {
+                None => {
+                    if matches!(Type::Nil, init_ty) {
+                        ctx.flag_error_with_msg(&format!("Variable {} is declared with unknown type and initiated with nil. Fix by using the long form, e.g. var {} : <your-type> = ...", name, name));
+                    } else {
+                        // no return type specified, infer it
+                        let acc = level.alloc_local(*escape);
+                        ctx.varfun_env.enter(
+                            sym,
+                            EnvEntry::VarEntry {
+                                ty: init_ty,
+                                readonly: false,
+                                access: acc
+                            },
+                        );
+                    }
+                }
+            }
+            Some(init_ir)
+        }
 
         Dec::TypeDec(tydecs) => {
-
             // spec from appendix:
             // mutually recursive types are declared by a conseq seq of type dec
             // without intervening value or func dec. Each recursion cycle must
@@ -890,45 +1074,59 @@ fn trans_dec(ctx: &mut TypeCheckingContext, dec: &Dec) -> Option<TrExp> {
             // no two types in a seq of mutually recursive types may have the
             // same name.
             //
-            //
-            // var seen: HashSet[Symbol]
-            // var tofixup: seq[(Type, pos)]
-            // for dec in d.decs:
-            //     if dec.tdname in seen:
-            //         error hasErr, dec.tdpos, "the type name ", dec.tdname.name, " is declared more than once in a sequence of mutually recursive types, which is illegal."
-            //         tenv.enter dec.tdname, ErrorTy
-            //     else:
-            //         seen.incl dec.tdname
-            //         let ty = transTy(hasErr, tenv, dec.tdty)
-            //         tenv.enter dec.tdname, ty
-            //         tofixup.add (ty, dec.tdpos)
-            // devEcho "tofixup: ", $tofixup
-            // # cycle detection: if it's all NameT back to the dec it's bad.
-            // for dec in d.decs:
-            //     seen.clear # reuse.
-            //     var ty = (tenv.look dec.tdname).get
-            //     seen.incl dec.tdname
-            //     while ty.kind == NameT:
-            //         if ty.s in seen:
-            //             error hasErr, dec.tdpos,
-            //                     "circular type definition detected for type ",
-            //                     dec.tdname.name
-            //             break
-            //         seen.incl ty.s
-            //         ty = (tenv.look ty.s).get
-            // # now fix up the stuff we just added.
-            // for (tofix, pos) in tofixup.mitems():
-            //     fixup(hasErr, tenv, tofix, pos)
-            // devEcho "after fixup ", $tofixup
+
+            let mut seen = HashMap::new();
+            let mut to_fix_up = Vec::new();
+
+            for dec in tydecs {
+                let name = ctx.get_span(&dec.name);
+                let sym = ctx.intern(&dec.name);
+                if seen.contains_key(&sym) {
+                    ctx.flag_error_with_msg(&format!(
+                        "{} is declared more than once in a sequence of mutually recursive types.",
+                        name
+                    ));
+                    ctx.type_env.enter(sym, Type::Error);
+                } else {
+                    seen.insert(sym, ());
+                    let ty = ty_to_type(ctx, &*dec.ty);
+                    ctx.type_env.enter(sym, ty);
+                    to_fix_up.push((ty, dec.pos));
+                }
+            }
+            // Cycle detection. A cycle happens if we can follow 1 or more Type::Name to an existing type.
+            for dec in tydecs {
+                let name = ctx.get_span(&dec.name);
+                seen.clear(); // reuse
+                let sym = ctx.intern(&dec.name);
+                let mut ty = ctx.type_env.look(sym).unwrap(); // safe because we updated type_env in above loop.
+                seen.insert(sym, ());
+                while let Type::Name(s) = ty {
+                    if seen.contains_key(s) {
+                        ctx.flag_error_with_msg(&format!(
+                            "circular type definition detected for type {}",
+                            name
+                        ));
+                        break;
+                    }
+                    seen.insert(*s, ());
+                    ty = ctx.type_env.look(*s).unwrap();
+                }
+            }
+            // Fix up the thing by eliminating Type::Name
+            for (to_fix, pos) in to_fix_up {
+                resolve_name_type(ctx, &to_fix);
+            }
+            None
         }
     }
-    todo!()
 }
 
-pub fn translate(input: &str, ast: &Exp) -> Result<TrExp, ()> {
+pub fn translate<T: Frame>(input: &str, ast: &Exp) -> Result<TrExp, ()> {
     let mut ctx = TypeCheckingContext::new(input);
 
-    let (exp, ty) = trans_exp(&mut ctx, ast, None);
+    let main_level = Level::new_level::<T>(Level::outermost(), Vec::new(), &mut ctx.gen_temp_label, &mut ctx.symbols);
+    let (exp, ty) = trans_exp::<T>(&mut ctx, main_level, ast, None);
     match ty {
         Type::Error => Err(()),
         _ => Ok(exp),
