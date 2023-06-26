@@ -1196,9 +1196,10 @@ pub fn translate<T: Frame + 'static>(input: &str, ast: &Exp) -> Result<TrExp, ()
         &mut ctx.symbols,
     );
     let (exp, ty) = trans_exp::<T>(&mut ctx, main_level, ast, None);
-    match ty {
-        Type::Error => Err(()),
-        _ => Ok(exp),
+    if matches!(Type::Error, ty) {
+        Err(())
+    } else {
+        Ok(exp)
     }
 }
 
@@ -1209,7 +1210,23 @@ mod tests {
         frame,
         frame::{Escapes, Frame},
         symbol::Interner,
+        tiger_y::parse,
     };
+
+    use lrlex::lrlex_mod;
+    use lrpar::lrpar_mod;
+    use std::{
+        fs,
+        fs::{
+            DirEntry
+        }
+    };
+    use tiger_lang::absyn;
+    use std::panic;
+
+    lrlex_mod!("tiger.l");
+    lrpar_mod!("tiger.y");
+
     struct TestFrame;
 
     impl Frame for TestFrame {
@@ -1227,103 +1244,80 @@ mod tests {
         }
     }
 
+    fn test_input_helper(input: &str, is_good: bool) {
+        let lexerderef = tiger_l::lexerdef();
+        let lexer = lexerderef.lexer(input);
+        let (res, errs) = tiger_y::parse(&lexer);
+        assert!(errs.len() == 0);
+        assert!(res.is_some());
+        assert!(res.as_ref().unwrap().is_ok());
+        match (is_good, super::translate::<TestFrame>(input, &res.unwrap().unwrap())) {
+            (false, Ok(..)) => {
+                panic!("{} type checks but expected not to", input);
+            }
+            (true, Err(..)) => {
+                panic!("{} fails to type check but was expected to", input);
+            }
+            _ => {}
+        }
+    }
+
+    fn test_is_good(input: &str) {
+        test_input_helper(input, true);
+    }
+
+    fn test_is_bad(input: &str) {
+        test_input_helper(input, false);
+    }
+
+    fn test_file(path: DirEntry, is_good: bool) {
+        let input = fs::read_to_string(path.path()).unwrap();
+        let res = panic::catch_unwind(||{
+            test_input_helper(&input, is_good);
+        });
+        match (is_good, res) {
+            (true, Err(..)) => {
+                panic!("for path {:?}, expect to pass type checking but actually failed.", path);
+            }
+            (false, Ok(..)) => {
+                panic!("for path {:?}, expect to fail type checking but actually passed.", path);
+            }
+            (_, _) => {}
+        }
+    }
+
     #[test]
-    fn todotodo() {}
+    fn appel_good_programs() {
+        let paths = fs::read_dir("tests/tiger_programs/semant/good/").unwrap();
+
+        for path in paths {
+            test_file(path.unwrap(), true);
+        }
+    }
+
+    #[test]
+    fn appel_bad_programs() {
+        let paths = fs::read_dir("tests/tiger_programs/semant/bad/").unwrap();
+
+        for path in paths {
+            test_file(path.unwrap(), false);
+        }
+    }
+
+    #[test]
+    fn var_assign_nil_is_bad() {
+        let source = r"
+            let
+            var a := nil
+            in 1
+            end
+        ";
+        test_input_helper(source, false);
+    }
+
 }
 
-// proc newFrame*(x: typedesc[TestFrame], name: Label, formals: seq[Escape]): TestFrame =
-//     result.name = name
-//     for escape in formals:
-//         if escape:
-//             result.formals.add frame.Access(kind: InFrame, offset: 42)
-//         else:
-//             result.formals.add frame.Access(kind: InReg, reg: newTemp())
 
-// proc name*(f: TestFrame): Label =
-//     return f.name
-
-// proc formals*(f: TestFrame): seq[frame.Access] =
-//     return f.formals
-
-// proc allocLocal*(vf: var TestFrame, escapes: Escape): frame.Access =
-//     frame.Access(kind:InReg, reg: newTemp())
-
-// proc externalCall*(x: typedesc[TestFrame], y: string, z: seq[IrExp]) : IrExp =
-//     Const(42)
-
-// proc FP*(x: typedesc[TestFrame]) : temp.Temp =
-//     return temp.newTemp()
-
-// proc wordSize*(x: typedesc[TestFrame]) : int =
-//     return 42
-
-// proc exp*(x: typedesc[TestFrame], a: frame.Access, ir: IrExp) : IrExp =
-//     Const(42)
-
-// proc procEntryExit1*(f: TestFrame, s: IrStm) : IrStm = s
-
-// test "sanity check TestFrame is Frame":
-//     doAssert TestFrame is Frame
-
-// proc testInput(input: string, expectGood: bool) =
-//     let astOpt = parseString(input)
-//     doAssert astOpt.isSome
-//     let texpOpt = transProg[TestFrame](astOpt.get)
-//     if expectGood:
-//         doAssert texpOpt.isSome
-//     else:
-//         doAssert texpOpt.isNone
-
-// proc testInputIsGood(input: string) =
-//     testInput input, true
-
-// proc testInputIsBad(input: string) =
-//     testInput input, false
-
-// proc testBad(input: string) =
-//     let astOpt = parseString(input)
-//     doAssert astOpt.isSome
-//     let texpOpt = transProg[TestFrame](astOpt.get)
-//     doAssert texpOpt.isNone
-
-// proc testFile(f: string, expectGood: bool) =
-//     echo "\ntesting with input: ", f
-//     var input = readFile(f)
-//     let astOpt = parseString(input)
-//     doAssert astOpt.isSome
-//     let texpOpt = transProg[TestFrame](astOpt.get)
-//     if expectGood:
-//         doAssert texpOpt.isSome, f
-//     else:
-//         doAssert texpOpt.isNone, f
-
-// test "appel tiger test programs good":
-//     for f in walkFiles("tests/tiger_test_programs/semant/good/*"):
-//         testFile f, true
-
-// test "appel tiger test programs bad":
-//     for f in walkFiles("tests/tiger_test_programs/semant/bad/*"):
-//         testFile f, false
-
-// test "Type ==":
-//     var x, y: semant.Type
-//     x = Type(kind: ErrorT)
-//     y = Type(kind: ErrorT)
-//     check x == y
-
-// test "$ Symtab[Type]":
-//     var st = newSymtab[semant.Type]()
-//     st.beginScope()
-//     for i in 0..100:
-//         st.enter symbol $i, semant.Type(kind: ErrorT)
-//     discard $st
-
-// test "$ Symtab[EnvEntry]":
-//     var st = newSymtab[EnvEntry[TestFrame]]()
-//     st.beginScope()
-//     for i in 0..100:
-//         st.enter symbol $i, EnvEntry[TestFrame](kind: VarEntry, ty: Type(kind: ErrorT))
-//     discard $st
 
 // test "var a := nil fails type check":
 //     let source = """let
@@ -1758,7 +1752,7 @@ mod tests {
 //         x() := t
 //     end
 //     """
-//     let astOpt = parseString(source)
+//     let astOpt = parseString(source)VarDec
 //     # it doesn't let you assign to func call results.
 //     check astOpt.isNone
 
