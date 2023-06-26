@@ -3,10 +3,10 @@ use std::num::NonZeroUsize;
 
 use crate::symbol::{Interner, Symbol};
 
-#[derive(Eq, PartialEq, Copy, Clone, Hash)]
+#[derive(Eq, PartialEq, Copy, Clone, Hash, Debug)]
 pub struct Temp(NonZeroUsize);
 
-#[derive(Eq, PartialEq, Copy, Clone, Hash)]
+#[derive(Eq, PartialEq, Copy, Clone, Hash, Debug)]
 pub struct Label(Symbol);
 
 // Approximates the ml modules given by Appel in flavor.

@@ -1,4 +1,4 @@
-use string_interner::{DefaultBackend, DefaultSymbol, StringInterner};
+use string_interner::{DefaultBackend, DefaultSymbol, StringInterner, symbol::SymbolU32};
 
 #[derive(Eq, PartialEq, Hash, Copy, Clone, Debug)]
 pub struct Symbol(DefaultSymbol);
@@ -16,5 +16,25 @@ impl Interner {
 
     pub fn resolve(&self, s: &Symbol) -> Option<&str> {
         self.0.resolve(s.0)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn intern_gives_back_existing_symbol() {
+        let mut i = Interner::new();
+        let s1 = i.intern("hello");
+        let s2 = i.intern("hello");
+        assert_eq!(s1, s2);
+    }
+
+    #[test]
+    fn test_resolve() {
+        let mut i = Interner::new();
+        let s1 = i.intern("hello");
+        assert_eq!(Some("hello"), i.resolve(&s1));
     }
 }
