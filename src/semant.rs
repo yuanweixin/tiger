@@ -5,7 +5,12 @@
 
 use cfgrammar::Span;
 use std::collections::HashMap;
-use std::{cell::RefCell, num::NonZeroUsize, rc::{Rc,Weak}};
+use std::{
+    cell::RefCell,
+    num::NonZeroUsize,
+    rc::{Rc, Weak},
+};
+use itertools::Itertools;
 
 use crate::{
     absyn::{Dec, Exp, Field, Fundec, Oper, Ty, TyDec, Var},
@@ -190,14 +195,17 @@ impl<'a> TypeCheckingContext<'a> {
 
 #[derive(Eq, PartialEq, Display, Debug, Clone)]
 pub enum Type {
-    //
-    Record(Rc<Vec<(Symbol, Type)>>, NonZeroUsize),
+    // a vec of (field name, field type name)
+    // using a Weak<Type> was an option here but it had the difficulty of needing Eq defined.
+    // also, that would force Type to be placed in Rc in containers.
+    Record(Rc<Vec<(Symbol, Symbol)>>, NonZeroUsize),
     Nil,
     Int,
     String,
-    Array(Rc<Box<Type>>, NonZeroUsize),
+    // the type of the array element is symbol to support mutually recursive types.
+    Array(Symbol, NonZeroUsize),
     Unit,
-    Name(Symbol),
+    Name(Symbol), // this is the "unresolved" reference to other types
     Error,
 }
 
@@ -415,7 +423,7 @@ fn trans_exp<T: Frame + 'static>(
                     } else {
                         let mut site_irs = Vec::new();
 
-                        for (decl_sym, decl_typ) in name_types.as_ref() {
+                        for (decl_sym, decl_typ_sym) in name_types.as_ref() {
                             let mut found = false;
                             for (site_sym_span, site_typ_exp, _) in fields {
                                 let site_sym = ctx.intern(site_sym_span);
@@ -427,10 +435,19 @@ fn trans_exp<T: Frame + 'static>(
                                         site_typ_exp,
                                         break_label,
                                     );
-                                    if !site_ty.compatible_with(decl_typ) {
+                                    let decl_typ =
+                                        ctx.type_env.look(*decl_typ_sym).map(|e| e.clone());
+                                    if decl_typ.is_none() {
+                                        ctx.flag_error_with_msg(&format!(
+                                            "field {} has undeclared type {}",
+                                            ctx.resolve_unchecked(decl_sym),
+                                            ctx.resolve_unchecked(&decl_typ_sym)
+                                        ));
+                                    } else if !site_ty.compatible_with(&decl_typ.as_ref().unwrap())
+                                    {
                                         ctx.flag_error();
                                         if !matches!(site_ty, Type::Error) {
-                                            ctx.flag_error_with_msg(&format!("field {} is declared with type {} but is used with type {}", ctx.get_span(site_sym_span), decl_typ, site_ty));
+                                            ctx.flag_error_with_msg(&format!("field {} is declared with type {} but is used with type {}", ctx.get_span(site_sym_span), decl_typ.unwrap(), site_ty));
                                         }
                                     } else {
                                         // only push when no typing error occur.
@@ -443,7 +460,7 @@ fn trans_exp<T: Frame + 'static>(
                             }
                             if !found {
                                 ctx.flag_error_with_msg(&format!(
-                                    "record field {} is used but not declared",
+                                    "record field {} is used but not part of the record declaration",
                                     ctx.resolve_unchecked(decl_sym)
                                 ));
                             }
@@ -702,13 +719,21 @@ fn trans_exp<T: Frame + 'static>(
                 (ERROR_TR_EXP, Type::Error)
             } else {
                 match arr_ty_opt.as_ref().unwrap() {
-                    Type::Array(ele_ty, b) => {
+                    Type::Array(ele_ty_sym, b) => {
                         let (init_val_ir, init_val_ty) =
                             trans_exp::<T>(ctx, level.clone(), init, break_label);
-                        if !init_val_ty.compatible_with(&**ele_ty) {
+
+                        let ele_ty = ctx.type_env.look(*ele_ty_sym);
+                        if ele_ty.is_none() {
+                            ctx.flag_error_with_msg(&format!(
+                                "array element has undeclared type {}",
+                                ctx.resolve_unchecked(&ele_ty_sym)
+                            ));
+                            (ERROR_TR_EXP, Type::Error)
+                        } else if !init_val_ty.compatible_with(ele_ty.unwrap()) {
                             ctx.flag_error_with_msg(&format!(
                                 "array initialized with type {} but declared with type {}, init={:?}",
-                                init_val_ty, ele_ty, init
+                                init_val_ty, ele_ty.unwrap(), init
                             ));
                             (ERROR_TR_EXP, Type::Error)
                         } else {
@@ -785,14 +810,14 @@ fn trans_var<T: Frame + 'static>(
                             ));
                             (ERROR_TR_EXP, Type::Error)
                         }
-                        Some(dty) => {
+                        Some(s) => {
                             // in our cute toy language every record field
                             //  is scalar or pointer so they have same
                             //  size, so we don't even have to do any
                             // extra work calculating the record size.
                             (
                                 translate::record_field(lhs_var_ir, field_offset),
-                                dty.clone(),
+                                ctx.type_env.look(*s).unwrap().clone(),
                             )
                         }
                     }
@@ -813,6 +838,7 @@ fn trans_var<T: Frame + 'static>(
                 Type::Array(ele_ty, ord) => {
                     let (idx_ir, idx_ty) =
                         trans_exp::<T>(ctx, level.clone(), index_exp, break_label);
+
                     match idx_ty {
                         Type::Int => {
                             let sym = ctx.symbols.intern("exit");
@@ -823,7 +849,7 @@ fn trans_var<T: Frame + 'static>(
                                 }
                                 Some(EnvEntry::FunEntry { label, .. }) => (
                                     translate::subscript_var(lhs_ir, idx_ir, *label),
-                                    (**ele_ty).clone(),
+                                    ctx.type_env.look(ele_ty).unwrap().clone(),
                                 ),
                                 Some(x) => {
                                     panic!("bug in impl, `exit` should be a FunEntry but is {}", x);
@@ -850,28 +876,26 @@ fn trans_var<T: Frame + 'static>(
 }
 
 fn ty_to_type(ctx: &mut TypeCheckingContext, ty: &Ty) -> Type {
+    // return the translated type, as well as whether type is forward referencing some unknown type.
     match ty {
         Ty::NameTy(span, pos) => {
             let sym = ctx.intern(&span);
             match ctx.type_env.look(sym) {
                 None => Type::Name(sym),
+                // collapse the name one level.
+                Some(Type::Name(y)) => Type::Name(*y),
                 Some(x) => x.clone(),
             }
         }
         Ty::ArrayTy(span, pos) => {
             let sym = ctx.intern(&span);
             match ctx.type_env.look(sym) {
-                // This case happen when array refers to a type that was not encountered yet
-                // but would expect to encounter later in a legal program.
-                None => Type::Array(
-                    Rc::new(Box::new(Type::Name(sym))),
-                    ctx.get_next_array_record_ord(),
-                ),
-                // This case happen when array refers to a type that was encountered already.
-                Some(x) => Type::Array(
-                    Rc::new(Box::new(x.clone())),
-                    ctx.get_next_array_record_ord(),
-                ),
+                None => Type::Array(sym, ctx.get_next_array_record_ord()),
+                // collapse the name one level.
+                Some(Type::Name(y)) => {
+                    Type::Array(*y, ctx.get_next_array_record_ord())
+                }
+                Some(x) => Type::Array(sym, ctx.get_next_array_record_ord()),
             }
         }
         Ty::RecordTy(fields) => {
@@ -896,12 +920,12 @@ fn ty_to_type(ctx: &mut TypeCheckingContext, ty: &Ty) -> Type {
                     let typ_sym = ctx.intern(&field.typ);
                     let type_opt = ctx.type_env.look(typ_sym);
                     match type_opt {
-                        None => {
-                            record_field_types.push((field_sym, Type::Name(typ_sym)));
+                        None => record_field_types.push((field_sym, typ_sym)),
+                        // collapse the name one level.
+                        Some(Type::Name(y)) => {
+                            record_field_types.push((field_sym, *y))
                         }
-                        Some(typ) => {
-                            record_field_types.push((field_sym, typ.clone()));
-                        }
+                        Some(_) => record_field_types.push((field_sym, typ_sym)),
                     }
                 }
             }
@@ -912,69 +936,6 @@ fn ty_to_type(ctx: &mut TypeCheckingContext, ty: &Ty) -> Type {
             }
         }
     }
-}
-
-pub(super) fn resolve_name_type(ctx: &mut TypeCheckingContext, sym: Symbol) {
-    // TODO patch me up
-    // fn helper(s: Symbol, ctx: &mut TypeCheckingContext) -> Type {
-    //     let resolved = ctx.type_env.look(s);
-    //     if resolved.is_none() {
-    //         ctx.flag_error_with_msg(&format!(
-    //             "{} is undeclared type",
-    //             ctx.symbols.resolve(&s).unwrap()
-    //         ));
-    //         Type::Error
-    //     } else {
-    //         resolved.unwrap().clone()
-    //     }
-    // }
-
-    // // Mutates the type_env and updates the mapping for the Name types.
-    // match helper(sym, ctx) {
-    //     Type::Name(s) => {
-    //         ctx.type_env.enter(sym, helper(s, ctx));
-    //     }
-    //     Type::Array(ty, _) => match **ty.as_ref() {
-    //         Type::Name(s) => {
-    //             resolve_and_update(s, ctx);
-    //         }
-    //         _ => {}
-    //     },
-    //     Type::Record(field_types, _) => {
-    //         for (_, typ) in &**field_types {
-    //             match typ {
-    //                 Type::Name(s) => {
-    //                     resolve_and_update(*s, ctx);
-    //                 }
-    //                 _ => {}
-    //             }
-    //         }
-    //     }
-    //     _ => {}
-    // }
-    // // Mutates the type_env and updates the mapping for the Name types.
-    // match t {
-    //     Type::Name(s) => {
-    //         resolve_and_update(*s, ctx);
-    //     }
-    //     Type::Array(ty, _) => match **ty.as_ref() {
-    //         Type::Name(s) => {
-    //             resolve_and_update(s, ctx);
-    //         }
-    //         _ => {}
-    //     },
-    //     Type::Record(field_types, _) => {
-    //         for (_, typ) in &**field_types {
-    //             match typ {
-    //                 Type::Name(s) => {
-    //                     resolve_and_update(*s, ctx);
-    //                 }
-    //                 _ => {}
-    //             }
-    //         }
-    //     }
-    //     _ => {}
-    // }
 }
 
 fn trans_dec<T: Frame + 'static>(
@@ -1187,50 +1148,115 @@ fn trans_dec<T: Frame + 'static>(
             // ...
             // no two types in a seq of mutually recursive types may have the
             // same name.
-            //
 
-            let mut seen = HashMap::new();
-            let mut to_fix_up = Vec::new();
+            let mut seen = Vec::new();
+            let mut name_ty_syms = Vec::new();
+            let mut arr_record_ty_unref_syms = Vec::new();
 
             for dec in tydecs {
                 let name = &ctx.input[dec.name.start()..dec.name.end()];
-                let sym = ctx.intern(&dec.name);
-                if seen.contains_key(&sym) {
+                let type_decl_name = ctx.intern(&dec.name);
+                if seen.contains(&type_decl_name) {
                     ctx.flag_error_with_msg(&format!(
                         "{} is declared more than once in a sequence of mutually recursive types.",
                         name
                     ));
-                    ctx.type_env.enter(sym, Type::Error);
+                    ctx.type_env.enter(type_decl_name, Type::Error);
                 } else {
-                    seen.insert(sym, ());
+                    seen.push(type_decl_name);
                     let ty = ty_to_type(ctx, &*dec.ty);
-                    ctx.type_env.enter(sym, ty.clone());
-                    to_fix_up.push((sym, dec.pos));
+                    ctx.type_env.enter(type_decl_name, ty.clone());
+                    match ty {
+                        Type::Name(_) => name_ty_syms.push(type_decl_name),
+                        Type::Array(s, _) => {
+                            // naive impl does look up all the time, but it is simple
+                            match ctx.type_env.look(s) {
+                                None => arr_record_ty_unref_syms.push((type_decl_name, s)),
+                                Some(Type::Name(s)) => arr_record_ty_unref_syms.push((type_decl_name, *s)),
+                                Some(_) => {}
+                            }
+                        }
+                        Type::Record(v, _) => {
+                            for (_, t) in v.as_ref() {
+                                // naive impl does look up all the time, but it is simple
+                                match ctx.type_env.look(*t) {
+                                    None => arr_record_ty_unref_syms.push((type_decl_name, *t)),
+                                    Some(Type::Name(t)) => arr_record_ty_unref_syms.push((type_decl_name, *t)),
+                                    Some(_) => {}
+                                }
+                            }
+                        }
+                        _ => {}
+                    }
                 }
             }
-            // Cycle detection. A cycle happens if we can follow 1 or more Type::Name to an existing type.
-            for dec in tydecs {
-                let sym = ctx.intern(&dec.name);
-                let name = ctx.get_span(&dec.name);
-                seen.clear(); // reuse
-                let mut ty = ctx.type_env.look(sym).unwrap(); // safe because we updated type_env in above loop.
-                seen.insert(sym, ());
+            // A cycle involving N types will involve all Type::Name entries.
+            // Only Type::Name can participate in a cycle, as it is okay to have circular references
+            // through a Type::Array or Type::Record. In the case where no such cycles exist, this loop
+            // also has the side effect of resolving the Type::Name. Resolving means, once the final type ft
+            // (the first non Type::Name) is determined, we can backtrack and, for the type name symbol tns
+            // of each Type::Name encountered along the way, we enter the (tns, ft) into the type env.
+            let mut no_cycle_dangling_name = true;
+            for type_decl_name_sym in name_ty_syms {
+                seen.clear();
+                let name = ctx.resolve_unchecked(&type_decl_name_sym);
+                let mut ty = ctx.type_env.look(type_decl_name_sym).unwrap().clone(); // safe because we updated type_env in above loop.
+                seen.push(type_decl_name_sym);
+                let mut resolved = true;
                 while let Type::Name(s) = ty {
-                    if seen.contains_key(s) {
+                    if seen.contains(&s) {
                         ctx.flag_error_with_msg(&format!(
                             "circular type definition detected for type {}",
                             name
                         ));
+                        no_cycle_dangling_name = false;
+                        resolved = false;
+                        ty = Type::Error;
                         break;
                     }
-                    seen.insert(*s, ());
-                    ty = ctx.type_env.look(*s).unwrap();
+                    seen.push(s);
+                    match ctx.type_env.look(s) {
+                        None => {
+                            no_cycle_dangling_name = false;
+                            let x = ctx.resolve_unchecked(&s);
+                            ctx.flag_error_with_msg(&format!(
+                                "type {} references type {}, which does not exist",
+                                name, x
+                            ));
+                            ty = Type::Error;
+                            resolved = false;
+                            break;
+                        }
+                        Some(t) => {
+                            ty = t.clone();
+                        }
+                    }
+                }
+                for sym in &seen {
+                    ctx.type_env.enter(*sym, ty.clone());
                 }
             }
-            // Fix up the thing by eliminating Type::Name
-            for (to_fix, pos) in to_fix_up {
-                resolve_name_type(ctx, to_fix);
+            for (ty_decl_sym, group) in &arr_record_ty_unref_syms.into_iter().group_by(|(ty_decl_sym, _)| *ty_decl_sym) {
+                for (_, unresolved) in group {
+                    let ty = ctx.type_env.look(unresolved);
+                    match ty {
+                        None => {
+                            ctx.flag_error_with_msg(&format!("type {} is undeclared", ctx.resolve_unchecked(&unresolved)));
+                            ctx.type_env.enter(ty_decl_sym, Type::Error);
+                            break;
+                        }
+                        Some(Type::Error) => {
+                            // propagate the error
+                            ctx.type_env.enter(ty_decl_sym, Type::Error);
+                            break;
+                        }
+                        Some(t) => {
+                            ctx.type_env.enter(ty_decl_sym, t.clone());
+                        }
+                    }
+                }
             }
+
             None
         }
     }
@@ -1353,21 +1379,6 @@ mod tests {
     fn test_file(path: DirEntry, is_good: bool) {
         let input = fs::read_to_string(path.path()).unwrap();
         test_input_helper(&input, is_good, path.path().to_str());
-    }
-
-    #[test]
-    fn test_replace_name() {
-        let mut ctx = TypeCheckingContext::new("test");
-        let type_sym = ctx.symbols.intern("type_name");
-        let resolved_sym = ctx.symbols.intern("resolved type name");
-        ctx.type_env.enter(type_sym, Type::Name(resolved_sym));
-        ctx.type_env.enter(resolved_sym, Type::Int); // just pick some type
-
-        resolve_name_type(&mut ctx, &Type::Int);
-
-        // direct Name replacement.
-        // Name in an array.
-        // Name in a record.
     }
 
     #[test]
