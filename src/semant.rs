@@ -1278,28 +1278,23 @@ fn trans_dec<T: Frame + 'static>(
             // also has the side effect of resolving the Type::Name. Resolving means, once the final type ft
             // (the first non Type::Name) is determined, we can backtrack and, for the type name symbol tns
             // of each Type::Name encountered along the way, we enter the (tns, ft) into the type env.
-            let mut no_cycle_dangling_name = true;
             for (type_decl_name_sym, pos) in name_ty_syms {
                 seen.clear();
                 let name = ctx.resolve_unchecked(&type_decl_name_sym);
                 let mut ty = ctx.type_env.look(type_decl_name_sym).unwrap().clone(); // safe because we updated type_env in above loop.
                 seen.push(type_decl_name_sym);
-                let mut resolved = true;
                 while let Type::Name(s) = ty {
                     if seen.contains(&s) {
                         ctx.flag_error_with_msg(
                             &pos,
                             &format!("circular type definition detected for type {}", name),
                         );
-                        no_cycle_dangling_name = false;
-                        resolved = false;
                         ty = Type::Error;
                         break;
                     }
                     seen.push(s);
                     match ctx.type_env.look(s) {
                         None => {
-                            no_cycle_dangling_name = false;
                             let x = ctx.resolve_unchecked(&s);
                             ctx.flag_error_with_msg(
                                 &pos,
@@ -1309,7 +1304,6 @@ fn trans_dec<T: Frame + 'static>(
                                 ),
                             );
                             ty = Type::Error;
-                            resolved = false;
                             break;
                         }
                         Some(t) => {
@@ -1367,7 +1361,7 @@ pub fn translate<T: Frame + 'static>(input: &str, ast: &Exp) -> Result<TrExp, ()
     );
     let (exp, ty) = trans_exp::<T>(&mut ctx, main_level, ast, None);
 
-    if matches!(ty, Type::Error) {
+    if ctx.has_error() {
         Err(())
     } else {
         Ok(exp)
@@ -1480,14 +1474,14 @@ mod tests {
         }
     }
 
-    // #[test]
-    // fn appel_bad_programs() {
-    //     let paths = fs::read_dir("tests/tiger_programs/semant/bad/").unwrap();
+    #[test]
+    fn appel_bad_programs() {
+        let paths = fs::read_dir("tests/tiger_programs/semant/bad/").unwrap();
 
-    //     for path in paths {
-    //         test_file(path.unwrap(), false);
-    //     }
-    // }
+        for path in paths {
+            test_file(path.unwrap(), false);
+        }
+    }
 
     // #[test]
     // fn var_assign_nil_is_bad() {
