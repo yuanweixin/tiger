@@ -262,7 +262,7 @@ exp -> Result<Exp, ()>:
   "FOR" "ID" "ASSIGN" exp "TO" exp "DO" exp {
       Ok(
         Exp::ForExp {
-          var: span($1)?,
+          var: span($2)?,
           escape: false,
           lo: Box::new($4?),
           hi: Box::new($6?),

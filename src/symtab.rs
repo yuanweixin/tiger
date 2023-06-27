@@ -1,6 +1,7 @@
 use crate::symbol::Symbol;
 use std::collections::HashMap;
 
+#[derive(Debug)]
 pub struct SymbolTable<T> {
     // The symbol table construct. A symbol maps to a list of LIFO entries.
     // In other words, if symbol for variable "a" is mapped to 5, then in
@@ -12,7 +13,7 @@ pub struct SymbolTable<T> {
     stack: Vec<StackSymbol>,
 }
 
-#[derive(Copy, Clone)]
+#[derive(Debug, Copy, Clone)]
 enum StackSymbol {
     // Needed to determine how many symbols to pop off.
     BeginScopeMarker,
