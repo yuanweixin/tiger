@@ -4,13 +4,13 @@
 #![allow(unused_imports)]
 
 use cfgrammar::Span;
+use itertools::Itertools;
 use std::collections::HashMap;
 use std::{
     cell::RefCell,
     num::NonZeroUsize,
     rc::{Rc, Weak},
 };
-use itertools::Itertools;
 
 use crate::{
     absyn::{Dec, Exp, Field, Fundec, Oper, Ty, TyDec, Var},
@@ -23,6 +23,30 @@ use crate::{
     translate::{Level, TrExp, ERROR_TR_EXP},
 };
 use strum_macros::Display;
+
+// ((start line, start column), (end line, end column))
+type LineCol = ((usize, usize), (usize, usize));
+trait LineColInfo {
+    fn start_line(&self) -> usize;
+    fn end_line(&self) -> usize;
+    fn start_column(&self) -> usize;
+    fn end_column(&self) -> usize;
+}
+
+impl LineColInfo for LineCol {
+    fn start_line(&self) -> usize {
+        self.0 .0
+    }
+    fn end_line(&self) -> usize {
+        self.1 .0
+    }
+    fn start_column(&self) -> usize {
+        self.0 .1
+    }
+    fn end_column(&self) -> usize {
+        self.1 .1
+    }
+}
 
 pub struct TypeCheckingContext<'a> {
     next_array_record_ord: NonZeroUsize,
@@ -76,7 +100,7 @@ impl<'a> TypeCheckingContext<'a> {
             EnvEntry::FunEntry {
                 level: Level::outermost(),
                 formals: Rc::new(vec![Type::String]),
-                result: Type::String,
+                result: Type::Unit,
                 label: la.new_label(pool),
             },
         );
@@ -164,7 +188,12 @@ impl<'a> TypeCheckingContext<'a> {
         res
     }
 
-    fn flag_error_with_msg(&mut self, msg: &str) {
+    fn fuck_error_with_msg(&mut self, pos: &LineCol, msg: &str) {
+        self.has_err = true;
+        println!("line:{} col:{} {}", pos.start_line(), pos.start_column(), msg);
+    }
+
+    fn flag_error_sfsdfsdwith_msg(&mut self, msg: &str) {
         self.has_err = true;
         println!("{}", msg);
     }
@@ -260,21 +289,21 @@ fn trans_exp<T: Frame + 'static>(
                         }
                         (Type::Error, _) | (_, Type::Error) => (ERROR_TR_EXP, Type::Error),
                         (Type::Int, _) => {
-                            ctx.flag_error_with_msg(&format!(
+                            ctx.fuck_error_with_msg(pos, &format!(
                                 "Expected integer on rhs but got {}",
                                 right
                             ));
                             (ERROR_TR_EXP, Type::Error)
                         }
                         (_, Type::Int) => {
-                            ctx.flag_error_with_msg(&format!(
+                            ctx.fuck_error_with_msg(pos, &format!(
                                 "Expected integer on lhs but got {}",
                                 left
                             ));
                             (ERROR_TR_EXP, Type::Error)
                         }
                         (_, _) => {
-                            ctx.flag_error_with_msg(&format!(
+                            ctx.fuck_error_with_msg(pos, &format!(
                                 "Expected integer operands but got lhs={}, rhs={}",
                                 left, right
                             ));
@@ -286,14 +315,14 @@ fn trans_exp<T: Frame + 'static>(
                     (Type::Int, Type::Int) => (translate::binop(oper, lhs_ir, rhs_ir), Type::Int),
                     (Type::Error, _) | (_, Type::Error) => (ERROR_TR_EXP, Type::Error),
                     (Type::Int, _) => {
-                        ctx.flag_error_with_msg(&format!(
+                        ctx.fuck_error_with_msg(pos, &format!(
                             "Expected integer on rhs but got {}",
                             right
                         ));
                         (ERROR_TR_EXP, Type::Error)
                     }
                     (_, Type::Int) => {
-                        ctx.flag_error_with_msg(&format!(
+                        ctx.fuck_error_with_msg(pos, &format!(
                             "Expected integer on lhs but got {}",
                             right
                         ));
@@ -305,7 +334,7 @@ fn trans_exp<T: Frame + 'static>(
                     if Type::Error == lhs_ty || Type::Error == rhs_ty {
                         (ERROR_TR_EXP, Type::Error)
                     } else if !lhs_ty.compatible_with(&rhs_ty) {
-                        ctx.flag_error_with_msg(&format!(
+                        ctx.fuck_error_with_msg(pos, &format!(
                             "Types not compatible for comparison, lhs={}, rhs={}",
                             left, right
                         ));
@@ -313,11 +342,12 @@ fn trans_exp<T: Frame + 'static>(
                     } else if !matches!(
                         lhs_ty,
                         Type::Int | Type::Record(..) | Type::Array(..) | Type::String
-                    ) || !matches!(
+                    ) && !matches!(
                         rhs_ty,
                         Type::Int | Type::Record(..) | Type::Array(..) | Type::String
                     ) {
-                        ctx.flag_error_with_msg(&format!("{} only valid on Int, Record, Array or String types, but is used for {} and {}", oper, left, right));
+                        println!("TODO n={:#?}, lhs_ty={:#?}, rhs_ty={:#?}", n, lhs_ty, rhs_ty);
+                        ctx.fuck_error_with_msg(pos, &format!("{} only valid on Int, Record, Array or String types, but is used for {} and {}", oper, lhs_ty, rhs_ty));
                         (ERROR_TR_EXP, Type::Error)
                     } else {
                         if let (Type::String, Type::String) = (lhs_ty, rhs_ty) {
@@ -342,7 +372,7 @@ fn trans_exp<T: Frame + 'static>(
 
             match fentry_opt {
                 None => {
-                    ctx.flag_error_with_msg(&format!(
+                    ctx.fuck_error_with_msg(pos, &format!(
                         "Trying to call undeclared function {}",
                         ctx.get_span(func)
                     ));
@@ -352,7 +382,7 @@ fn trans_exp<T: Frame + 'static>(
                     formals, result, ..
                 }) => {
                     if formals.len() != args.len() {
-                        ctx.flag_error_with_msg(&format!(
+                        ctx.fuck_error_with_msg(pos, &format!(
                             "Expected {} args for function {} but got {}",
                             formals.len(),
                             ctx.get_span(func),
@@ -376,7 +406,7 @@ fn trans_exp<T: Frame + 'static>(
                                 ctx.flag_error();
                                 break;
                             } else if !arg_ty.compatible_with(formals.get(i).unwrap()) {
-                                ctx.flag_error_with_msg(&format!(
+                                ctx.fuck_error_with_msg(pos, &format!(
                                 "Call to {} expects argument of type {} at position {} but got {}",
                                 ctx.get_span(func),
                                 formals.get(i).unwrap(),
@@ -394,7 +424,7 @@ fn trans_exp<T: Frame + 'static>(
                     }
                 }
                 Some(_) => {
-                    ctx.flag_error_with_msg(&format!("{} is not a function!", ctx.get_span(func)));
+                    ctx.fuck_error_with_msg(pos, &format!("{} is not a function!", ctx.get_span(func)));
                     (ERROR_TR_EXP, Type::Error)
                 }
             }
@@ -405,7 +435,7 @@ fn trans_exp<T: Frame + 'static>(
 
             match rec_entry_opt {
                 None => {
-                    ctx.flag_error_with_msg(&format!(
+                    ctx.fuck_error_with_msg(pos, &format!(
                         "{} has not been declared.",
                         ctx.get_span(typ)
                     ));
@@ -413,7 +443,7 @@ fn trans_exp<T: Frame + 'static>(
                 }
                 Some(Type::Record(name_types, ord)) => {
                     if name_types.len() != fields.len() {
-                        ctx.flag_error_with_msg(&format!(
+                        ctx.fuck_error_with_msg(pos, &format!(
                         "Record {} is declared with {} fields, but {} are given at instantiation site",
                         ctx.get_span(typ),
                         name_types.len(),
@@ -438,7 +468,7 @@ fn trans_exp<T: Frame + 'static>(
                                     let decl_typ =
                                         ctx.type_env.look(*decl_typ_sym).map(|e| e.clone());
                                     if decl_typ.is_none() {
-                                        ctx.flag_error_with_msg(&format!(
+                                        ctx.fuck_error_with_msg(pos, &format!(
                                             "field {} has undeclared type {}",
                                             ctx.resolve_unchecked(decl_sym),
                                             ctx.resolve_unchecked(&decl_typ_sym)
@@ -447,7 +477,7 @@ fn trans_exp<T: Frame + 'static>(
                                     {
                                         ctx.flag_error();
                                         if !matches!(site_ty, Type::Error) {
-                                            ctx.flag_error_with_msg(&format!("field {} is declared with type {} but is used with type {}", ctx.get_span(site_sym_span), decl_typ.unwrap(), site_ty));
+                                            ctx.fuck_error_with_msg(pos, &format!("field {} is declared with type {} but is used with type {}", ctx.get_span(site_sym_span), decl_typ.unwrap(), site_ty));
                                         }
                                     } else {
                                         // only push when no typing error occur.
@@ -459,7 +489,7 @@ fn trans_exp<T: Frame + 'static>(
                                 }
                             }
                             if !found {
-                                ctx.flag_error_with_msg(&format!(
+                                ctx.fuck_error_with_msg(pos, &format!(
                                     "record field {} is used but not part of the record declaration",
                                     ctx.resolve_unchecked(decl_sym)
                                 ));
@@ -477,7 +507,7 @@ fn trans_exp<T: Frame + 'static>(
                     }
                 }
                 _ => {
-                    ctx.flag_error_with_msg(&format!(
+                    ctx.fuck_error_with_msg(pos, &format!(
                         "{} is not a record type.",
                         ctx.get_span(typ)
                     ));
@@ -506,13 +536,13 @@ fn trans_exp<T: Frame + 'static>(
             if matches!(dst_ty, Type::Error) || matches!(src_ty, Type::Error) {
                 (ERROR_TR_EXP, Type::Error)
             } else if matches!(src_ty, Type::Nil) && !matches!(dst_ty, Type::Record(..)) {
-                ctx.flag_error_with_msg(&format!(
+                ctx.fuck_error_with_msg(pos, &format!(
                     "Nil can only be assigned to record type, but is assigned to {} here.",
                     dst_ty
                 ));
                 (ERROR_TR_EXP, Type::Error)
             } else if !dst_ty.compatible_with(&src_ty) {
-                ctx.flag_error_with_msg(&format!(
+                ctx.fuck_error_with_msg(pos, &format!(
                     "Assigning incompatible types: dst={}, src={}",
                     dst_ty, src_ty
                 ));
@@ -525,19 +555,19 @@ fn trans_exp<T: Frame + 'static>(
 
                         match var_entry {
                             None => {
-                                ctx.flag_error_with_msg(&format!(
+                                ctx.fuck_error_with_msg(pos, &format!(
                                     "the variable {} needs to be declared before being assigned to",
                                     ctx.get_span(span)
                                 ));
                                 (ERROR_TR_EXP, Type::Error)
                             }
                             Some(EnvEntry::FunEntry { .. }) => {
-                                ctx.flag_error_with_msg("Cannot assign to a function");
+                                ctx.fuck_error_with_msg(pos, "Cannot assign to a function");
                                 (ERROR_TR_EXP, Type::Error)
                             }
                             Some(EnvEntry::VarEntry { ty, readonly, .. }) => {
                                 if readonly {
-                                    ctx.flag_error_with_msg("Cannot assign to readonly location");
+                                    ctx.fuck_error_with_msg(pos, "Cannot assign to readonly location");
                                     (ERROR_TR_EXP, Type::Error)
                                 } else if matches!(ty, Type::Error) {
                                     (ERROR_TR_EXP, Type::Error)
@@ -561,7 +591,7 @@ fn trans_exp<T: Frame + 'static>(
             if matches!(test_ty, Type::Error) {
                 (ERROR_TR_EXP, Type::Error)
             } else if !matches!(test_ty, Type::Int) {
-                ctx.flag_error_with_msg(&format!(
+                ctx.fuck_error_with_msg(pos, &format!(
                     "Conditionals must evaluate to INT but got {} here",
                     test_ty
                 ));
@@ -571,7 +601,7 @@ fn trans_exp<T: Frame + 'static>(
                     trans_exp::<T>(ctx, level.clone(), then.as_ref(), break_label);
                 if els.is_none() {
                     if !matches!(then_ty, Type::Unit) {
-                        ctx.flag_error_with_msg(&format!(
+                        ctx.fuck_error_with_msg(pos, &format!(
                             "if-then must evaluate to Unit, but has type {} here",
                             then_ty
                         ));
@@ -583,7 +613,7 @@ fn trans_exp<T: Frame + 'static>(
                     let (else_ir, else_ty) =
                         trans_exp::<T>(ctx, level.clone(), els.as_ref().unwrap(), break_label);
                     if !else_ty.compatible_with(&then_ty) {
-                        ctx.flag_error_with_msg(&format!("if-then-else branches have incompatible types: then has type {}, else has type {}", then_ty, else_ty));
+                        ctx.fuck_error_with_msg(pos, &format!("if-then-else branches have incompatible types: then has type {}, else has type {}", then_ty, else_ty));
                         (ERROR_TR_EXP, Type::Error)
                     } else {
                         (
@@ -604,7 +634,7 @@ fn trans_exp<T: Frame + 'static>(
                 println!("TODO failing cond ast={:#?}", test);
                 (ERROR_TR_EXP, Type::Error)
             } else if !matches!(cond_ty, Type::Int) {
-                ctx.flag_error_with_msg(&format!(
+                ctx.fuck_error_with_msg(pos, &format!(
                     "while condition must be of Int but got {}",
                     cond_ty
                 ));
@@ -617,7 +647,7 @@ fn trans_exp<T: Frame + 'static>(
                         Type::Unit,
                     ),
                     _ => {
-                        ctx.flag_error_with_msg("while body must not produce a value");
+                        ctx.fuck_error_with_msg(pos, "while body must not produce a value");
                         (ERROR_TR_EXP, Type::Error)
                     }
                 }
@@ -638,11 +668,11 @@ fn trans_exp<T: Frame + 'static>(
             let mut err = false;
             if !matches!(lo_ty, Type::Int) {
                 err = true;
-                ctx.flag_error_with_msg("lo in for loop range must be of integral type");
+                ctx.fuck_error_with_msg(pos, "lo in for loop range must be of integral type");
             }
             if !matches!(hi_ty, Type::Int) {
                 err = true;
-                ctx.flag_error_with_msg("lo in for loop range must be of integral type");
+                ctx.fuck_error_with_msg(pos, "lo in for loop range must be of integral type");
             }
 
             ctx.varfun_env.begin_scope();
@@ -673,14 +703,14 @@ fn trans_exp<T: Frame + 'static>(
                     }
                 }
                 _ => {
-                    ctx.flag_error_with_msg("for body must not produce a value");
+                    ctx.fuck_error_with_msg(pos, "for body must not produce a value");
                     (ERROR_TR_EXP, Type::Error)
                 }
             }
         }
         Exp::BreakExp(pos) => {
             if break_label.is_none() {
-                ctx.flag_error_with_msg("naked break statement");
+                ctx.fuck_error_with_msg(pos, "naked break statement");
                 (ERROR_TR_EXP, Type::Error)
             } else {
                 (translate::break_stmt(break_label.unwrap()), Type::Unit)
@@ -712,7 +742,7 @@ fn trans_exp<T: Frame + 'static>(
             let sym = ctx.intern(typ);
             let arr_ty_opt = ctx.type_env.look(sym).map(|e| e.clone());
             if arr_ty_opt.is_none() {
-                ctx.flag_error_with_msg(&format!(
+                ctx.fuck_error_with_msg(pos, &format!(
                     "Trying to use an undeclared array type {}",
                     ctx.get_span(typ)
                 ));
@@ -725,13 +755,13 @@ fn trans_exp<T: Frame + 'static>(
 
                         let ele_ty = ctx.type_env.look(*ele_ty_sym);
                         if ele_ty.is_none() {
-                            ctx.flag_error_with_msg(&format!(
+                            ctx.fuck_error_with_msg(pos, &format!(
                                 "array element has undeclared type {}",
                                 ctx.resolve_unchecked(&ele_ty_sym)
                             ));
                             (ERROR_TR_EXP, Type::Error)
                         } else if !init_val_ty.compatible_with(ele_ty.unwrap()) {
-                            ctx.flag_error_with_msg(&format!(
+                            ctx.fuck_error_with_msg(pos, &format!(
                                 "array initialized with type {} but declared with type {}, init={:?}",
                                 init_val_ty, ele_ty.unwrap(), init
                             ));
@@ -741,7 +771,7 @@ fn trans_exp<T: Frame + 'static>(
                         }
                     }
                     _ => {
-                        ctx.flag_error_with_msg(&format!(
+                        ctx.fuck_error_with_msg(pos, &format!(
                             "{} is not of array type!",
                             ctx.get_span(typ)
                         ));
@@ -765,7 +795,7 @@ fn trans_var<T: Frame + 'static>(
             let entry_opt = ctx.varfun_env.look(sym);
             match entry_opt {
                 None => {
-                    ctx.flag_error_with_msg(&format!(
+                    ctx.fuck_error_with_msg(pos, &format!(
                         "use of undeclared variable {}",
                         ctx.get_span(span)
                     ));
@@ -775,7 +805,7 @@ fn trans_var<T: Frame + 'static>(
                     // this version of tiger does not support using functions as lvalues.
                     // functions can only be called.
                     // therefore, this is an error.
-                    ctx.flag_error_with_msg(&format!(
+                    ctx.fuck_error_with_msg(pos, &format!(
                         "attempting to use function {} as a lvalue",
                         ctx.get_span(span)
                     ));
@@ -804,7 +834,7 @@ fn trans_var<T: Frame + 'static>(
                     }
                     match decl_ty {
                         None => {
-                            ctx.flag_error_with_msg(&format!(
+                            ctx.fuck_error_with_msg(pos, &format!(
                                 "{} is not a field of the record",
                                 ctx.get_span(rhs_span)
                             ));
@@ -823,7 +853,7 @@ fn trans_var<T: Frame + 'static>(
                     }
                 }
                 x => {
-                    ctx.flag_error_with_msg(&format!(
+                    ctx.fuck_error_with_msg(pos, &format!(
                         "tried to access field {} of a non-record type {}",
                         ctx.get_span(rhs_span),
                         x
@@ -857,14 +887,14 @@ fn trans_var<T: Frame + 'static>(
                             }
                         }
                         _ => {
-                            ctx.flag_error_with_msg("array index must be of Int type!");
+                            ctx.fuck_error_with_msg(pos, "array index must be of Int type!");
                             (ERROR_TR_EXP, Type::Error)
                         }
                     }
                 }
                 Type::Error => (ERROR_TR_EXP, Type::Error),
                 x => {
-                    ctx.flag_error_with_msg(&format!(
+                    ctx.fuck_error_with_msg(pos, &format!(
                         "Subscript is only valid for array, used on {}",
                         x
                     ));
@@ -875,7 +905,7 @@ fn trans_var<T: Frame + 'static>(
     }
 }
 
-fn ty_to_type(ctx: &mut TypeCheckingContext, ty: &Ty) -> Type {
+fn ty_to_type(ctx: &mut TypeCheckingContext, ty: &Ty, pos: &LineCol) -> Type {
     // return the translated type, as well as whether type is forward referencing some unknown type.
     match ty {
         Ty::NameTy(span, pos) => {
@@ -892,9 +922,7 @@ fn ty_to_type(ctx: &mut TypeCheckingContext, ty: &Ty) -> Type {
             match ctx.type_env.look(sym) {
                 None => Type::Array(sym, ctx.get_next_array_record_ord()),
                 // collapse the name one level.
-                Some(Type::Name(y)) => {
-                    Type::Array(*y, ctx.get_next_array_record_ord())
-                }
+                Some(Type::Name(y)) => Type::Array(*y, ctx.get_next_array_record_ord()),
                 Some(x) => Type::Array(sym, ctx.get_next_array_record_ord()),
             }
         }
@@ -910,7 +938,7 @@ fn ty_to_type(ctx: &mut TypeCheckingContext, ty: &Ty) -> Type {
                 let field_name = &ctx.input[field.name.start()..field.name.end()];
                 if seen.contains_key(field_name) {
                     err = true;
-                    ctx.flag_error_with_msg(&format!(
+                    ctx.fuck_error_with_msg(&field.pos, &format!(
                         "field {} declared more than once in record.",
                         field_name
                     ));
@@ -922,9 +950,7 @@ fn ty_to_type(ctx: &mut TypeCheckingContext, ty: &Ty) -> Type {
                     match type_opt {
                         None => record_field_types.push((field_sym, typ_sym)),
                         // collapse the name one level.
-                        Some(Type::Name(y)) => {
-                            record_field_types.push((field_sym, *y))
-                        }
+                        Some(Type::Name(y)) => record_field_types.push((field_sym, *y)),
                         Some(_) => record_field_types.push((field_sym, typ_sym)),
                     }
                 }
@@ -957,7 +983,7 @@ fn trans_dec<T: Frame + 'static>(
             for fundec in fundecs {
                 let name = &ctx.input[fundec.name.start()..fundec.name.end()];
                 if seen.contains_key(name) {
-                    ctx.flag_error_with_msg(&format!("{} is declared more than once in a sequence of mutually recursive functions", name));
+                    ctx.fuck_error_with_msg(&fundec.pos, &format!("{} is declared more than once in a sequence of mutually recursive functions", name));
                 } else {
                     seen.insert(name, ());
                 }
@@ -982,7 +1008,7 @@ fn trans_dec<T: Frame + 'static>(
                     let field_type_opt = ctx.type_env.look(typ_name);
                     match field_type_opt {
                         None => {
-                            ctx.flag_error_with_msg(&format!(
+                            ctx.fuck_error_with_msg(&field.pos, &format!(
                                 "function parameter {} has unknown type {}",
                                 ctx.get_span(&field.name),
                                 ctx.get_span(&field.typ)
@@ -1051,7 +1077,7 @@ fn trans_dec<T: Frame + 'static>(
                             && !matches!(fun_body_ty, Type::Error)
                             && !matches!(result, Type::Error)
                         {
-                            ctx.flag_error_with_msg(&format!(
+                            ctx.fuck_error_with_msg(&fundec.pos, &format!(
                                 "expected return type {} for function but got {}",
                                 result, fun_body_ty
                             ));
@@ -1077,7 +1103,7 @@ fn trans_dec<T: Frame + 'static>(
             match typ {
                 None => {
                     if matches!(init_ty, Type::Nil) {
-                        ctx.flag_error_with_msg(&format!("Variable {} is declared with unknown type and initiated with nil. Fix by using the long form, e.g. var {} : <your-type> = ...", name, name));
+                        ctx.fuck_error_with_msg(pos, &format!("Variable {} is declared with unknown type and initiated with nil. Fix by using the long form, e.g. var {} : <your-type> = ...", name, name));
                     } else {
                         // no return type specified, infer it
                         let acc = level.as_ref().borrow_mut().alloc_local(*escape);
@@ -1096,7 +1122,7 @@ fn trans_dec<T: Frame + 'static>(
                     let var_typ_sym = ctx.intern(span);
                     match ctx.type_env.look(var_typ_sym) {
                         None => {
-                            ctx.flag_error_with_msg(&format!(
+                            ctx.fuck_error_with_msg(pos, &format!(
                                 "unknown return type {}",
                                 ctx.get_span(span)
                             ));
@@ -1112,7 +1138,7 @@ fn trans_dec<T: Frame + 'static>(
                         }
                         Some(t) => {
                             if !t.compatible_with(&init_ty) {
-                                ctx.flag_error_with_msg(&format!("return type of {} does not match actual type {} of initializer.", init_ty, t));
+                                ctx.fuck_error_with_msg(pos, &format!("return type of {} does not match actual type {} of initializer.", init_ty, t));
                                 ctx.varfun_env.enter(
                                     var_name_sym,
                                     EnvEntry::VarEntry {
@@ -1157,22 +1183,24 @@ fn trans_dec<T: Frame + 'static>(
                 let name = &ctx.input[dec.name.start()..dec.name.end()];
                 let type_decl_name = ctx.intern(&dec.name);
                 if seen.contains(&type_decl_name) {
-                    ctx.flag_error_with_msg(&format!(
+                    ctx.fuck_error_with_msg(&dec.pos, &format!(
                         "{} is declared more than once in a sequence of mutually recursive types.",
                         name
                     ));
                     ctx.type_env.enter(type_decl_name, Type::Error);
                 } else {
                     seen.push(type_decl_name);
-                    let ty = ty_to_type(ctx, &*dec.ty);
+                    let ty = ty_to_type(ctx, &*dec.ty, &dec.pos);
                     ctx.type_env.enter(type_decl_name, ty.clone());
                     match ty {
-                        Type::Name(_) => name_ty_syms.push(type_decl_name),
+                        Type::Name(_) => name_ty_syms.push((type_decl_name, dec.pos)),
                         Type::Array(s, _) => {
                             // naive impl does look up all the time, but it is simple
                             match ctx.type_env.look(s) {
-                                None => arr_record_ty_unref_syms.push((type_decl_name, s)),
-                                Some(Type::Name(s)) => arr_record_ty_unref_syms.push((type_decl_name, *s)),
+                                None => arr_record_ty_unref_syms.push((type_decl_name, s, dec.pos)),
+                                Some(Type::Name(s)) => {
+                                    arr_record_ty_unref_syms.push((type_decl_name, *s, dec.pos))
+                                }
                                 Some(_) => {}
                             }
                         }
@@ -1180,8 +1208,10 @@ fn trans_dec<T: Frame + 'static>(
                             for (_, t) in v.as_ref() {
                                 // naive impl does look up all the time, but it is simple
                                 match ctx.type_env.look(*t) {
-                                    None => arr_record_ty_unref_syms.push((type_decl_name, *t)),
-                                    Some(Type::Name(t)) => arr_record_ty_unref_syms.push((type_decl_name, *t)),
+                                    None => arr_record_ty_unref_syms.push((type_decl_name, *t, dec.pos)),
+                                    Some(Type::Name(t)) => {
+                                        arr_record_ty_unref_syms.push((type_decl_name, *t, dec.pos))
+                                    }
                                     Some(_) => {}
                                 }
                             }
@@ -1197,7 +1227,7 @@ fn trans_dec<T: Frame + 'static>(
             // (the first non Type::Name) is determined, we can backtrack and, for the type name symbol tns
             // of each Type::Name encountered along the way, we enter the (tns, ft) into the type env.
             let mut no_cycle_dangling_name = true;
-            for type_decl_name_sym in name_ty_syms {
+            for (type_decl_name_sym, pos) in name_ty_syms {
                 seen.clear();
                 let name = ctx.resolve_unchecked(&type_decl_name_sym);
                 let mut ty = ctx.type_env.look(type_decl_name_sym).unwrap().clone(); // safe because we updated type_env in above loop.
@@ -1205,7 +1235,7 @@ fn trans_dec<T: Frame + 'static>(
                 let mut resolved = true;
                 while let Type::Name(s) = ty {
                     if seen.contains(&s) {
-                        ctx.flag_error_with_msg(&format!(
+                        ctx.fuck_error_with_msg(&pos, &format!(
                             "circular type definition detected for type {}",
                             name
                         ));
@@ -1219,7 +1249,7 @@ fn trans_dec<T: Frame + 'static>(
                         None => {
                             no_cycle_dangling_name = false;
                             let x = ctx.resolve_unchecked(&s);
-                            ctx.flag_error_with_msg(&format!(
+                            ctx.fuck_error_with_msg(&pos, &format!(
                                 "type {} references type {}, which does not exist",
                                 name, x
                             ));
@@ -1236,12 +1266,18 @@ fn trans_dec<T: Frame + 'static>(
                     ctx.type_env.enter(*sym, ty.clone());
                 }
             }
-            for (ty_decl_sym, group) in &arr_record_ty_unref_syms.into_iter().group_by(|(ty_decl_sym, _)| *ty_decl_sym) {
-                for (_, unresolved) in group {
+            for (ty_decl_sym, group) in &arr_record_ty_unref_syms
+                .into_iter()
+                .group_by(|(ty_decl_sym, _, _)| *ty_decl_sym)
+            {
+                for (_, unresolved, pos) in group {
                     let ty = ctx.type_env.look(unresolved);
                     match ty {
                         None => {
-                            ctx.flag_error_with_msg(&format!("type {} is undeclared", ctx.resolve_unchecked(&unresolved)));
+                            ctx.fuck_error_with_msg(&pos, &format!(
+                                "type {} is undeclared",
+                                ctx.resolve_unchecked(&unresolved)
+                            ));
                             ctx.type_env.enter(ty_decl_sym, Type::Error);
                             break;
                         }
