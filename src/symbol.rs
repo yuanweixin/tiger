@@ -1,4 +1,4 @@
-use string_interner::{DefaultBackend, DefaultSymbol, StringInterner, symbol::SymbolU32};
+use string_interner::{DefaultBackend, DefaultSymbol, StringInterner};
 
 #[derive(Eq, PartialEq, Hash, Copy, Clone, Debug)]
 pub struct Symbol(DefaultSymbol);

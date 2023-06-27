@@ -1,24 +1,19 @@
-// TODO remove this setting to make compiler STFU
-#![allow(dead_code)]
-#![allow(unused_variables)]
-#![allow(unused_imports)]
-
 use cfgrammar::Span;
 use itertools::Itertools;
 use std::collections::HashMap;
 use std::{
     cell::RefCell,
     num::NonZeroUsize,
-    rc::{Rc, Weak},
+    rc::{Rc},
 };
 
 use crate::{
-    absyn::{Dec, Exp, Field, Fundec, Oper, Ty, TyDec, Var},
+    absyn::{Dec, Exp, Oper, Ty, Var},
     frame,
     frame::Frame,
     symbol::{Interner, Symbol},
     symtab::SymbolTable,
-    temp::{GenTemporary, Label, Temp},
+    temp::{GenTemporary, Label},
     translate,
     translate::{Level, TrExp, ERROR_TR_EXP},
 };
@@ -370,7 +365,7 @@ fn trans_exp<T: Frame + 'static>(
         Exp::NilExp => (translate::nil_exp(), Type::Nil),
         Exp::IntExp(i) => (translate::int_exp(*i), Type::Int),
         Exp::VarExp(v) => trans_var::<T>(ctx, level.clone(), v, break_label),
-        Exp::StringExp(s, pos) => (translate::string_exp(ctx.get_span(s)), Type::String),
+        Exp::StringExp(s, _) => (translate::string_exp(ctx.get_span(s)), Type::String),
         Exp::CallExp { func, args, pos } => {
             let sym = ctx.intern(func);
             let fentry_opt = ctx.varfun_env.look(sym).map(|e| e.clone());
@@ -744,7 +739,7 @@ fn trans_exp<T: Frame + 'static>(
                 (translate::break_stmt(break_label.unwrap()), Type::Unit)
             }
         }
-        Exp::LetExp { decs, body, pos } => {
+        Exp::LetExp { decs, body, .. } => {
             ctx.type_env.begin_scope();
             ctx.varfun_env.begin_scope();
 
@@ -763,9 +758,9 @@ fn trans_exp<T: Frame + 'static>(
         }
         Exp::ArrayExp {
             typ,
-            size,
             init,
             pos,
+            ..
         } => {
             let sym = ctx.intern(typ);
             let arr_ty_opt = ctx.type_env.look(sym).map(|e| e.clone());
@@ -780,8 +775,8 @@ fn trans_exp<T: Frame + 'static>(
                 (ERROR_TR_EXP, Type::Error)
             } else {
                 match arr_ty_opt.as_ref().unwrap() {
-                    Type::Array(ele_ty_sym, b) => {
-                        let (init_val_ir, init_val_ty) =
+                    Type::Array(ele_ty_sym, _) => {
+                        let (_, init_val_ty) =
                             trans_exp::<T>(ctx, level.clone(), init, break_label);
 
                         let ele_ty = ctx.type_env.look(*ele_ty_sym);
@@ -848,7 +843,7 @@ fn trans_var<T: Frame + 'static>(
                     );
                     (ERROR_TR_EXP, Type::Error)
                 }
-                Some(EnvEntry::VarEntry { ty, readonly, .. }) => match ty {
+                Some(EnvEntry::VarEntry { ty, .. }) => match ty {
                     Type::Error => (ERROR_TR_EXP, Type::Error),
                     _ => (translate::simple_var(), ty.clone()),
                 },
@@ -857,7 +852,7 @@ fn trans_var<T: Frame + 'static>(
         Var::FieldVar(lhs_var, rhs_span, pos) => {
             let (lhs_var_ir, lhs_var_ty) = trans_var::<T>(ctx, level.clone(), lhs_var, break_label);
             match lhs_var_ty {
-                Type::Record(field_types, ord) => {
+                Type::Record(field_types, _) => {
                     let sym = ctx.intern(rhs_span);
                     let mut decl_ty = None;
                     let mut field_offset = 0;
@@ -905,7 +900,7 @@ fn trans_var<T: Frame + 'static>(
         Var::SubscriptVar(deref_var, index_exp, pos) => {
             let (lhs_ir, lhs_ty) = trans_var::<T>(ctx, level.clone(), deref_var, break_label);
             match lhs_ty {
-                Type::Array(ele_ty, ord) => {
+                Type::Array(ele_ty, _) => {
                     let (idx_ir, idx_ty) =
                         trans_exp::<T>(ctx, level.clone(), index_exp, break_label);
 
@@ -946,10 +941,10 @@ fn trans_var<T: Frame + 'static>(
     }
 }
 
-fn ty_to_type(ctx: &mut TypeCheckingContext, ty: &Ty, pos: &LineCol) -> Type {
+fn ty_to_type(ctx: &mut TypeCheckingContext, ty: &Ty, _pos: &LineCol) -> Type {
     // return the translated type, as well as whether type is forward referencing some unknown type.
     match ty {
-        Ty::NameTy(span, pos) => {
+        Ty::NameTy(span, _) => {
             let sym = ctx.intern(&span);
             match ctx.type_env.look(sym) {
                 None => Type::Name(sym),
@@ -958,13 +953,13 @@ fn ty_to_type(ctx: &mut TypeCheckingContext, ty: &Ty, pos: &LineCol) -> Type {
                 Some(x) => x.clone(),
             }
         }
-        Ty::ArrayTy(span, pos) => {
+        Ty::ArrayTy(span, _) => {
             let sym = ctx.intern(&span);
             match ctx.type_env.look(sym) {
                 None => Type::Array(sym, ctx.get_next_array_record_ord()),
                 // collapse the name one level.
                 Some(Type::Name(y)) => Type::Array(*y, ctx.get_next_array_record_ord()),
-                Some(x) => Type::Array(sym, ctx.get_next_array_record_ord()),
+                Some(_) => Type::Array(sym, ctx.get_next_array_record_ord()),
             }
         }
         Ty::RecordTy(fields) => {
@@ -1097,9 +1092,9 @@ fn trans_dec<T: Frame + 'static>(
                     }
                     Some(EnvEntry::FunEntry {
                         level,
-                        label,
                         formals,
                         result,
+                        ..
                     }) => {
                         for i in 0..fundec.params.len() {
                             let var_entry = EnvEntry::VarEntry {
@@ -1114,7 +1109,7 @@ fn trans_dec<T: Frame + 'static>(
                             ctx.varfun_env.enter(sym, var_entry);
                         }
 
-                        // the break label is not inherited in the function call
+                        // the break label is not inherited in the function callTODO
                         let (fun_body_ir, fun_body_ty) =
                             trans_exp::<T>(ctx, level.clone(), &*fundec.body, None);
                         if !fun_body_ty.compatible_with(&result)
@@ -1146,7 +1141,7 @@ fn trans_dec<T: Frame + 'static>(
         } => {
             let var_name_sym = ctx.intern(name);
             let name = &ctx.input[name.start()..name.end()];
-            let (init_ir, init_ty) = trans_exp::<T>(ctx, level.clone(), init, break_label);
+            let (_, init_ty) = trans_exp::<T>(ctx, level.clone(), init, break_label);
             match typ {
                 None => {
                     if matches!(init_ty, Type::Nil) {
@@ -1359,7 +1354,7 @@ pub fn translate<T: Frame + 'static>(input: &str, ast: &Exp) -> Result<TrExp, ()
         &mut ctx.gen_temp_label,
         &mut ctx.symbols,
     );
-    let (exp, ty) = trans_exp::<T>(&mut ctx, main_level, ast, None);
+    let (exp, _) = trans_exp::<T>(&mut ctx, main_level, ast, None);
 
     if ctx.has_error() {
         Err(())
