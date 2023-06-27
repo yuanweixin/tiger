@@ -1484,266 +1484,306 @@ mod tests {
     }
 
     #[test]
-    fn var_assign_nil_is_bad() {
-        let source = r"
+    fn more_good() {
+        let inputs = [
+            (
+                "valid nil usage in appendix",
+                r"let
+    type any = {any: int}
+    var a : any := nil
+    function f(a: any) : int = 100
+    in
+    a := nil;
+    if a <> nil then 1 else 1;
+    if nil <> a then 2 else 2;
+    if a = nil then 3 else 3;
+    if nil = a then 4 else 4;
+    f(nil)
+    end",
+            ),
+            (
+                "nil assignment in record",
+                r"let
+    type any = {any: int, x: any}
+    var a : any := any{any=1, x=nil}
+    in
+    42
+    end",
+            ),
+            (
+                "if then both nil",
+                r"let
+    type any = {any: int}
+    in
+    if 1 = 1 then nil else nil
+    end",
+            ),
+            (
+                "if return non nil then return nil",
+                r"let
+    type any = {any: int}
+    var a: any := any{any=1}
+    in
+    if 1 = 1 then a else nil
+    end",
+            ),
+            (
+                "if return nil then non nil",
+                r"let
+    type any = {any: int}
+    var a: any := any{any=1}
+    in
+    if 1 = 1 then nil else a
+    end",
+            ),
+            (
+                "function a() : some_record = ... where body returns nil",
+                r"let
+    type any = {any: int}
+    function f(a: any) : any = nil
+    in
+    f(nil)
+    end",
+            ),
+            (
+                "function a() = () should be accepted",
+                r"let
+    function f() = ()
+    in
+    f()
+    end",
+            ),
+            (
+                "local redeclarations, appendix example",
+                r"let
+        function print(v:int) = ()
+        function f(v:int) =
+        let var v := 6
+            in print(v);
+            let var v := 7 in print (v) end;
+            print(v);
+            let var v := 8 in print (v) end;
+            print (v)
+        end
+    in
+    ()
+    end",
+            ),
+            (
+                "break in a while loop is legal",
+                r"
+    let
+    in
+        while 1 = 1 do
+            break
+    end",
+            ),
+            (
+                "break in a for loop is legal",
+                r"let
+    in
+        for i :=0 to 100 do
+            break
+    end",
+            ),
+            (
+                "standard library calls",
+                r#"
+    let
+    in
+        print("die");
+        flush();
+        getchar();
+        ord("");
+        chr(0);
+        size("");
+        substring("hello", 0, 1);
+        concat("h","i");
+        not(1);
+        exit(1)
+    end"#,
+            ),
+            (
+                "circular self through array okay",
+                r"let
+        type a = array of a
+    in
+    end",
+            ),
+            (
+                "circular self through record okay",
+                r"
+    let
+        type a = {x: a}
+    in
+    end",
+            ),
+            (
+                "circular nonself through array ok",
+                r"
+    let
+        type a = b
+        type b = array of a
+    in
+    end",
+            ),
+            (
+                "circular nonself through record ok",
+                r"
+    let
+        type a = b
+        type b = {x: a}
+    in
+    end",
+            ),
+            (
+                "redeclaration",
+                r"
+    let
+        var i := 1
+        var i := 2 /* i above irrelevant for escape analysis */
+        var k := 3
+        /* function i's scope effectively at start of recursive blk */
+        function j () =
+            (i();
+            k + 1;
+            ())
+        function i () =
+            (2;
+            ())
+        var i := 4
+        function j () : int =
+            i + 1  /* i escapes here */
+    in
+    end
+    ",
+            ),
+            (
+                "functions returning array okay",
+                r"
+    let
+            type intArray = array of int
+            function x() : intArray =
+                intArray[7] of 9
+    in
+    end
+    ",
+            ),
+            (
+                "function returning record okay",
+                r"
+    let
+            type rec = {i: int}
+            function x() : rec =
+                rec{i=42}
+    in
+    end
+    ",
+            ),
+        ];
+        for (desc, input) in inputs {
+            test_input_helper(input, true, None);
+        }
+    }
+
+    #[test]
+    fn more_bad() {
+        let inputs = [
+            (
+                "",
+                r"
             let
             var a := nil
             in 1
             end
-        ";
-        test_input_helper(source, false, None);
+        ",
+            ),
+            (
+                "circular to self bad",
+                r"
+    let
+        type a = a
+    in
+    end",
+            ),
+            (
+                "circular through seq of type decls bad",
+                r"
+    let
+        type a = b
+        type b = a
+    in
+    end",
+            ),
+            (
+                "fundec block shadow var name",
+                r"
+    let
+        var i := 1
+        function j () =
+            i := 2 /* this is illegal because i is a func */
+        function i () =  /* i defined as func at start of j */
+            ()
+    in
+    end
+    ",
+            ),
+            (
+                "for loop bad input to access for loop var in lo or hi",
+                r"
+    let
+        function x() =
+            for i :=  let function j() = i:= 1 in 1 end to let function j() = i:= 100 in 100 end
+            do
+                ()
+    in
+    end
+    ",
+            ),
+            (
+                "for loop counter cannot be assigned to",
+                r"let
+    in
+    for r := 0 to 10 do
+        if 1 = 1 then r := 1; ()
+    end",
+            ),
+            (
+                "records same but separate decls are distinct types",
+                r"let
+    type any1 = {any: int}
+    type any2 = {any: int}
+    var a : any1 := nil
+    var b : any2 := nil
+    in
+    a = b
+    end",
+            ),
+            (
+                "arrays same but separate decls are distinct types",
+                r"let
+    type arr1 = array of int
+    type arr2 = array of int
+    var a1 := arr1[8] of 0
+    var a2 := arr2[8] of 0
+    in
+    a1 = a2
+    end",
+            ),
+            (
+                "break not in while/for fails",
+                r"
+    let
+    in
+        break
+    end",
+            ),
+        ];
+        for (_, input) in inputs {
+            test_input_helper(input, false, None);
+        }
     }
 }
-
-// test "var a := nil fails type check":
-//     let source = """let
-//     var a := nil
-//     in 1
-//     end"""
-//     testInputIsBad source
-
-// test "nil valid cases in appendix":
-//     let source = """let
-//     type any = {any: int}
-//     var a : any := nil
-//     function f(a: any) : int = 100
-//     in
-//     a := nil;
-//     if a <> nil then 1 else 1;
-//     if nil <> a then 2 else 2;
-//     if a = nil then 3 else 3;
-//     if nil = a then 4 else 4;
-//     f(nil)
-//     end"""
-//     testInputIsGood source
-
-// test "record a{f1=nil,...} works":
-//     let source = """let
-//     type any = {any: int, x: any}
-//     var a : any := any{any=1, x=nil}
-//     in
-//     42
-//     end"""
-//     testInputIsGood source
-
-// test "if...then... can both return nil":
-//     let source = """let
-//     type any = {any: int}
-//     in
-//     if 1 = 1 then nil else nil
-//     end"""
-//     testInputIsGood source
-
-// test "if...then..., if returns RecordT, then returns nil":
-//     let source = """let
-//     type any = {any: int}
-//     var a: any := any{any=1}
-//     in
-//     if 1 = 1 then a else nil
-//     end"""
-//     testInputIsGood source
-
-// test "if...then..., if returns nil, then returns RecordT":
-//     let source = """let
-//     type any = {any: int}
-//     var a: any := any{any=1}
-//     in
-//     if 1 = 1 then nil else a
-//     end"""
-//     testInputIsGood source
-
-// test "function a() : some_record = ... where body returns nil":
-//     let source = """let
-//     type any = {any: int}
-//     function f(a: any) : any = nil
-//     in
-//     f(nil)
-//     end"""
-//     testInputIsGood source
-
-// test "function a() = () should be accepted":
-//     let source = """let
-//     function f() = ()
-//     in
-//     f()
-//     end"""
-//     testInputIsGood source
-
-// test "for loop counter cannot be assigned to":
-//     let source = """let
-//     in
-//     for r := 0 to 10 do
-//         if 1 = 1 then r := 1; ()
-//     end"""
-//     testInputIsBad source
-
-// test "records same but separate decls are distinct types":
-//     let source = """let
-//     type any1 = {any: int}
-//     type any2 = {any: int}
-//     var a : any1 := nil
-//     var b : any2 := nil
-//     in
-//     a = b
-//     end"""
-//     testInputIsBad source
-
-// test "arrays same but separate decls are distinct types":
-//     let source = """let
-//     type arr1 = array of int
-//     type arr2 = array of int
-//     var a1 := arr1[8] of 0
-//     var a2 := arr2[8] of 0
-//     in
-//     a1 = a2
-//     end"""
-//     testInputIsBad source
-
-// test "local redeclarations, appendix example":
-//     let source = """
-//     let
-//         function print(v:int) = ()
-//         function f(v:int) =
-//         let var v := 6
-//             in print(v);
-//             let var v := 7 in print (v) end;
-//             print(v);
-//             let var v := 8 in print (v) end;
-//             print (v)
-//         end
-//     in
-//     ()
-//     end"""
-//     testInputIsGood source
-
-// test "break not in while/for fails":
-//     let source = """
-//     let
-//     in
-//         break
-//     end"""
-//     testInputIsBad source
-
-// test "break in a while loop is legal":
-//     let source = """
-//     let
-//     in
-//         while 1 = 1 do
-//             break
-//     end"""
-//     testInputIsGood source
-
-// test "break in a for loop is legal":
-//     let source = """
-//     let
-//     in
-//         for i :=0 to 100 do
-//             break
-//     end"""
-//     testInputIsGood source
-
-// test "standard library calls":
-//     let source = """
-//     let
-//     in
-//         print("die");
-//         flush();
-//         getchar();
-//         ord("");
-//         chr(0);
-//         size("");
-//         substring("hello", 0, 1);
-//         concat("h","i");
-//         not(1);
-//         exit(1)
-//     end"""
-//     testInputIsGood source
-
-// test "circular to self bad":
-//     let source = """
-//     let
-//         type a = a
-//     in
-//     end"""
-//     testInputIsBad source
-
-// test "circular through seq of type decls bad":
-//     let source = """
-//     let
-//         type a = b
-//         type b = a
-//     in
-//     end"""
-//     testInputIsBad source
-
-// test "circular self through array okay":
-//     let source = """
-//     let
-//         type a = array of a
-//     in
-//     end"""
-//     testInputIsGood source
-
-// test "circular self through record okay":
-//     let source = """
-//     let
-//         type a = {x: a}
-//     in
-//     end"""
-//     testInputIsGood source
-
-// test "circular nonself through array ok":
-//     let source = """
-//     let
-//         type a = b
-//         type b = array of a
-//     in
-//     end"""
-//     testInputIsGood source
-
-// test "circular nonself through record ok":
-//     let source = """
-//     let
-//         type a = b
-//         type b = {x: a}
-//     in
-//     end"""
-//     testInputIsGood source
-
-// test "redeclaration":
-//     let source = """
-//     let
-//         var i := 1
-//         var i := 2 /* i above irrelevant for escape analysis */
-//         var k := 3
-//         /* function i's scope effectively at start of recursive blk */
-//         function j () =
-//             (i();
-//             k + 1;
-//             ())
-//         function i () =
-//             (2;
-//             ())
-//         var i := 4
-//         function j () : int =
-//             i + 1  /* i escapes here */
-//     in
-//     end
-//     """
-//     testInputIsGood source
-
-// test "fundec block shadow var name":
-//     let source = """
-//     let
-//         var i := 1
-//         function j () =
-//             i := 2 /* this is illegal because i is a func */
-//         function i () =  /* i defined as func at start of j */
-//             ()
-//     in
-//     end
-//     """
-//     testInputIsBad source
 
 // test "escape simple":
 //     let source = """
@@ -1868,18 +1908,6 @@ mod tests {
 //     check ast.decs[1].fundecs[0].body.escape == false # for loop i
 //     testInputIsGood source
 
-// test "for loop bad input to access for loop var in lo or hi":
-//     let source = """
-//     let
-//         function x() =
-//             for i :=  let function j() = i:= 1 in 1 end to let function j() = i:= 100 in 100 end
-//             do
-//                 ()
-//     in
-//     end
-//     """
-//     testInputIsBad source
-
 // test "assignment to function call scalar result is invalid":
 //     ## spec says lvalue is variables, proc params, fields of records, and
 //     ## array elements. functions can return record or array type, but those
@@ -1931,25 +1959,3 @@ mod tests {
 //     let astOpt = parseString(source)VarDec
 //     # it doesn't let you assign to func call results.
 //     check astOpt.isNone
-
-// test "functions returning array okay":
-//     let source = """
-//     let
-//             type intArray = array of int
-//             function x() : intArray =
-//                 intArray[7] of 9
-//     in
-//     end
-//     """
-//     testInputIsGood source
-
-// test "function returning record okay":
-//     let source = """
-//     let
-//             type rec = {i: int}
-//             function x() : rec =
-//                 rec{i=42}
-//     in
-//     end
-//     """
-//     testInputIsGood source
