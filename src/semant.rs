@@ -1483,16 +1483,16 @@ mod tests {
         }
     }
 
-    // #[test]
-    // fn var_assign_nil_is_bad() {
-    //     let source = r"
-    //         let
-    //         var a := nil
-    //         in 1
-    //         end
-    //     ";
-    //     test_input_helper(source, false);
-    // }
+    #[test]
+    fn var_assign_nil_is_bad() {
+        let source = r"
+            let
+            var a := nil
+            in 1
+            end
+        ";
+        test_input_helper(source, false, None);
+    }
 }
 
 // test "var a := nil fails type check":
