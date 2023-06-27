@@ -1783,6 +1783,64 @@ mod tests {
             test_input_helper(input, false, None);
         }
     }
+
+    #[test]
+    fn rvalue_assignment_disallowed() {
+        // variables, proc params, fields of records, and
+        // array elements. functions can return record or array type, but those
+        // would be references to some block of memory, and assigning to that
+        // reference doesn't make the same sense as assigning to a var of
+        // array/record type. for other types, you are just returning a value,
+        // so it makes no sense to assign to those either.
+
+        // luckily, it's built into the syntax so we don't have to worry about
+        // that scenario.
+        let inputs = [
+            (
+                "assignment to function call scalar result is invalid",
+                r"
+        let
+            function x() : int =
+                100
+        in
+            x() := 20
+        end
+        ",
+            ),
+            (
+                "assignment to function call array result is invalid",
+                r"
+        let
+            type intArray = array of int
+            function x() : intArray =
+                intArray[8] of 0
+            var t := intArray[8] of 0
+        in
+            x() := t
+        end
+        ",
+            ),
+            (
+                "assignment to function call record result is invalid",
+                r"
+        let
+            type rec = {i : int}
+            function x() : rec =
+                rec{i=42}
+            var t := rec{i=43}
+        in
+            x() := t
+        end
+        ",
+            ),
+        ];
+        for (_, input) in inputs {
+            let lexerdef = tiger_l::lexerdef();
+            let lexer = lexerdef.lexer(&input);
+            let (_res, errs) = tiger_y::parse(&lexer);
+            assert!(errs.len() > 0);
+        }
+    }
 }
 
 // test "escape simple":
@@ -1907,55 +1965,3 @@ mod tests {
 //     check ast.decs[0].escape == true # outer i
 //     check ast.decs[1].fundecs[0].body.escape == false # for loop i
 //     testInputIsGood source
-
-// test "assignment to function call scalar result is invalid":
-//     ## spec says lvalue is variables, proc params, fields of records, and
-//     ## array elements. functions can return record or array type, but those
-//     ## would be references to some block of memory, and assigning to that
-//     ## reference doesn't make the same sense as assigning to a var of
-//     ## array/record type. for other types, you are just returning a value,
-//     ## so it makes no sense to assign to those either.
-//     ##
-//     ## luckily, it's built into the syntax so we don't have to worry about
-//     ## that scenario.
-//     let source = """
-//     let
-//         function x() : int =
-//             100
-//     in
-//         x() := 20
-//     end
-//     """
-//     let astOpt = parseString(source)
-//     # it doesn't let you assign to func call results.
-//     check astOpt.isNone
-
-// test "assignment to function call array result is invalid":
-//     let source = """
-//     let
-//         type intArray = array of int
-//         function x() : intArray =
-//             intArray[8] of 0
-//         var t := intArray[8] of 0
-//     in
-//         x() := t
-//     end
-//     """
-//     let astOpt = parseString(source)
-//     # it doesn't let you assign to func call results.
-//     check astOpt.isNone
-
-// test "assignment to function call record result is invalid":
-//     let source = """
-//     let
-//         type rec = {i : int}
-//         function x() : rec =
-//             rec{i=42}
-//         var t := rec{i=43}
-//     in
-//         x() := t
-//     end
-//     """
-//     let astOpt = parseString(source)VarDec
-//     # it doesn't let you assign to func call results.
-//     check astOpt.isNone
