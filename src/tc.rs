@@ -15,6 +15,7 @@ mod ir;
 mod translate;
 mod frame;
 mod semant;
+mod escape;
 
 lrlex_mod!("tiger.l");
 lrpar_mod!("tiger.y");

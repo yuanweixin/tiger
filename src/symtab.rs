@@ -46,6 +46,14 @@ impl<T> SymbolTable<T> {
         }
     }
 
+    pub fn look_mut(&mut self, symbol: Symbol) -> Option<&mut T> {
+        if let Some(vec) = self.tbl.get_mut(&symbol) {
+            vec.last_mut()
+        } else {
+            None
+        }
+    }
+
     pub fn begin_scope(&mut self) {
         self.stack.push(StackSymbol::BeginScopeMarker);
     }

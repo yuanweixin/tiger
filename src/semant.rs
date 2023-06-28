@@ -15,6 +15,7 @@ use crate::{
     symtab::SymbolTable,
     temp::{GenTemporary, Label},
     translate,
+    escape,
     translate::{Level, TrExp, ERROR_TR_EXP},
 };
 use strum_macros::Display;
@@ -201,7 +202,7 @@ impl<'a> TypeCheckingContext<'a> {
         &self.input[s.start()..s.end()]
     }
 
-    fn intern(&mut self, s: &Span) -> Symbol {
+    pub fn intern(&mut self, s: &Span) -> Symbol {
         // cannot call get_span here because it will borrow the self parameter as a immutable ref.
         // otoh, we can borrow the self.input here since it's a "separate" chunk of memory.
         let x = &self.input[s.start()..s.end()];
@@ -1345,8 +1346,10 @@ fn trans_dec<T: Frame + 'static>(
     }
 }
 
-pub fn translate<T: Frame + 'static>(input: &str, ast: &Exp) -> Result<TrExp, ()> {
+pub fn translate<T: Frame + 'static>(input: &str, ast: &mut Exp) -> Result<TrExp, ()> {
     let mut ctx = TypeCheckingContext::new(input);
+
+    escape::find_escapes(&mut ctx, ast);
 
     let main_level = Level::new_level::<T>(
         Level::outermost(),
@@ -1428,8 +1431,8 @@ mod tests {
         assert!(res.is_some());
         assert!(res.as_ref().unwrap().is_ok());
 
-        let ast = &res.unwrap().unwrap();
-        let res = super::translate::<TestFrame>(input, ast);
+        let mut ast = res.unwrap().unwrap();
+        let res = super::translate::<TestFrame>(input, &mut ast);
         match (is_good, res) {
             (false, Ok(..)) => {
                 panic!(
