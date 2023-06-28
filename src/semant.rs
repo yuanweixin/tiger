@@ -1,21 +1,16 @@
 use cfgrammar::Span;
 use itertools::Itertools;
 use std::collections::HashMap;
-use std::{
-    cell::RefCell,
-    num::NonZeroUsize,
-    rc::{Rc},
-};
+use std::{cell::RefCell, num::NonZeroUsize, rc::Rc};
 
 use crate::{
     absyn::{Dec, Exp, Oper, Ty, Var},
-    frame,
+    escape, frame,
     frame::Frame,
     symbol::{Interner, Symbol},
     symtab::SymbolTable,
     temp::{GenTemporary, Label},
     translate,
-    escape,
     translate::{Level, TrExp, ERROR_TR_EXP},
 };
 use strum_macros::Display;
@@ -213,7 +208,7 @@ impl<'a> TypeCheckingContext<'a> {
         self.has_err
     }
 
-    fn resolve_unchecked(&self, s: &Symbol) -> &str {
+    pub fn resolve_unchecked(&self, s: &Symbol) -> &str {
         self.symbols.resolve(s).unwrap()
     }
 }
@@ -757,12 +752,7 @@ fn trans_exp<T: Frame + 'static>(
 
             (translate::let_exp(var_init_irs, let_body_ir), let_body_ty)
         }
-        Exp::ArrayExp {
-            typ,
-            init,
-            pos,
-            ..
-        } => {
+        Exp::ArrayExp { typ, init, pos, .. } => {
             let sym = ctx.intern(typ);
             let arr_ty_opt = ctx.type_env.look(sym).map(|e| e.clone());
             if arr_ty_opt.is_none() {
@@ -1423,7 +1413,7 @@ mod tests {
         }
     }
 
-    fn test_input_helper(input: &str, is_good: bool, dir_path: Option<&str>) {
+    fn test_input_helper(input: &str, is_good: bool, dir_path: Option<&str>) -> Exp {
         let lexerderef = tiger_l::lexerdef();
         let lexer = lexerderef.lexer(input);
         let (res, errs) = tiger_y::parse(&lexer);
@@ -1448,6 +1438,7 @@ mod tests {
             }
             _ => {}
         }
+        ast
     }
 
     fn test_is_good(input: &str) {
@@ -1839,109 +1830,193 @@ mod tests {
             assert!(errs.len() > 0);
         }
     }
+
+    #[test]
+    fn escape_simple() {
+        let input = r"
+    let
+        var i := 1
+        var x := 2
+        function j () =
+            i := 3
+    in
+        let
+            function k() =
+                (i := 4;
+                x := 5)
+        in
+        end
+    end
+        ";
+        let ast = test_input_helper(input, true, None);
+        match &ast {
+            Exp::LetExp { decs, .. } => match decs.as_slice() {
+                [Dec::VarDec { escape: true, .. }, Dec::VarDec { escape: true, .. }, Dec::FunctionDec(..)] =>
+                    {}
+                _ => {
+                    panic!("Unexpected AST structure for this program; ast={:#?}", ast);
+                }
+            },
+            _ => {
+                panic!("Unexpected AST structure for this program; ast={:#?}", ast);
+            }
+        }
+    }
+
+    #[test]
+    fn escape_not_var_redeclared_as_function() {
+        let input = r"
+    let
+        var i := 1
+        function j () =
+            i()
+        function i () =
+            ()
+    in
+    end
+    ";
+        let ast = test_input_helper(input, true, None);
+        match &ast {
+            Exp::LetExp { decs, .. } => match decs.as_slice() {
+                [Dec::VarDec { escape: false, .. }, Dec::FunctionDec(..)] => {}
+                _ => {
+                    panic!("Unexpected AST structure for this program; ast={:#?}", ast);
+                }
+            },
+            _ => {
+                panic!("Unexpected AST structure for this program; ast={:#?}", ast);
+            }
+        }
+    }
+
+    #[test]
+    fn escape_when_var_gets_redeclared() {
+        let input = r"
+    let
+        var i := 1 /* get shadowed so shouldn't move */
+        var i := 2 /* i escapes */
+        function j () =
+            i := 3
+        var i := 4 /* this is fresh and shouldn't escape */
+        var j := 5  /* gets used later */
+    in
+        let
+            function x() =
+                j := 42
+        in
+        end
+    end
+    ";
+        let ast = test_input_helper(input, true, None);
+        match &ast {
+            Exp::LetExp { decs, .. } => match decs.as_slice() {
+                [Dec::VarDec { escape: false, .. }, Dec::VarDec { escape: true, .. }, Dec::FunctionDec(..), Dec::VarDec { escape: false, .. }, Dec::VarDec { escape: true, .. }] =>
+                    {}
+                _ => {
+                    panic!("Unexpected AST structure for this program; ast={:#?}", ast);
+                }
+            },
+            _ => {
+                panic!("Unexpected AST structure for this program; ast={:#?}", ast);
+            }
+        }
+    }
+
+    #[test]
+    fn escape_for_variable() {
+        let input = r"
+    let
+    in
+        for i := 1 to 100
+        do
+            let
+                function j () : int =
+                    i + 1
+            in
+            end
+    end
+    ";
+        let ast = test_input_helper(input, true, None);
+        match &ast {
+            Exp::LetExp { body, .. } => match body.as_ref() {
+                Exp::SeqExp(exps) => match exps.as_slice() {
+                    [Exp::ForExp { escape: true, .. }] => {}
+                    _ => {
+                        panic!("Unexpected AST structure for this program; ast={:#?}", ast);
+                    }
+                },
+                _ => {
+                    panic!("Unexpected AST structure for this program; ast={:#?}", ast);
+                }
+            },
+            _ => {
+                panic!("Unexpected AST structure for this program; ast={:#?}", ast);
+                // test "escape vaGood source
+            }
+        }
+    }
+
+    #[test]
+    fn escape_var_for_no_interaction() {
+        let input = r"
+    let
+        var i:= 1
+        in
+        for i := 1 to 100
+        do
+            ()
+    end
+    ";
+        let ast = test_input_helper(input, true, None);
+        match &ast {
+            Exp::LetExp { decs, body, .. } => {
+                assert!(decs.len() == 1);
+                match decs[0] {
+                    Dec::VarDec { escape: false, .. } => {}
+                    _ => {
+                        panic!("Unexpected AST structure for this program; ast={:#?}", ast);
+                    }
+                }
+            }
+            _ => {
+                panic!("Unexpected AST structure for this program; ast={:#?}", ast);
+                // test "escape vaGood source
+            }
+        }
+    }
+
+    #[test]
+    fn escape_not_for_loop_var_by_lo_hi() {
+        let input = r"
+    let
+        var i := 0
+        in
+    for i := let function j() = i:= 1 in 1 end to let function j() = i:= 1 in 100 end
+            do
+                ()
+    end
+    ";
+        let ast = test_input_helper(input, true, None);
+        match &ast {
+            Exp::LetExp { body, .. } => match body.as_ref() {
+                Exp::SeqExp(exps) => {
+                    assert!(exps.len() == 1);
+                    match exps[0] {
+                        Exp::ForExp { escape: false, .. } => {}
+                        _ => {
+                            panic!("Unexpected AST structure for this program; ast={:#?}", ast)
+                        }
+                    }
+                }
+                _ => panic!("Unexpected AST structure for this program; ast={:#?}", ast),
+            },
+            _ => {
+                panic!("Unexpected AST structure for this program; ast={:#?}", ast);
+                // test "escape vaGood source
+            }
+        }
+    }
 }
-
-// test "escape simple":
-//     let source = """
-//     let
-//         var i := 1
-//         function j () =
-//             i := 2
-//     in
-//         let
-//             function k() =
-//                 i := 3
-//         in
-//         end
-//     end
-//     """
-//     let astOpt = parseString(source)
-//     doAssert astOpt.isSome
-//     let ast = astOpt.get
-//     check ast.decs[0].escape == false
-//     ast.findEscape
-//     check ast.decs[0].escape == true
-//     testInputIsGood source
-
-// test "escape var get redeclared as function":
-//     let source = """
-//     let
-//         var i := 1
-//         function j () =
-//             i()
-//         function i () =
-//             ()
-//     in
-//     end
-//     """
-//     let astOpt = parseString(source)
-//     doAssert astOpt.isSome
-//     let ast = astOpt.get
-//     check ast.decs[0].escape == false
-//     ast.findEscape
-//     check ast.decs[0].escape == false
-//     testInputIsGood source
-
-// test "escape var gets redeclared":
-//     let source = """
-//     let
-//         var i := 1 /* get shadowed so shouldn't move */
-//         var i := 2 /* i escapes */
-//         function j () =
-//             i := 3
-//         var i := 4 /* this is fresh and shouldn't escape */
-//         var j := 5  /* gets used later */
-//     in
-//         let
-//             function x() =
-//                 j := 42
-//         in
-//         end
-//     end
-//     """
-//     let astOpt = parseString(source)
-//     doAssert astOpt.isSome
-//     let ast = astOpt.get
-//     check ast.decs[0].escape == false
-//     check ast.decs[1].escape == false
-//     check ast.decs[3].escape == false
-//     check ast.decs[4].escape == false
-//     ast.findEscape
-//     check ast.decs[0].escape == false
-//     check ast.decs[1].escape == true
-//     check ast.decs[3].escape == false
-//     check ast.decs[4].escape == true
-//     testInputIsGood source
-
-// test "for variable escapes":
-//     let source = """
-//     let
-//         function x() =
-//             for i := 1 to 100
-//             do
-//                 let
-//                     function j () : int =
-//                         i + 1
-//                     var i := 2 /* redeclare */
-//                     var k := 0
-//                     function j () : int =
-//                         i + 1  /* this now affects the inner i */
-//                 in
-//                 end
-//     in
-//     end
-//     """
-//     let astOpt = parseString(source)
-//     doAssert astOpt.isSome
-//     let ast = astOpt.get
-//     check ast.decs[0].fundecs[0].body.escape == false
-//     check ast.decs[0].fundecs[0].body.fbody.decs[1].escape == false # inner i
-//     check ast.decs[0].fundecs[0].body.fbody.decs[2].escape == false # k
-//     ast.findEscape
-//     check ast.decs[0].fundecs[0].body.escape == true
-//     check ast.decs[0].fundecs[0].body.fbody.decs[1].escape == true # inner i
-//     check ast.decs[0].fundecs[0].body.fbody.decs[2].escape == false # k
-//     testInputIsGood source
 
 // test "for lo, hi does not affect escape of for loop var":
 //     let source = """

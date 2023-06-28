@@ -45,14 +45,18 @@ use crate::{
 };
 use std::num::NonZeroUsize;
 
-type DepthEscapeRef = (NonZeroUsize, bool);
-type EscapeEnv = SymbolTable<DepthEscapeRef>;
+// TODO hmm this needs to mutate a piece of the parent that showed up earlier.
+// since &mut is restricted, how to get access to that without blowing up this shit?
+// let's try storing &mut, if that doesn't work then will use a Cell.
+// wanna see what the compiler complains about.
+type DepthEscapeRef<'a> = (NonZeroUsize, &'a mut bool);
+type EscapeEnv<'a> = SymbolTable<DepthEscapeRef<'a>>;
 
-fn traverse_exp(
+fn traverse_exp<'a>(
     ctx: &mut TypeCheckingContext,
-    env: &mut EscapeEnv,
+    env: &mut EscapeEnv<'a>,
     d: NonZeroUsize,
-    exp: &mut Exp,
+    exp: &'a mut Exp,
 ) {
     match exp {
         Exp::OpExp { left, right, .. } => {
@@ -95,14 +99,19 @@ fn traverse_exp(
             traverse_exp(ctx, env, d, body);
         }
         Exp::ForExp {
-            var, lo, hi, body, ..
+            var,
+            lo,
+            hi,
+            body,
+            escape,
+            ..
         } => {
             env.begin_scope(); // loop counter only valid here.
 
             traverse_exp(ctx, env, d, lo);
             traverse_exp(ctx, env, d, hi);
             let var_sym = ctx.intern(var);
-            env.enter(var_sym, (d, false));
+            env.enter(var_sym, (d, escape));
 
             traverse_exp(ctx, env, d, body);
             env.end_scope();
@@ -126,11 +135,11 @@ fn traverse_exp(
     }
 }
 
-fn traverse_var(
+fn traverse_var<'a>(
     ctx: &mut TypeCheckingContext,
-    env: &mut EscapeEnv,
+    env: &mut EscapeEnv<'a>,
     cur_depth: NonZeroUsize,
-    var: &mut Var,
+    var: &'a mut Var,
 ) {
     match var {
         // Id
@@ -140,10 +149,15 @@ fn traverse_var(
             // hence the if check.
             let symbol = ctx.intern(span);
             let entry = env.look_mut(symbol);
+            println!(
+                "entry for {} is {:#?}",
+                ctx.resolve_unchecked(&symbol),
+                entry
+            );
             if entry.is_some() {
                 let e = entry.unwrap();
                 if cur_depth > e.0 {
-                    e.1 = true;
+                    *e.1 = true;
                 }
             }
         }
@@ -159,27 +173,27 @@ fn traverse_var(
     }
 }
 
-fn traverse_dec(
+fn traverse_dec<'a>(
     ctx: &mut TypeCheckingContext,
-    env: &mut EscapeEnv,
+    env: &mut EscapeEnv<'a>,
     depth: NonZeroUsize,
-    dec: &mut Dec,
+    dec: &'a mut Dec,
 ) {
     match dec {
         Dec::TypeDec(..) => {}
         Dec::FunctionDec(v) => {
             let new_depth = depth.checked_add(1).unwrap();
             for fundec in v {
-                for field in &fundec.params {
+                for field in &mut fundec.params {
                     let sym = ctx.intern(&field.name);
-                    env.enter(sym, (new_depth, false));
+                    env.enter(sym, (new_depth, &mut field.escape));
                 }
                 traverse_exp(ctx, env, new_depth, &mut fundec.body);
             }
         }
-        Dec::VarDec { name, .. } => {
+        Dec::VarDec { name, escape, .. } => {
             let sym = ctx.intern(name);
-            env.enter(sym, (depth, false));
+            env.enter(sym, (depth, escape));
         }
     }
 }
