@@ -36,11 +36,8 @@
 //  end
 //
 use crate::{
-    absyn,
     absyn::{Dec, Exp, Var},
     semant::TypeCheckingContext,
-    symbol,
-    symbol::Interner,
     symtab::SymbolTable,
 };
 use std::num::NonZeroUsize;

@@ -1051,7 +1051,7 @@ fn trans_dec<T: Frame + 'static>(
                     }
                     escapes.push(field.escape);
                 }
-                let new_level = Level::new_level::<T>(
+                let (new_level, new_level_label) = Level::new_level::<T>(
                     level.clone(),
                     escapes,
                     &mut ctx.gen_temp_label,
@@ -1059,8 +1059,7 @@ fn trans_dec<T: Frame + 'static>(
                 );
                 let funentry = EnvEntry::FunEntry {
                     level: new_level,
-                    // TODO what does the label do and should we use label of the `new_level` instead?
-                    label: level.as_ref().borrow().get_label().unwrap(), // it is a bug if this does not have a label.
+                    label: new_level_label,
                     formals: Rc::new(formal_types),
                     result: ret_ty,
                 };
@@ -1100,7 +1099,7 @@ fn trans_dec<T: Frame + 'static>(
                             ctx.varfun_env.enter(sym, var_entry);
                         }
 
-                        // the break label is not inherited in the function callTODO
+                        // the break label is not inherited in the function call TODO
                         let (fun_body_ir, fun_body_ty) =
                             trans_exp::<T>(ctx, level.clone(), &*fundec.body, None);
                         if !fun_body_ty.compatible_with(&result)
@@ -1341,7 +1340,7 @@ pub fn translate<T: Frame + 'static>(input: &str, ast: &mut Exp) -> Result<TrExp
 
     escape::find_escapes(&mut ctx, ast);
 
-    let main_level = Level::new_level::<T>(
+    let (main_level, _) = Level::new_level::<T>(
         Level::outermost(),
         Vec::new(),
         &mut ctx.gen_temp_label,

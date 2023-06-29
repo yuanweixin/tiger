@@ -52,24 +52,18 @@ impl Level {
         mut escapes: Vec<bool>,
         gen_temp_label: &mut GenTemporary,
         pool: &mut Interner,
-    ) -> Rc<RefCell<Level>> {
+    ) -> (Rc<RefCell<Level>>, Label) {
         // prepend true for the static link
         escapes.insert(0, true);
-        Rc::new(RefCell::new(Level::Nested {
+        let function_label = gen_temp_label.new_label(pool);
+        (Rc::new(RefCell::new(Level::Nested {
             parent: parent.clone(),
-            frame: Box::new(T::new(gen_temp_label.new_label(pool), escapes)),
-        }))
+            frame: Box::new(T::new(function_label, escapes)),
+        })), function_label)
     }
 }
 
 impl Level {
-    pub fn get_label(&self) -> Option<Label> {
-        match self {
-            Level::Top => None,
-            Level::Nested { ref frame, .. } => Some(frame.name()),
-        }
-    }
-
     pub fn formal_without_static_link(&self, idx: usize) -> frame::Access {
         match self {
             Level::Top => {
