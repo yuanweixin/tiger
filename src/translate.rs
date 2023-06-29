@@ -1,8 +1,3 @@
-// TODO
-#![allow(dead_code)]
-#![allow(unused_variables)]
-
-
 use crate::{
     absyn::Oper,
     frame,

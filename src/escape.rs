@@ -45,10 +45,6 @@ use crate::{
 };
 use std::num::NonZeroUsize;
 
-// TODO hmm this needs to mutate a piece of the parent that showed up earlier.
-// since &mut is restricted, how to get access to that without blowing up this shit?
-// let's try storing &mut, if that doesn't work then will use a Cell.
-// wanna see what the compiler complains about.
 type DepthEscapeRef<'a> = (NonZeroUsize, &'a mut bool);
 type EscapeEnv<'a> = SymbolTable<DepthEscapeRef<'a>>;
 
