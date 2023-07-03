@@ -44,25 +44,22 @@ pub struct TypeCheckingContext<'a> {
     type_env: SymbolTable<Type>,
     varfun_env: SymbolTable<EnvEntry>,
     has_err: bool,
-    symbols: Interner,
     input: &'a str,
-    gen_temp_label: GenTemporary,
+    gen: GenTemporary,
 }
 
 impl<'a> TypeCheckingContext<'a> {
     fn new(input: &'a str) -> Self {
-        let mut gen_temp_label = GenTemporary::new();
-        let mut symbols = Interner::new();
-        let type_env = Self::base_env_type_env(&mut symbols);
-        let varfun_env = Self::base_varfun_env(&mut symbols, &mut gen_temp_label);
+        let mut gen = GenTemporary::new();
+        let type_env = Self::base_env_type_env(&mut gen);
+        let varfun_env = Self::base_varfun_env(&mut gen);
         Self {
             next_array_record_ord: NonZeroUsize::MIN,
             type_env,
             varfun_env,
             has_err: false,
-            symbols,
             input,
-            gen_temp_label,
+            gen,
         }
     }
 
@@ -75,105 +72,105 @@ impl<'a> TypeCheckingContext<'a> {
         ret
     }
 
-    fn base_env_type_env(pool: &mut Interner) -> SymbolTable<Type> {
+    fn base_env_type_env(gen: &mut GenTemporary) -> SymbolTable<Type> {
         let mut res = SymbolTable::empty();
         res.begin_scope();
-        res.enter(pool.intern("int"), Type::Int);
-        res.enter(pool.intern("string"), Type::String);
+        res.enter(gen.intern("int"), Type::Int);
+        res.enter(gen.intern("string"), Type::String);
         res
     }
 
-    fn base_varfun_env(pool: &mut Interner, la: &mut GenTemporary) -> SymbolTable<EnvEntry> {
+    fn base_varfun_env(gen: &mut GenTemporary) -> SymbolTable<EnvEntry> {
         let mut res = SymbolTable::empty();
         res.begin_scope();
         res.enter(
-            pool.intern("print"),
+            gen.intern("print"),
             EnvEntry::FunEntry {
                 level: Level::outermost(),
                 formals: Rc::new(vec![Type::String]),
                 result: Type::Unit,
-                label: la.new_label(pool),
+                label: gen.new_label(),
             },
         );
         res.enter(
-            pool.intern("flush"),
+            gen.intern("flush"),
             EnvEntry::FunEntry {
                 level: Level::outermost(),
                 formals: Rc::new(vec![]),
                 result: Type::Unit,
-                label: la.new_label(pool),
+                label: gen.new_label(),
             },
         );
         res.enter(
-            pool.intern("getchar"),
+            gen.intern("getchar"),
             EnvEntry::FunEntry {
                 level: Level::outermost(),
                 formals: Rc::new(vec![]),
                 result: Type::String,
-                label: la.new_label(pool),
+                label: gen.new_label(),
             },
         );
         res.enter(
-            pool.intern("ord"),
+            gen.intern("ord"),
             EnvEntry::FunEntry {
                 level: Level::outermost(),
                 formals: Rc::new(vec![Type::String]),
                 result: Type::Int,
-                label: la.new_label(pool),
+                label: gen.new_label(),
             },
         );
         res.enter(
-            pool.intern("chr"),
+            gen.intern("chr"),
             EnvEntry::FunEntry {
                 level: Level::outermost(),
                 formals: Rc::new(vec![Type::Int]),
                 result: Type::String,
-                label: la.new_label(pool),
+                label: gen.new_label(),
             },
         );
         res.enter(
-            pool.intern("size"),
+            gen.intern("size"),
             EnvEntry::FunEntry {
                 level: Level::outermost(),
                 formals: Rc::new(vec![Type::String]),
                 result: Type::Int,
-                label: la.new_label(pool),
+                label: gen.new_label(),
             },
         );
         res.enter(
-            pool.intern("substring"),
+            gen.intern("substring"),
             EnvEntry::FunEntry {
                 level: Level::outermost(),
                 formals: Rc::new(vec![Type::String, Type::Int, Type::Int]),
                 result: Type::String,
-                label: la.new_label(pool),
+                label: gen.new_label(),
             },
         );
         res.enter(
-            pool.intern("concat"),
+            gen.intern("concat"),
             EnvEntry::FunEntry {
                 level: Level::outermost(),
                 formals: Rc::new(vec![Type::String, Type::String]),
                 result: Type::String,
-                label: la.new_label(pool),
+                label: gen.new_label(),
             },
         );
         res.enter(
-            pool.intern("not"),
+            gen.intern("not"),
             EnvEntry::FunEntry {
                 level: Level::outermost(),
                 formals: Rc::new(vec![Type::Int]),
                 result: Type::Int,
-                label: la.new_label(pool),
+                label: gen.new_label(),
             },
         );
         res.enter(
-            pool.intern("exit"),
+            gen.intern("exit"),
             EnvEntry::FunEntry {
                 level: Level::outermost(),
                 formals: Rc::new(vec![Type::Int]),
                 result: Type::Unit,
-                label: la.new_label(pool),
+                label: gen.new_label(),
             },
         );
         res
@@ -201,7 +198,7 @@ impl<'a> TypeCheckingContext<'a> {
         // cannot call get_span here because it will borrow the self parameter as a immutable ref.
         // otoh, we can borrow the self.input here since it's a "separate" chunk of memory.
         let x = &self.input[s.start()..s.end()];
-        self.symbols.intern(x)
+        self.gen.intern(x)
     }
 
     fn has_error(&self) -> bool {
@@ -209,7 +206,7 @@ impl<'a> TypeCheckingContext<'a> {
     }
 
     pub fn resolve_unchecked(&self, s: &Symbol) -> &str {
-        self.symbols.resolve(s).unwrap()
+        self.gen.resolve(s).unwrap()
     }
 }
 
@@ -276,7 +273,7 @@ fn trans_exp<T: Frame + 'static>(
                 Oper::PlusOp | Oper::MinusOp | Oper::TimesOp | Oper::DivideOp => {
                     match (lhs_ty, rhs_ty) {
                         (Type::Int, Type::Int) => {
-                            (translate::binop(oper, lhs_ir, rhs_ir, &mut ctx.gen_temp_label, &mut ctx.symbols), Type::Int)
+                            (translate::binop(oper, lhs_ir, rhs_ir, &mut ctx.gen, &mut ctx.symbols), Type::Int)
                         }
                         (Type::Error, _) | (_, Type::Error) => (ERROR_TR_EXP, Type::Error),
                         (Type::Int, _) => {
@@ -306,7 +303,7 @@ fn trans_exp<T: Frame + 'static>(
                     }
                 }
                 Oper::LtOp | Oper::LeOp | Oper::GtOp | Oper::GeOp => match (lhs_ty, rhs_ty) {
-                    (Type::Int, Type::Int) => (translate::binop(oper, lhs_ir, rhs_ir, &mut ctx.gen_temp_label, &mut ctx.symbols), Type::Int),
+                    (Type::Int, Type::Int) => (translate::binop(oper, lhs_ir, rhs_ir, &mut ctx.gen, &mut ctx.symbols), Type::Int),
                     (Type::Error, _) | (_, Type::Error) => (ERROR_TR_EXP, Type::Error),
                     (Type::Int, _) => {
                         ctx.flag_error_with_msg(
@@ -352,7 +349,7 @@ fn trans_exp<T: Frame + 'static>(
                                 Type::Int,
                             )
                         } else {
-                            (translate::binop(oper, lhs_ir, rhs_ir, &mut ctx.gen_temp_label, &mut ctx.symbols), Type::Int)
+                            (translate::binop(oper, lhs_ir, rhs_ir, &mut ctx.gen, &mut ctx.symbols), Type::Int)
                         }
                     }
                 }
@@ -643,7 +640,7 @@ fn trans_exp<T: Frame + 'static>(
             }
         }
         Exp::WhileExp { test, body, pos } => {
-            let while_done_label = Some(ctx.gen_temp_label.new_label(&mut ctx.symbols));
+            let while_done_label = Some(ctx.gen.new_label());
             // break is legal in expressions. so if they try to break in the condition
             // of a while loop, it is interpreted as breaking to the end of this while loop,
             // since logically, the while condition is re-evaluated each iteration.
@@ -679,7 +676,7 @@ fn trans_exp<T: Frame + 'static>(
             body,
             pos,
         } => {
-            let for_done_label = Some(ctx.gen_temp_label.new_label(&mut ctx.symbols));
+            let for_done_label = Some(ctx.gen.new_label());
             // if "break" happens in evaluating the for loop params, will just break the loop itself.
             let (lo_ir, lo_ty) = trans_exp::<T>(ctx, level.clone(), lo, for_done_label);
             let (hi_ir, hi_ty) = trans_exp::<T>(ctx, level.clone(), hi, for_done_label);
@@ -696,7 +693,7 @@ fn trans_exp<T: Frame + 'static>(
             ctx.varfun_env.begin_scope();
 
             let sym = ctx.intern(var);
-            let acc = level.as_ref().borrow_mut().alloc_local(*escape);
+            let acc = level.borrow_mut().alloc_local(*escape);
 
             ctx.varfun_env.enter(
                 sym,
@@ -1054,7 +1051,7 @@ fn trans_dec<T: Frame + 'static>(
                 let (new_level, new_level_label) = Level::new_level::<T>(
                     level.clone(),
                     escapes,
-                    &mut ctx.gen_temp_label,
+                    &mut ctx.gen,
                     &mut ctx.symbols,
                 );
                 let funentry = EnvEntry::FunEntry {
@@ -1141,7 +1138,7 @@ fn trans_dec<T: Frame + 'static>(
                         ctx.flag_error_with_msg (pos, &format!("Variable {} is declared with unknown type and initiated with nil. Fix by using the long form, e.g. var {} : <your-type> = ...", name, name));
                     } else {
                         // no return type specified, infer it
-                        let acc = level.as_ref().borrow_mut().alloc_local(*escape);
+                        let acc = level.borrow_mut().alloc_local(*escape);
                         ctx.varfun_env.enter(
                             var_name_sym,
                             EnvEntry::VarEntry {
@@ -1184,7 +1181,7 @@ fn trans_dec<T: Frame + 'static>(
                                     },
                                 );
                             } else {
-                                let acc = level.as_ref().borrow_mut().alloc_local(*escape);
+                                let acc = level.borrow_mut().alloc_local(*escape);
                                 ctx.varfun_env.enter(
                                     var_name_sym,
                                     EnvEntry::VarEntry {
@@ -1346,7 +1343,7 @@ pub fn translate<T: Frame + 'static>(input: &str, ast: &mut Exp) -> Result<TrExp
     let (main_level, _) = Level::new_level::<T>(
         Level::outermost(),
         Vec::new(),
-        &mut ctx.gen_temp_label,
+        &mut ctx.gen,
         &mut ctx.symbols,
     );
     let (exp, _) = trans_exp::<T>(&mut ctx, main_level, ast, None);
@@ -1399,7 +1396,7 @@ mod tests {
                 frame_formals.push(frame::Access::InFrame(42));
             }
             TestFrame {
-                name: gen.new_label(&mut pool),
+                name: gen.new_label(),
                 formals: frame_formals,
             }
         }

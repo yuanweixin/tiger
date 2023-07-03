@@ -6,6 +6,7 @@ pub struct Symbol(DefaultSymbol);
 pub struct Interner(StringInterner<DefaultBackend<DefaultSymbol>>);
 
 impl Interner {
+    #[inline]
     pub fn intern(&mut self, name: &str) -> Symbol {
         Symbol(self.0.get_or_intern(name))
     }
@@ -14,6 +15,7 @@ impl Interner {
         Interner(StringInterner::new())
     }
 
+    #[inline]
     pub fn resolve(&self, s: &Symbol) -> Option<&str> {
         self.0.resolve(s.0)
     }

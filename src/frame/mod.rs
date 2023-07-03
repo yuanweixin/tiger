@@ -1,5 +1,5 @@
 use crate::{
-    temp,
+    temp::{self, GenTemporary},
     ir,
     temp::{Temp, Label},
     ir::{IrStm, IrExp}
@@ -30,14 +30,22 @@ pub trait Frame : Debug {
     fn alloc_local(&mut self, escapes: Escapes) -> Access;
     fn external_call(name: &str, exps: Vec<IrExp>) -> IrExp where Self:Sized;
     fn word_size() -> usize where Self:Sized;
-    fn registers() -> &[Register];
+    fn registers() -> &[Register] where Self:Sized;
     // TODO not sure what kind of table this is
     // fn temp_map -> Sym
-    fn string(label: temp::Label, val: &str) -> String; // TODO signature
+    fn string(label: temp::Label, val: &str) -> String where Self:Sized; // TODO signature
 
-    fn proc_entry_exit1();
-    fn proc_entry_exit2();
-    fn proc_entry_exit3();
+    fn proc_entry_exit1() where Self:Sized;
+    fn proc_entry_exit2() where Self:Sized;
+    fn proc_entry_exit3() where Self:Sized;
+
+    // since we don't use global state to track the symbol table, temporaries, labels,
+    // will need to pass this in and grab it each time. each frame implementation shall
+    // intern a unique string indicating the frame's identity (e.g. __x86_frame_pointer__)
+    // which will be used to retrieve the temp object.
+    //
+    // in retrospect, might have been easier to respect tradition and just do these as global states.
+    fn frame_pointer(gen: &mut GenTemporary) -> temp::Temp where Self:Sized;
 }
 
 pub enum Frag<T : Frame> {

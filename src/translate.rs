@@ -6,7 +6,6 @@ use crate::{
     int_types::TigerInt,
     ir::{IrBinop::*, IrExp, IrExp::*, IrRelop, IrRelop::*, IrStm, IrStm::*},
     symbol::Interner,
-    temp,
     temp::{GenTemporary, Label},
 };
 use std::{cell::RefCell, rc::Rc};
@@ -23,7 +22,7 @@ pub enum Level {
 }
 
 // needed to generate levels.
-impl Eq for Level {}
+impl std::cmp::Eq for Level {}
 
 impl PartialEq for Level {
     fn eq(&self, other: &Self) -> bool {
@@ -31,12 +30,14 @@ impl PartialEq for Level {
             (Level::Top, Level::Top) => true,
             (Level::Top, _) | (_, Level::Top) => false,
             // each frame should have been assigned a unique label.
-            (Level::Nested{frame: f1, ..}, Level::Nested{frame: f2, ..}) => f1.name() == f2.name()
+            (Level::Nested { frame: f1, .. }, Level::Nested { frame: f2, .. }) => {
+                f1.name() == f2.name()
+            }
         }
     }
 }
 
-pub type Access = (Rc<RefCell<Level>>, frame::Access);
+pub struct Access(Rc<RefCell<Level>>, frame::Access);
 
 #[derive(Debug)]
 enum Conditional {
@@ -72,12 +73,16 @@ impl Level {
         Rc::new(RefCell::new(Level::Top))
     }
 
-    pub fn alloc_local(&mut self, escape: bool) -> Access {
-        // TODO
-        (
-            Rc::new(RefCell::new(Level::Top)),
-            frame::Access::InFrame(64),
-        )
+    pub fn alloc_local(myself: Rc<RefCell<Level>>, escape: bool) -> Access {
+        match *myself.borrow_mut() {
+            Level::Top => {
+                panic!("impl bug, cannot allocate local in top level");
+            }
+            Level::Nested { mut frame, .. } => {
+                let frame_access = frame.alloc_local(escape);
+                Access(myself, frame_access)
+            }
+        }
     }
 
     pub fn new_level<T: Frame + 'static>(
@@ -88,7 +93,7 @@ impl Level {
     ) -> (Rc<RefCell<Level>>, Label) {
         // prepend true for the static link
         escapes.insert(0, true);
-        let function_label = gen_temp_label.new_label(pool);
+        let function_label = gen_temp_label.new_label();
         (
             Rc::new(RefCell::new(Level::Nested {
                 parent: parent.clone(),
@@ -133,8 +138,8 @@ fn un_ex(tr: TrExp, gen: &mut GenTemporary, pool: &mut Interner) -> Box<IrExp> {
         Ex(exp) => exp,
         Cx(cond) => {
             let r = gen.new_temp();
-            let t = gen.new_label(pool);
-            let f = gen.new_label(pool);
+            let t = gen.new_label();
+            let f = gen.new_label();
             Box::new(Eseq(
                 make_seq(vec![
                     Move(Box::new(Temp(r)), Box::new(Const(1))),
@@ -168,7 +173,7 @@ fn un_nx(tr: TrExp, gen: &mut GenTemporary, pool: &mut Interner) -> Box<IrStm> {
     match tr {
         Nx(stm) => stm,
         Cx(c) => {
-            let l = gen.new_label(pool);
+            let l = gen.new_label();
             let s = c.eval(l, l);
             make_seq(vec![s, Label(l)])
         }
@@ -237,9 +242,8 @@ pub fn call_exp<T: Frame>(
     // call a sibling (share parent): pass parent fp
     // call parent
     // TODO
-    Ex(IrExp::Const(42))
+    Ex(Box::new(Const(42)))
 }
-// pub fn call_exp(func: Label, caller_level: &Level, args: Vec<TrExp>, called_level: &Level) -> TrExp { todo!(); }
 
 pub fn nil_exp() -> TrExp {
     Ex(Box::new(Const(0)))
@@ -249,9 +253,24 @@ pub fn int_exp(i: TigerInt) -> TrExp {
     Ex(Box::new(Const(i)))
 }
 
-pub fn string_exp(s: &str) -> TrExp {
-    // todo!()
-    Ex(IrExp::Const(42))
+pub fn string_exp<T: Frame>(
+    s: &str,
+    gen: &mut GenTemporary,
+    pool: &mut Interner,
+    frags: &mut Vec<frame::Frag<T>>,
+) -> TrExp {
+    for frag in frags {
+        match frag {
+            frame::Frag::String(label, ..) => {
+                return Ex(Box::new(Name(*label)));
+            }
+            _ => {}
+        }
+    }
+    let l = gen.new_label();
+    let new_frag = frame::Frag::<T>::String(l, String::from(s));
+    frags.push(new_frag);
+    Ex(Box::new(Name(l)))
 }
 
 pub fn record_exp<T: Frame>(
@@ -261,9 +280,9 @@ pub fn record_exp<T: Frame>(
 ) -> TrExp {
     let r = gen.new_temp();
     let i = gen.new_temp();
-    let done = gen.new_label(pool);
-    let body = gen.new_label(pool);
-    let test = gen.new_label(pool);
+    let done = gen.new_label();
+    let body = gen.new_label();
+    let test = gen.new_label();
     let mut instrs = Vec::new();
 
     // TODO, this could end up in an overflow situation which would be unfortunate. we should prob catch that.
@@ -390,9 +409,9 @@ pub fn for_loop(
     // note the i < limit check is done BEFORE incrementing i to avoid the edge
     // case where limit == intmax, where if we increment i first we either get
     // overflow error or an infinite loop, depending on the platform.
-    let test_label = gen.new_label(pool);
-    let body_label = gen.new_label(pool);
-    let cont_label = gen.new_label(pool);
+    let test_label = gen.new_label();
+    let body_label = gen.new_label();
+    let cont_label = gen.new_label();
     let i = Temp(gen.new_temp());
     let limit = Temp(gen.new_temp());
     // the extra check after `body` avoids overflow where hi=maxint.
@@ -426,9 +445,9 @@ pub fn while_loop(
     gen: &mut GenTemporary,
     pool: &mut Interner,
 ) -> TrExp {
-    let test = gen.new_label(pool);
-    let done = gen.new_label(pool);
-    let body = gen.new_label(pool);
+    let test = gen.new_label();
+    let done = gen.new_label();
+    let body = gen.new_label();
 
     Nx(make_seq(vec![
         Label(test),
@@ -455,13 +474,13 @@ fn full_conditional(
         done: Label,
         gen: &mut GenTemporary,
         pool: &mut Interner,
-        return_register: IrExp
+        return_register: IrExp,
     ) -> IrStm {
         match branch_ir {
             Cx(cond) => un_cx(branch_ir).eval(true_cx, false_cx),
             Ex(..) => *make_seq(vec![
                 Move(Box::new(return_register), un_ex(branch_ir, gen, pool)),
-                Jump(Box::new(Name(done)), vec![done])
+                Jump(Box::new(Name(done)), vec![done]),
             ]),
             Nx(..) => *make_seq(vec![
                 *un_nx(branch_ir, gen, pool),
@@ -470,11 +489,11 @@ fn full_conditional(
         }
     }
 
-    let true_branch_label = gen.new_label(pool);
-    let false_branch_label = gen.new_label(pool);
-    let true_cx_branch_label = gen.new_label(pool);
-    let false_cx_branch_label = gen.new_label(pool);
-    let done = gen.new_label(pool);
+    let true_branch_label = gen.new_label();
+    let false_branch_label = gen.new_label();
+    let true_cx_branch_label = gen.new_label();
+    let false_cx_branch_label = gen.new_label();
+    let done = gen.new_label();
     let r = Temp(gen.new_temp());
     let true_branch_stmt = helper(
         then_ir,
@@ -483,7 +502,7 @@ fn full_conditional(
         done,
         gen,
         pool,
-        r
+        r,
     );
     let false_branch_stmt = helper(
         else_ir,
@@ -492,7 +511,7 @@ fn full_conditional(
         done,
         gen,
         pool,
-        r
+        r,
     );
 
     match (then_ir, else_ir) {
@@ -546,8 +565,8 @@ pub fn conditional(
     pool: &mut Interner,
 ) -> TrExp {
     if else_ir.is_none() {
-        let t = gen.new_label(pool);
-        let f = gen.new_label(pool);
+        let t = gen.new_label();
+        let f = gen.new_label();
         Nx(make_seq(vec![
             un_cx(cond_ir).eval(t, f),
             Label(t),
@@ -560,11 +579,16 @@ pub fn conditional(
     }
 }
 
-pub fn simple_var<T: Frame>(access: Access, cur_level: Rc<RefCell<Level>>) -> TrExp {
+pub fn simple_var<T: Frame>(
+    access: Access,
+    current_level: Rc<RefCell<Level>>,
+    gen: &mut GenTemporary,
+) -> TrExp {
     let final_level = access.0;
-    let mut cur_level = cur_level;
-    let mut access_expr = Temp(T::fp);
-    while final_level.as_ref().borrow() != cur_level.as_ref().borrow() {
+    let mut cur_level = current_level;
+    let mut access_expr = Temp(T::frame_pointer(gen));
+
+    while *final_level.borrow() != *cur_level.borrow() {
         // to access x in another frame,
         // let
         // (note in our scheme, x always escapes due to reference in a nested
@@ -577,35 +601,59 @@ pub fn simple_var<T: Frame>(access: Access, cur_level: Rc<RefCell<Level>>) -> Tr
         // k_i = the offset of the static link in the frame.
         // since static link is always the first formal parameter in the frame, we
         // can access its offset as level.frame.formals()[0]
-        match cur_level.as_ref().borrow() {
+        match *cur_level.borrow() {
             Level::Top => {
                 panic!("impl bug! ran out of levels while accessing a variable in some parent level, did this code pass type checking first?");
             }
-            Level::Nested { parent, frame } => {
-                match frame.as_ref().formals()[0] {
-                    frame::Access::InReg(..) => panic!("impl bug, static link should always be InFrame"),
-                    frame::Access::InFrame(static_link_offset) => {
-                        access_expr = Mem(Binop(Plus, Const(static_link_offset), access_expr));
-                    }
+            Level::Nested { parent, frame } => match frame.as_ref().formals()[0] {
+                frame::Access::InReg(..) => {
+                    panic!("impl bug, static link should always be InFrame")
                 }
-            }
+                frame::Access::InFrame(static_link_offset) => {
+                    access_expr = Mem(Box::new(Binop(
+                        Plus,
+                        Box::new(Const(static_link_offset)),
+                        Box::new(access_expr),
+                    )));
+                }
+            },
         }
     }
     let frame_access = access.1;
     match frame_access {
         frame::Access::InReg(reg) => {
+            if *final_level.borrow() != *current_level.borrow() {
+                // note we are comparing the original input current level against
+                // the level where the var being accessed is declared, NOT the one
+                // we have been bashing above.
+                //
+                // this is a bug because we are accessing a variable declared
+                // outside the current function and yet it is assigned to a register.
+                panic!("impl bug: a variable is InReg but it is accessed in a nested function");
+            }
             // this is only possible in the non-nested access.
-            Ex(reg)
+            Ex(Box::new(Temp(reg)))
         }
-        frame::Access::InFrame(x_offset) => {
-            Ex(Mem(Binop(Plus, Const(x_offset), res)))
-        }
+        frame::Access::InFrame(x_offset) => Ex(Box::new(Mem(Box::new(Binop(
+            Plus,
+            Box::new(Const(x_offset)),
+            Box::new(access_expr),
+        ))))),
     }
 }
 
-pub fn record_field(lhs_var_ir: TrExp, field_pos: usize) -> TrExp {
-    // todo!()
-    ERROR_TR_EXP
+pub fn record_field<T: Frame>(
+    lhs_var_ir: TrExp,
+    field_pos: usize,
+    gen: &mut GenTemporary,
+    pool: &mut Interner,
+) -> TrExp {
+    Ex(Box::new(Mem(Box::new(Binop(
+        Plus,
+        un_ex(lhs_var_ir, gen, pool),
+        // hmm, this could potentially overflow in extreme edge case.
+        Box::new(Const((field_pos * T::word_size()) as i32)),
+    )))))
 }
 
 const INVALID_ARRAY_ACCESS_EXIT_CODE: i32 = -1;
@@ -625,9 +673,9 @@ pub fn subscript_var<T: Frame>(
             Box::new(Const(T::word_size() as i32)),
         )),
     );
-    let bad = gen.new_label(pool);
-    let upper_check = gen.new_label(pool);
-    let access = gen.new_label(pool);
+    let bad = gen.new_label();
+    let upper_check = gen.new_label();
+    let access = gen.new_label();
     Ex(Box::new(Eseq(
         make_seq(vec![
             Cjump(Ge, Box::new(idx), Box::new(Const(0)), upper_check, bad),

@@ -13,14 +13,26 @@ pub struct Label(Symbol);
 // Difference include: use of associated types, and the fact that symbol interning does not rely on global variables.
 
 pub struct GenTemporary {
-    next_id: NonZeroUsize
+    next_id: NonZeroUsize,
+    pool: Interner
 }
 
 impl GenTemporary {
     pub fn new() -> Self {
         Self {
             next_id: NonZeroUsize::MIN,
+            pool : Interner::new()
         }
+    }
+
+    #[inline]
+    pub fn resolve(&self, s: &Symbol) -> Option<&str> {
+        self.pool.resolve(s)
+    }
+
+    #[inline]
+    pub fn intern(&mut self, name: &str) -> Symbol {
+        self.pool.intern(name)
     }
 
     pub fn new_temp(&mut self) -> Temp {
@@ -33,10 +45,10 @@ impl GenTemporary {
         format!("__temp_{}", temp.0)
     }
 
-    pub fn new_label(&mut self, pool: &mut Interner) -> Label {
+    pub fn new_label(&mut self) -> Label {
         let id = self.next_id.get();
         self.next_id = NonZeroUsize::new(self.next_id.get().wrapping_add(1)).unwrap();
-        let sym = pool.intern(&format!("__label__{}", id));
+        let sym = self.pool.intern(&format!("__label__{}", id));
         Label(sym)
     }
     pub fn named_label(s: &str, pool: &mut Interner) -> Label {
