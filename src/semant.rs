@@ -57,12 +57,12 @@ impl<'a> TypeCheckingContext<'a> {
         let varfun_env = Self::base_varfun_env(&mut symbols, &mut gen_temp_label);
         Self {
             next_array_record_ord: NonZeroUsize::MIN,
-            type_env: type_env,
-            varfun_env: varfun_env,
+            type_env,
+            varfun_env,
             has_err: false,
-            symbols: symbols,
-            input: input,
-            gen_temp_label: gen_temp_label,
+            symbols,
+            input,
+            gen_temp_label,
         }
     }
 
@@ -276,7 +276,7 @@ fn trans_exp<T: Frame + 'static>(
                 Oper::PlusOp | Oper::MinusOp | Oper::TimesOp | Oper::DivideOp => {
                     match (lhs_ty, rhs_ty) {
                         (Type::Int, Type::Int) => {
-                            (translate::binop(oper, lhs_ir, rhs_ir), Type::Int)
+                            (translate::binop(oper, lhs_ir, rhs_ir, &mut ctx.gen_temp_label, &mut ctx.symbols), Type::Int)
                         }
                         (Type::Error, _) | (_, Type::Error) => (ERROR_TR_EXP, Type::Error),
                         (Type::Int, _) => {
@@ -306,7 +306,7 @@ fn trans_exp<T: Frame + 'static>(
                     }
                 }
                 Oper::LtOp | Oper::LeOp | Oper::GtOp | Oper::GeOp => match (lhs_ty, rhs_ty) {
-                    (Type::Int, Type::Int) => (translate::binop(oper, lhs_ir, rhs_ir), Type::Int),
+                    (Type::Int, Type::Int) => (translate::binop(oper, lhs_ir, rhs_ir, &mut ctx.gen_temp_label, &mut ctx.symbols), Type::Int),
                     (Type::Error, _) | (_, Type::Error) => (ERROR_TR_EXP, Type::Error),
                     (Type::Int, _) => {
                         ctx.flag_error_with_msg(
@@ -352,7 +352,7 @@ fn trans_exp<T: Frame + 'static>(
                                 Type::Int,
                             )
                         } else {
-                            (translate::binop(oper, lhs_ir, rhs_ir), Type::Int)
+                            (translate::binop(oper, lhs_ir, rhs_ir, &mut ctx.gen_temp_label, &mut ctx.symbols), Type::Int)
                         }
                     }
                 }
@@ -1099,7 +1099,10 @@ fn trans_dec<T: Frame + 'static>(
                             ctx.varfun_env.enter(sym, var_entry);
                         }
 
-                        // the break label is not inherited in the function call TODO
+                        // appendix: a break in procedure p cannot terminate a loop in procedure q, even
+                        // if p is nsted within q.
+                        //
+                        // in other words, breaks do not work across function boundaries.
                         let (fun_body_ir, fun_body_ty) =
                             trans_exp::<T>(ctx, level.clone(), &*fundec.body, None);
                         if !fun_body_ty.compatible_with(&result)

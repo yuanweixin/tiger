@@ -16,10 +16,10 @@ pub enum IrExp {
 
 #[derive(Debug)]
 pub enum IrStm {
-    Move(IrExp, IrExp),
-    Exp(IrExp),
-    Jump(IrExp, Vec<temp::Label>),
-    Cjump(IrRelop, IrExp, IrExp, temp::Label, temp::Label),
+    Move(Box<IrExp>, Box<IrExp>),
+    Exp(Box<IrExp>),
+    Jump(Box<IrExp>, Vec<temp::Label>),
+    Cjump(IrRelop, Box<IrExp>, Box<IrExp>, temp::Label, temp::Label),
     Seq(Box<IrStm>, Box<IrStm>),
     Label(temp::Label),
 }
