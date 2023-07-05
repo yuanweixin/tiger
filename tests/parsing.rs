@@ -17,6 +17,9 @@ fn test_good() {
         let lexerdef = tiger_l::lexerdef();
         let lexer = lexerdef.lexer(&input);
         let (_res, errs) = tiger_y::parse(&lexer);
+        if errs.len() > 0 {
+            println!("{:#?}", errs);
+        }
         assert_eq!(errs.len(), 0);
     }
 }
