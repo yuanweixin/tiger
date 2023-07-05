@@ -5,7 +5,11 @@ use crate::{
     ir::{IrStm, IrExp}
 };
 
-use std::fmt::Debug;
+use std::{
+    fmt::Debug,
+    rc::Rc,
+    cell::RefCell
+};
 
 #[derive(Clone, Debug)]
 pub enum Access {
@@ -17,7 +21,7 @@ pub enum Access {
 
 pub type Escapes = bool;
 
-pub type Register = &'static str;
+pub type Register<'a> = &'a str;
 
 pub trait Frame : Debug {
     // We could also have put Sized on the trait.
@@ -30,12 +34,12 @@ pub trait Frame : Debug {
     fn alloc_local(&mut self, escapes: Escapes) -> Access;
     fn external_call(name: &str, exps: Vec<IrExp>) -> IrExp where Self:Sized;
     fn word_size() -> usize where Self:Sized;
-    fn registers() -> &'static [Register] where Self:Sized;
+    fn registers<'a>() -> &'a [Register<'a>] where Self:Sized;
     // TODO not sure what kind of table this is
     // fn temp_map -> Sym
     fn string(label: temp::Label, val: &str) -> String where Self:Sized; // TODO signature
 
-    fn proc_entry_exit1() where Self:Sized;
+    fn proc_entry_exit1(&self, body: IrStm) -> IrStm;
     fn proc_entry_exit2() where Self:Sized;
     fn proc_entry_exit3() where Self:Sized;
 
@@ -48,10 +52,13 @@ pub trait Frame : Debug {
     fn frame_pointer(gen: &mut GenTemporary) -> temp::Temp where Self:Sized;
 }
 
-pub enum Frag<T : Frame> {
+pub enum Frag {
     Proc {
+        // the output of proc_entry_exit1
         body: IrStm,
-        frame: T // TODO might use a ref or Rc here, or even a dyn
+        // contains the machine specific info about local vars and params
+        frame: Rc<RefCell<dyn Frame>>
     },
+    // represents static strings
     String(Label, String)
 }

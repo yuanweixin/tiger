@@ -45,17 +45,17 @@ fn error_type_check_output() -> (TrExp, Type) {
     (TrExp::Cx(translate::Conditional::Falsy), Type::Error)
 }
 
-pub struct TypeCheckingContext<'a, T: Frame> {
+pub struct TypeCheckingContext<'a> {
     next_array_record_ord: NonZeroUsize,
     type_env: SymbolTable<Type>,
     varfun_env: SymbolTable<EnvEntry>,
     has_err: bool,
     input: &'a str,
     gen: GenTemporary,
-    frags: Vec<frame::Frag<T>>,
+    frags: Vec<frame::Frag>,
 }
 
-impl<'a, T: Frame> TypeCheckingContext<'a, T> {
+impl<'a> TypeCheckingContext<'a> {
     fn new(input: &'a str) -> Self {
         let mut gen = GenTemporary::new();
         let type_env = Self::base_env_type_env(&mut gen);
@@ -262,7 +262,7 @@ enum EnvEntry {
 }
 
 fn trans_exp<T: Frame + 'static>(
-    ctx: &mut TypeCheckingContext<T>,
+    ctx: &mut TypeCheckingContext,
     level: Rc<RefCell<Level>>,
     n: &Exp,
     break_label: Option<Label>,
@@ -888,7 +888,7 @@ fn trans_exp<T: Frame + 'static>(
 }
 
 fn trans_var<T: Frame + 'static>(
-    ctx: &mut TypeCheckingContext<T>,
+    ctx: &mut TypeCheckingContext,
     level: Rc<RefCell<Level>>,
     var: &Var,
     break_label: Option<Label>,
@@ -1028,7 +1028,7 @@ fn trans_var<T: Frame + 'static>(
     }
 }
 
-fn ty_to_type<T: Frame>(ctx: &mut TypeCheckingContext<T>, ty: &Ty, _pos: &LineCol) -> Type {
+fn ty_to_type(ctx: &mut TypeCheckingContext, ty: &Ty, _pos: &LineCol) -> Type {
     // return the translated type, as well as whether type is forward referencing some unknown type.
     match ty {
         Ty::NameTy(span, _) => {
@@ -1088,7 +1088,7 @@ fn ty_to_type<T: Frame>(ctx: &mut TypeCheckingContext<T>, ty: &Ty, _pos: &LineCo
 }
 
 fn trans_dec<T: Frame + 'static>(
-    ctx: &mut TypeCheckingContext<T>,
+    ctx: &mut TypeCheckingContext,
     level: Rc<RefCell<Level>>,
     dec: &Dec,
     break_label: Option<Label>,
@@ -1209,8 +1209,7 @@ fn trans_dec<T: Frame + 'static>(
                                 ),
                             );
                         }
-                        // TODO deal with the fragments crap when it comes to that
-                        translate::proc_entry_exit(level.clone(), fun_body_ir);
+                        translate::proc_entry_exit(level.clone(), fun_body_ir, &mut ctx.frags, &mut ctx.gen);
                     }
                 }
                 ctx.varfun_env.end_scope();
@@ -1457,7 +1456,7 @@ mod tests {
     use crate::{
         absyn, frame,
         frame::{Escapes, Frame},
-        ir::IrExp,
+        ir::{IrExp, IrStm},
         symbol::Interner,
         symbol::Symbol,
         temp::{self, GenTemporary, Label},
@@ -1493,7 +1492,7 @@ mod tests {
             4
         }
 
-        fn registers() -> &'static [frame::Register]
+        fn registers<'a>() -> &'a [frame::Register<'a>]
         where
             Self: Sized,
         {
@@ -1514,11 +1513,9 @@ mod tests {
             temp::Temp::new_temp_for_test()
         }
 
-        fn proc_entry_exit1()
-        where
-            Self: Sized,
+        fn proc_entry_exit1(&self, body: IrStm) -> IrStm
         {
-            todo!()
+            IrStm::Exp(Box::new(IrExp::Const(42)))
         }
 
         fn proc_entry_exit2()

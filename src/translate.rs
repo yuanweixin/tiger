@@ -350,10 +350,10 @@ pub fn int_exp(i: TigerInt) -> TrExp {
     Ex(Box::new(Const(i)))
 }
 
-pub fn string_exp<T: Frame>(
+pub fn string_exp(
     s: &str,
     gen: &mut GenTemporary,
-    frags: &mut Vec<frame::Frag<T>>,
+    frags: &mut Vec<frame::Frag>,
 ) -> TrExp {
     for frag in frags.iter() {
         match frag {
@@ -364,7 +364,7 @@ pub fn string_exp<T: Frame>(
         }
     }
     let l = gen.new_label();
-    let new_frag = frame::Frag::<T>::String(l, String::from(s));
+    let new_frag = frame::Frag::String(l, String::from(s));
     frags.push(new_frag);
     Ex(Box::new(Name(l)))
 }
@@ -782,7 +782,12 @@ pub fn subscript_var<T: Frame>(
     )))
 }
 
-// pub fn proc_entry_exit(fragments: &mut Vec<Fragment>, level: Level, body: TrExp) {
-pub fn proc_entry_exit(level: Rc<RefCell<Level>>, body: TrExp) {
-    // todo!()
+pub fn proc_entry_exit(level: Rc<RefCell<Level>>, body: TrExp, frags: &mut Vec<frame::Frag>, gen: &mut GenTemporary) {
+    match &*level.borrow() {
+        Level::Top => panic!("impl bug, proc_entry_exit cannot be used on Top level"),
+        Level::Nested { frame , ..} => {
+            let augmented = frame.borrow().proc_entry_exit1(*un_nx(body, gen));
+            frags.push(frame::Frag::Proc { body: augmented, frame: frame.clone() });
+        }
+    }
 }
