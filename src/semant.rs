@@ -7,7 +7,7 @@ use crate::{
     absyn::types::{Dec, Exp, Oper, Ty, Var},
     escape, frame,
     frame::Frame,
-    symbol::{Symbol},
+    symbol::Symbol,
     symtab::SymbolTable,
     temp::{GenTemporary, Label},
     translate,
@@ -444,7 +444,14 @@ fn trans_exp<T: Frame + 'static>(
                             error_type_check_output()
                         } else {
                             (
-                                translate::call_exp::<T>(label, level, arg_irs, callee_level, &mut ctx.gen, result == Type::Unit),
+                                translate::call_exp::<T>(
+                                    label,
+                                    level,
+                                    arg_irs,
+                                    callee_level,
+                                    &mut ctx.gen,
+                                    result == Type::Unit,
+                                ),
                                 result.clone(),
                             )
                         }
@@ -1448,13 +1455,13 @@ pub fn translate<T: Frame + 'static>(input: &str, ast: &mut Exp) -> Result<TrExp
 mod tests {
     use super::*;
     use crate::{
-        absyn,
-        frame,
+        absyn, frame,
         frame::{Escapes, Frame},
+        ir::IrExp,
         symbol::Interner,
         symbol::Symbol,
         temp::{self, GenTemporary, Label},
-        tiger_y::parse, ir::IrExp,
+        tiger_y::parse,
     };
 
     use lrlex::lrlex_mod;
@@ -1566,23 +1573,33 @@ mod tests {
         assert!(res.as_ref().unwrap().is_ok());
 
         let mut ast = res.unwrap().unwrap();
-        let res = super::translate::<TestFrame>(input, &mut ast);
-        match (is_good, res) {
-            (false, Ok(..)) => {
-                panic!(
-                    "{} type checks but expected not to, ast={:?}, path={:?}",
-                    input, ast, dir_path
-                );
+
+        let result = panic::catch_unwind(|| {
+            let res = super::translate::<TestFrame>(input, &mut ast);
+            match (is_good, res) {
+                (false, Ok(..)) => {
+                    panic!(
+                        "{} type checks but expected not to, ast={:?}, path={:?}",
+                        input, ast, dir_path
+                    );
+                }
+                (true, Err(..)) => {
+                    panic!(
+                        "{} fails to type check but was expected to, ast={:?}, path={:?}",
+                        input, ast, dir_path
+                    );
+                }
+                _ => {}
             }
-            (true, Err(..)) => {
-                panic!(
-                    "{} fails to type check but was expected to, ast={:?}, path={:?}",
-                    input, ast, dir_path
-                );
-            }
-            _ => {}
+            ast
+        });
+        if !result.is_ok() {
+            println!("`translate` panicked! error was {:#?}", result.as_ref().unwrap_err());
+            println!("`translate` panicked! input was {}", input);
+            assert!(false);
         }
-        ast
+        // some dummy value.
+        result.unwrap()
     }
 
     fn test_is_good(input: &str) {

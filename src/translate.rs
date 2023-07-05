@@ -66,6 +66,33 @@ pub enum TrExp {
 use TrExp::*;
 
 impl Level {
+    fn static_link(&self, existing_access_expr: IrExp) -> IrExp {
+        // note in our scheme, the static link is the first formal parameter and always escapes
+        //
+        //  general form of translation is below: (Appel p156)
+        // MEM(+Const(x_offset), Mem(+Const(k_n-1), ..., Mem(+Const(k_1), Temp(FP)))
+        //
+        // where
+        //
+        // x_offset = the offset of x in its own frame
+        // k_i = the offset of the static link in the frame.
+        match self {
+            Level::Top => {
+                panic!("impl bug: Top level has no static link");
+            }
+            Level::Nested { frame, .. } => match frame.borrow().formals()[0] {
+                frame::Access::InReg(..) => {
+                    panic!("impl bug, static link should always be InFrame")
+                }
+                frame::Access::InFrame(static_link_offset) => Mem(Box::new(Binop(
+                    Plus,
+                    Box::new(Const(static_link_offset)),
+                    Box::new(existing_access_expr),
+                ))),
+            },
+        }
+    }
+
     pub fn outermost() -> Rc<RefCell<Self>> {
         Rc::new(RefCell::new(Level::Top))
     }
@@ -96,9 +123,16 @@ impl Level {
             function_label,
         )
     }
-}
 
-impl Level {
+    fn get_parent(&self) -> Rc<RefCell<Level>> {
+        match self {
+            Level::Top => {
+                panic!("impl bug: unable to get the parent level of the Top level!");
+            }
+            Level::Nested { parent, .. } => parent.clone(),
+        }
+    }
+
     pub fn formal_without_static_link(&self, idx: usize) -> frame::Access {
         match self {
             Level::Top => {
@@ -226,32 +260,77 @@ pub fn call_exp<T: Frame>(
     gen: &mut GenTemporary,
     is_unit_return_type: bool,
 ) -> TrExp {
-    // let mut augmented_args = Vec::new();
+    // here's the cases.
+    // callee's parent is the top level
+    //    callee is one of the predefined, external call
+    // b calls a, a is ancestor (could have >1 scopes in-between) of b (includes the case where b == a)
+    //    pass the static link of a
+    // b calls a, a and b share ancestor
+    //    keep going up b until get to frame x before a's ancestor. pass x.static_link
+    //    b is a's parent -> pass b's FP.
 
-    // if *callee_level.borrow() == Level::Top {
-    //     // happens iff calling one of the built-in procs.
-    //     // no static link for them because they don't need them!
-    //     for arg in args {
-    //         augmented_args.push(*un_ex(arg, gen));
-    //     }
-    //     let fn_name = gen.resolve_label(func);
-    //     if fn_name.is_none() {
-    //         panic!("impl bug, call_exp has unknown fn_name; did you type check this first?");
-    //     }
-    //     return Ex(Box::new(T::external_call(fn_name.unwrap(), augmented_args)));
-    // }
-    // resolve the common ancestor.
-    // it is assumed the input has been typed checked successfully.
-    // all user defined functions run under the scope of `main`, so this means
-    // the common ancestor always exist.
-    //
-    // given a callee, the common ancestor can be:
-    // 1. the
-    if is_unit_return_type {
-        Nx(Box::new(Exp(Box::new(Const(42)))))
-    } else {
-        Ex(Box::new(Const(42)))
+    let mut augmented_args = Vec::new();
+    if *callee_level.borrow() == Level::Top {
+        // happens iff calling one of the built-in procs.
+        // no static link for them because they don't need them!
+        for arg in args {
+            augmented_args.push(*un_ex(arg, gen));
+        }
+        let fn_name = gen.resolve_label(func);
+        if fn_name.is_none() {
+            panic!("impl bug, call_exp has unknown fn_name; did you type check this first?");
+        }
+
+        return if is_unit_return_type {
+            Nx(Box::new(Exp(Box::new(T::external_call(
+                fn_name.unwrap(),
+                augmented_args,
+            )))))
+        } else {
+            Ex(Box::new(T::external_call(fn_name.unwrap(), augmented_args)))
+        };
     }
+
+    // caller is parent, this can be seen as the "base case" for traversing up the
+    // call stack lexically until we hit the callee's parent.
+    if *callee_level.borrow().get_parent().borrow() == *caller_level.borrow() {
+        // use the parent's frame pointer as static link.
+        augmented_args.push(Temp(T::frame_pointer(gen)));
+        for arg in args {
+            augmented_args.push(*un_ex(arg, gen));
+        }
+
+        return if is_unit_return_type {
+            Nx(Box::new(Exp(Box::new(Call(
+                Box::new(Name(func)),
+                augmented_args,
+            )))))
+        } else {
+            Ex(Box::new(Call(Box::new(Name(func)), augmented_args)))
+        };
+    }
+
+    let mut p = caller_level;
+    // start at the current frame's FP.
+    let mut expr = Temp(T::frame_pointer(gen));
+    // keep moving up the call stack lexically until we hit the callee's parent.
+    while *p.borrow() != Level::Top && *p.borrow() != *callee_level.borrow().get_parent().borrow() {
+        // get the expression to access the static link
+        expr = p.borrow().static_link(expr);
+        let tmp = p.borrow().get_parent();
+        p = tmp;
+    }
+    for arg in args {
+        augmented_args.push(*un_ex(arg, gen));
+    }
+    return if is_unit_return_type {
+        Nx(Box::new(Exp(Box::new(Call(
+            Box::new(Name(func)),
+            augmented_args,
+        )))))
+    } else {
+        Ex(Box::new(Call(Box::new(Name(func)), augmented_args)))
+    };
 }
 
 pub fn nil_exp() -> TrExp {
@@ -616,36 +695,9 @@ pub fn simple_var<T: Frame>(
     let mut access_expr = Temp(T::frame_pointer(gen));
 
     while *final_level.borrow() != *cur_level.borrow() {
-        // to access x in another frame,
-        // let
-        // (note in our scheme, x always escapes due to reference in a nested
-        // function, precluding any possibility of it being allocated in a register)
-        //
-        //  general form of translation is below: (Appel p156)
-        // MEM(+Const(x_offset), Mem(+Const(k_n-1), ..., Mem(+Const(k_1), Temp(FP)))
-        //
-        // where x_offset = the offset of x in its own frame
-        // k_i = the offset of the static link in the frame.
-        // since static link is always the first formal parameter in the frame, we
-        // can access its offset as level.frame.formals()[0]
-        match &*cur_level.borrow() {
-            Level::Top => {
-                panic!("impl bug! ran out of levels while accessing a variable in some parent level, did this code pass type checking first?");
-            }
-            Level::Nested { frame, .. } => match frame.borrow().formals()[0] {
-                frame::Access::InReg(..) => {
-                    panic!("impl bug, static link should always be InFrame")
-                }
-                frame::Access::InFrame(static_link_offset) => {
-                    access_expr = Mem(Box::new(Binop(
-                        Plus,
-                        Box::new(Const(static_link_offset)),
-                        Box::new(access_expr),
-                    )));
-                }
-            },
-        }
+        access_expr = cur_level.borrow().static_link(access_expr);
     }
+
     let frame_access = access.1;
     match frame_access {
         frame::Access::InReg(reg) => {

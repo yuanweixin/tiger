@@ -1,0 +1,41 @@
+let
+    function fib(i: int) : int =
+        if i = 0 then
+            1
+        else if i = 1 then
+            1
+        else
+            fib(i-1) + fib(i-2)
+
+    function a() =
+        let
+            function b() =
+                let function c() =
+                    a()
+                in
+                c()
+                end
+        in
+            b()
+        end
+
+    function d() =
+        let
+            function e() =
+                a()
+        in
+            e()
+        end
+
+    function f(i: int) =
+        if i < 1 then
+            ()
+        else
+            f(i-1)
+in
+    (fib(10);
+    a();
+    d();
+    f(2))
+end
+
