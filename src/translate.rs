@@ -218,14 +218,13 @@ pub fn string_cmp<T: Frame>(
     }
 }
 
-
-
 pub fn call_exp<T: Frame>(
     func: Label,
     caller_level: Rc<RefCell<Level>>,
     args: Vec<TrExp>,
     callee_level: Rc<RefCell<Level>>,
     gen: &mut GenTemporary,
+    is_unit_return_type: bool,
 ) -> TrExp {
     // let mut augmented_args = Vec::new();
 
@@ -248,10 +247,18 @@ pub fn call_exp<T: Frame>(
     //
     // given a callee, the common ancestor can be:
     // 1. the
-    return Ex(Box::new(Const(42)));
+    if is_unit_return_type {
+        Nx(Box::new(Exp(Box::new(Const(42)))))
+    } else {
+        Ex(Box::new(Const(42)))
+    }
 }
 
 pub fn nil_exp() -> TrExp {
+    // Appel appendix:
+    // nil denotes a value nil belonging to every record type.
+    // if record variable v contains value nil, it is a checked runtime
+    // error to select a field from v.
     Ex(Box::new(Const(0)))
 }
 
@@ -507,7 +514,7 @@ fn full_conditional(
                 Label(done),
             ]))
         }
-        (Nx(..), _) | (_, Nx(..)) => {
+        (Nx(..), a) | (a, Nx(..)) => {
             panic!("impl bug, conditional ir generation should be invoked on if-then-else branch with the same return types on both branches. got then={:#?}, else={:#?}", then_ir, else_ir);
         }
         (Cx(..), _) | (_, Cx(..)) => {

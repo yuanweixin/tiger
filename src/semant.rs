@@ -444,7 +444,7 @@ fn trans_exp<T: Frame + 'static>(
                             error_type_check_output()
                         } else {
                             (
-                                translate::call_exp::<T>(label, level, arg_irs, callee_level, &mut ctx.gen),
+                                translate::call_exp::<T>(label, level, arg_irs, callee_level, &mut ctx.gen, result == Type::Unit),
                                 result.clone(),
                             )
                         }
@@ -674,6 +674,8 @@ fn trans_exp<T: Frame + 'static>(
                         error_type_check_output()
                     } else {
                         (
+                            // TODO handle the Nil branch type in `conditional`
+                            // in order to generate more efficient IR.
                             translate::conditional(cond_ir, then_ir, Some(else_ir), &mut ctx.gen),
                             then_ty,
                         )
@@ -1446,6 +1448,7 @@ pub fn translate<T: Frame + 'static>(input: &str, ast: &mut Exp) -> Result<TrExp
 mod tests {
     use super::*;
     use crate::{
+        absyn,
         frame,
         frame::{Escapes, Frame},
         symbol::Interner,
@@ -1458,7 +1461,6 @@ mod tests {
     use lrpar::lrpar_mod;
     use std::panic;
     use std::{fs, fs::DirEntry};
-    use tiger_lang::absyn;
 
     lrlex_mod!("tiger.l");
     lrpar_mod!("tiger.y");
