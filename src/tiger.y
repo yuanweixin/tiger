@@ -510,9 +510,9 @@ tyfields_helper -> Result<Vec<Field>, ()>:
 
 %%
 
-use crate::absyn::*;
+use crate::absyn::types::*;
 use lrlex::DefaultLexeme;
-use tiger_lang::int_types::TigerInt;
+use crate::int_types::TigerInt;
 
 fn flatten<T>(lhs: Result<Vec<T>, ()>, rhs: Result<T,()>) -> Result<Vec<T>, ()>
 {
