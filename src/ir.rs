@@ -1,6 +1,6 @@
 // appel's tree ir language
 use crate::temp;
-use crate::absyn::{Oper};
+use crate::absyn::types::{Oper};
 use crate::int_types::TigerInt;
 
 #[derive(Debug, Clone)]

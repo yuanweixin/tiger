@@ -5,9 +5,14 @@ use crate::symbol::{Interner, Symbol};
 
 #[derive(Eq, PartialEq, Copy, Clone, Hash, Debug)]
 pub struct Temp(NonZeroUsize);
-
 #[derive(Eq, PartialEq, Copy, Clone, Hash, Debug)]
 pub struct Label(Symbol);
+
+impl Temp {
+    pub fn new_temp_for_test() -> Self {
+        Temp(NonZeroUsize::MIN)
+    }
+}
 
 // Approximates the ml modules given by Appel in flavor.
 // Difference include: use of associated types, and the fact that symbol interning does not rely on global variables.

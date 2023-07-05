@@ -36,7 +36,7 @@
 //  end
 //
 use crate::{
-    absyn::{Dec, Exp, Var},
+    absyn::types::{Dec, Exp, Var},
     semant::TypeCheckingContext,
     symtab::SymbolTable,
     frame::Frame
@@ -143,11 +143,6 @@ fn traverse_var<'a, T: Frame>(
             // hence the if check.
             let symbol = ctx.intern(span);
             let entry = env.look_mut(symbol);
-            println!(
-                "entry for {} is {:#?}",
-                ctx.resolve_unchecked(&symbol),
-                entry
-            );
             if entry.is_some() {
                 let e = entry.unwrap();
                 if cur_depth > e.0 {

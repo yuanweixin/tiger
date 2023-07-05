@@ -1,6 +1,5 @@
 use crate::{
-    absyn::Oper,
-    absyn::Oper::*,
+    absyn::types::{Oper, Oper::*},
     frame,
     frame::Frame,
     int_types::TigerInt,
@@ -17,7 +16,7 @@ pub enum Level {
         // use Rc because the Level objects form a dag where the child levels point back at the parent levels.
         // this whole mechanism just to be able to mutate some shit is fucking crazy.
         parent: Rc<RefCell<Level>>,
-        frame: Rc<dyn Frame>,
+        frame: Rc<RefCell<dyn Frame>>,
     },
 }
 
@@ -31,7 +30,7 @@ impl PartialEq for Level {
             (Level::Top, _) | (_, Level::Top) => false,
             // each frame should have been assigned a unique label.
             (Level::Nested { frame: f1, .. }, Level::Nested { frame: f2, .. }) => {
-                f1.name() == f2.name()
+                f1.borrow().name() == f2.borrow().name()
             }
         }
     }
@@ -76,7 +75,7 @@ impl Level {
             Level::Top => {
                 panic!("impl bug, cannot allocate local in top level");
             }
-            Level::Nested { frame, .. } => frame.alloc_local(escape),
+            Level::Nested { ref frame, .. } => frame.borrow_mut().alloc_local(escape),
         };
         Access(myself, frame_access)
     }
@@ -92,7 +91,7 @@ impl Level {
         (
             Rc::new(RefCell::new(Level::Nested {
                 parent: parent.clone(),
-                frame: Rc::new(T::new(function_label, escapes)),
+                frame: Rc::new(RefCell::new(T::new(function_label, escapes))),
             })),
             function_label,
         )
@@ -105,7 +104,7 @@ impl Level {
             Level::Top => {
                 panic!("impl bug, Level::formals only usable in contexts where a nested level can appear");
             }
-            Level::Nested { ref frame, .. } => frame.formals()[idx + 1].clone(),
+            Level::Nested { ref frame, .. } => frame.borrow_mut().formals()[idx + 1].clone(),
         }
     }
 }
@@ -509,7 +508,7 @@ fn full_conditional(
             ]))
         }
         (Nx(..), _) | (_, Nx(..)) => {
-            panic!("impl bug, conditional ir generation should be invoked on if-then-else branch with the same return types on both branches");
+            panic!("impl bug, conditional ir generation should be invoked on if-then-else branch with the same return types on both branches. got then={:#?}, else={:#?}", then_ir, else_ir);
         }
         (Cx(..), _) | (_, Cx(..)) => {
             let true_branch_stmt = helper(
@@ -626,7 +625,7 @@ pub fn simple_var<T: Frame>(
             Level::Top => {
                 panic!("impl bug! ran out of levels while accessing a variable in some parent level, did this code pass type checking first?");
             }
-            Level::Nested { frame, .. } => match frame.as_ref().formals()[0] {
+            Level::Nested { frame, .. } => match frame.borrow().formals()[0] {
                 frame::Access::InReg(..) => {
                     panic!("impl bug, static link should always be InFrame")
                 }

@@ -4,7 +4,7 @@ use std::collections::HashMap;
 use std::{cell::RefCell, num::NonZeroUsize, rc::Rc};
 
 use crate::{
-    absyn::{Dec, Exp, Oper, Ty, Var},
+    absyn::types::{Dec, Exp, Oper, Ty, Var},
     escape, frame,
     frame::Frame,
     symbol::{Symbol},
@@ -1451,7 +1451,7 @@ mod tests {
         symbol::Interner,
         symbol::Symbol,
         temp::{self, GenTemporary, Label},
-        tiger_y::parse,
+        tiger_y::parse, ir::IrExp,
     };
 
     use lrlex::lrlex_mod;
@@ -1474,7 +1474,7 @@ mod tests {
         where
             Self: Sized,
         {
-            todo!()
+            IrExp::Const(42)
         }
 
         fn word_size() -> usize
@@ -1502,7 +1502,7 @@ mod tests {
         where
             Self: Sized,
         {
-            todo!()
+            temp::Temp::new_temp_for_test()
         }
 
         fn proc_entry_exit1()
@@ -1601,6 +1601,7 @@ mod tests {
         let paths = fs::read_dir("tests/tiger_programs/semant/good/").unwrap();
 
         for path in paths {
+            println!("Testing path {:?}", &path);
             test_file(path.unwrap(), true);
         }
     }
