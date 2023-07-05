@@ -7,11 +7,11 @@ use crate::{
     absyn::{Dec, Exp, Oper, Ty, Var},
     escape, frame,
     frame::Frame,
-    symbol::{Interner, Symbol},
+    symbol::{Symbol},
     symtab::SymbolTable,
     temp::{GenTemporary, Label},
     translate,
-    translate::{Level, TrExp, ERROR_TR_EXP},
+    translate::{Level, TrExp},
 };
 use strum_macros::Display;
 
@@ -39,16 +39,23 @@ impl LineColInfo for LineCol {
     }
 }
 
-pub struct TypeCheckingContext<'a> {
+#[inline]
+fn error_type_check_output() -> (TrExp, Type) {
+    // the first element is just some dummy.
+    (TrExp::Cx(translate::Conditional::Falsy), Type::Error)
+}
+
+pub struct TypeCheckingContext<'a, T: Frame> {
     next_array_record_ord: NonZeroUsize,
     type_env: SymbolTable<Type>,
     varfun_env: SymbolTable<EnvEntry>,
     has_err: bool,
     input: &'a str,
     gen: GenTemporary,
+    frags: Vec<frame::Frag<T>>,
 }
 
-impl<'a> TypeCheckingContext<'a> {
+impl<'a, T: Frame> TypeCheckingContext<'a, T> {
     fn new(input: &'a str) -> Self {
         let mut gen = GenTemporary::new();
         let type_env = Self::base_env_type_env(&mut gen);
@@ -60,6 +67,7 @@ impl<'a> TypeCheckingContext<'a> {
             has_err: false,
             input,
             gen,
+            frags: Vec::new(),
         }
     }
 
@@ -254,7 +262,7 @@ enum EnvEntry {
 }
 
 fn trans_exp<T: Frame + 'static>(
-    ctx: &mut TypeCheckingContext,
+    ctx: &mut TypeCheckingContext<T>,
     level: Rc<RefCell<Level>>,
     n: &Exp,
     break_label: Option<Label>,
@@ -272,23 +280,24 @@ fn trans_exp<T: Frame + 'static>(
             match oper {
                 Oper::PlusOp | Oper::MinusOp | Oper::TimesOp | Oper::DivideOp => {
                     match (lhs_ty, rhs_ty) {
-                        (Type::Int, Type::Int) => {
-                            (translate::binop(oper, lhs_ir, rhs_ir, &mut ctx.gen, &mut ctx.symbols), Type::Int)
-                        }
-                        (Type::Error, _) | (_, Type::Error) => (ERROR_TR_EXP, Type::Error),
+                        (Type::Int, Type::Int) => (
+                            translate::binop(oper, lhs_ir, rhs_ir, &mut ctx.gen),
+                            Type::Int,
+                        ),
+                        (Type::Error, _) | (_, Type::Error) => error_type_check_output(),
                         (Type::Int, _) => {
                             ctx.flag_error_with_msg(
                                 pos,
                                 &format!("Expected integer on rhs but got {}", right),
                             );
-                            (ERROR_TR_EXP, Type::Error)
+                            error_type_check_output()
                         }
                         (_, Type::Int) => {
                             ctx.flag_error_with_msg(
                                 pos,
                                 &format!("Expected integer on lhs but got {}", left),
                             );
-                            (ERROR_TR_EXP, Type::Error)
+                            error_type_check_output()
                         }
                         (_, _) => {
                             ctx.flag_error_with_msg(
@@ -298,32 +307,35 @@ fn trans_exp<T: Frame + 'static>(
                                     left, right
                                 ),
                             );
-                            (ERROR_TR_EXP, Type::Error)
+                            error_type_check_output()
                         }
                     }
                 }
                 Oper::LtOp | Oper::LeOp | Oper::GtOp | Oper::GeOp => match (lhs_ty, rhs_ty) {
-                    (Type::Int, Type::Int) => (translate::binop(oper, lhs_ir, rhs_ir, &mut ctx.gen, &mut ctx.symbols), Type::Int),
-                    (Type::Error, _) | (_, Type::Error) => (ERROR_TR_EXP, Type::Error),
+                    (Type::Int, Type::Int) => (
+                        translate::binop(oper, lhs_ir, rhs_ir, &mut ctx.gen),
+                        Type::Int,
+                    ),
+                    (Type::Error, _) | (_, Type::Error) => error_type_check_output(),
                     (Type::Int, _) => {
                         ctx.flag_error_with_msg(
                             pos,
                             &format!("Expected integer on rhs but got {}", right),
                         );
-                        (ERROR_TR_EXP, Type::Error)
+                        error_type_check_output()
                     }
                     (_, Type::Int) => {
                         ctx.flag_error_with_msg(
                             pos,
                             &format!("Expected integer on lhs but got {}", right),
                         );
-                        (ERROR_TR_EXP, Type::Error)
+                        error_type_check_output()
                     }
-                    (_, _) => (ERROR_TR_EXP, Type::Error),
+                    (_, _) => error_type_check_output(),
                 },
                 Oper::EqOp | Oper::NeqOp => {
                     if Type::Error == lhs_ty || Type::Error == rhs_ty {
-                        (ERROR_TR_EXP, Type::Error)
+                        error_type_check_output()
                     } else if !lhs_ty.compatible_with(&rhs_ty) {
                         ctx.flag_error_with_msg(
                             pos,
@@ -332,7 +344,7 @@ fn trans_exp<T: Frame + 'static>(
                                 left, right
                             ),
                         );
-                        (ERROR_TR_EXP, Type::Error)
+                        error_type_check_output()
                     } else if !matches!(
                         lhs_ty,
                         Type::Int | Type::Record(..) | Type::Array(..) | Type::String
@@ -341,15 +353,23 @@ fn trans_exp<T: Frame + 'static>(
                         Type::Int | Type::Record(..) | Type::Array(..) | Type::String
                     ) {
                         ctx.flag_error_with_msg (pos, &format!("{} only valid on Int, Record, Array or String types, but is used for {} and {}", oper, lhs_ty, rhs_ty));
-                        (ERROR_TR_EXP, Type::Error)
+                        error_type_check_output()
                     } else {
                         if let (Type::String, Type::String) = (lhs_ty, rhs_ty) {
                             (
-                                translate::string_cmp(matches!(oper, Oper::EqOp), lhs_ir, rhs_ir),
+                                translate::string_cmp::<T>(
+                                    matches!(oper, Oper::EqOp),
+                                    lhs_ir,
+                                    rhs_ir,
+                                    &mut ctx.gen,
+                                ),
                                 Type::Int,
                             )
                         } else {
-                            (translate::binop(oper, lhs_ir, rhs_ir, &mut ctx.gen, &mut ctx.symbols), Type::Int)
+                            (
+                                translate::binop(oper, lhs_ir, rhs_ir, &mut ctx.gen),
+                                Type::Int,
+                            )
                         }
                     }
                 }
@@ -358,7 +378,13 @@ fn trans_exp<T: Frame + 'static>(
         Exp::NilExp => (translate::nil_exp(), Type::Nil),
         Exp::IntExp(i) => (translate::int_exp(*i), Type::Int),
         Exp::VarExp(v) => trans_var::<T>(ctx, level.clone(), v, break_label),
-        Exp::StringExp(s, _) => (translate::string_exp(ctx.get_span(s)), Type::String),
+        Exp::StringExp(s, _) => {
+            let x = &ctx.input[s.start()..s.end()];
+            (
+                translate::string_exp(x, &mut ctx.gen, &mut ctx.frags),
+                Type::String,
+            )
+        }
         Exp::CallExp { func, args, pos } => {
             let sym = ctx.intern(func);
             let fentry_opt = ctx.varfun_env.look(sym).map(|e| e.clone());
@@ -369,10 +395,14 @@ fn trans_exp<T: Frame + 'static>(
                         pos,
                         &format!("Trying to call undeclared function {}", ctx.get_span(func)),
                     );
-                    (ERROR_TR_EXP, Type::Error)
+                    error_type_check_output()
                 }
                 Some(EnvEntry::FunEntry {
-                    formals, result, ..
+                    label,
+                    level: callee_level,
+                    formals,
+                    result,
+                    ..
                 }) => {
                     if formals.len() != args.len() {
                         ctx.flag_error_with_msg(
@@ -384,7 +414,7 @@ fn trans_exp<T: Frame + 'static>(
                                 args.len()
                             ),
                         );
-                        (ERROR_TR_EXP, Type::Error)
+                        error_type_check_output()
                     } else {
                         let mut arg_irs = Vec::new();
 
@@ -411,9 +441,12 @@ fn trans_exp<T: Frame + 'static>(
                             arg_irs.push(arg_ir);
                         }
                         if ctx.has_error() {
-                            (ERROR_TR_EXP, Type::Error)
+                            error_type_check_output()
                         } else {
-                            (translate::call_exp(), result.clone())
+                            (
+                                translate::call_exp::<T>(label, level, arg_irs, callee_level, &mut ctx.gen),
+                                result.clone(),
+                            )
                         }
                     }
                 }
@@ -422,7 +455,7 @@ fn trans_exp<T: Frame + 'static>(
                         pos,
                         &format!("{} is not a function!", ctx.get_span(func)),
                     );
-                    (ERROR_TR_EXP, Type::Error)
+                    error_type_check_output()
                 }
             }
         }
@@ -436,7 +469,7 @@ fn trans_exp<T: Frame + 'static>(
                         pos,
                         &format!("{} has not been declared.", ctx.get_span(typ)),
                     );
-                    (ERROR_TR_EXP, Type::Error)
+                    error_type_check_output()
                 }
                 Some(Type::Record(name_types, ord)) => {
                     if name_types.len() != fields.len() {
@@ -446,7 +479,7 @@ fn trans_exp<T: Frame + 'static>(
                         name_types.len(),
                         fields.len()
                     ));
-                        (ERROR_TR_EXP, Type::Error)
+                        error_type_check_output()
                     } else {
                         let mut site_irs = Vec::new();
 
@@ -497,10 +530,10 @@ fn trans_exp<T: Frame + 'static>(
                         }
 
                         if site_irs.len() != fields.len() {
-                            (ERROR_TR_EXP, Type::Error)
+                            error_type_check_output()
                         } else {
                             (
-                                translate::record_exp(site_irs),
+                                translate::record_exp::<T>(site_irs, &mut ctx.gen),
                                 Type::Record(name_types.clone(), ord.clone()),
                             )
                         }
@@ -511,7 +544,7 @@ fn trans_exp<T: Frame + 'static>(
                         pos,
                         &format!("{} is not a record type.", ctx.get_span(typ)),
                     );
-                    (ERROR_TR_EXP, Type::Error)
+                    error_type_check_output()
                 }
             }
         }
@@ -524,7 +557,7 @@ fn trans_exp<T: Frame + 'static>(
                 exp_irs.push(exp_ir);
             }
             (
-                translate::seq_exp(exp_irs, !matches!(ret_val, Type::Unit)),
+                translate::seq_exp(exp_irs, !matches!(ret_val, Type::Unit), &mut ctx.gen),
                 ret_val,
             )
         }
@@ -534,7 +567,7 @@ fn trans_exp<T: Frame + 'static>(
             let (src_ir, src_ty) = trans_exp::<T>(ctx, level.clone(), exp, break_label);
 
             if matches!(dst_ty, Type::Error) || matches!(src_ty, Type::Error) {
-                (ERROR_TR_EXP, Type::Error)
+                error_type_check_output()
             } else if matches!(src_ty, Type::Nil) && !matches!(dst_ty, Type::Record(..)) {
                 ctx.flag_error_with_msg(
                     pos,
@@ -543,7 +576,7 @@ fn trans_exp<T: Frame + 'static>(
                         dst_ty
                     ),
                 );
-                (ERROR_TR_EXP, Type::Error)
+                error_type_check_output()
             } else if !dst_ty.compatible_with(&src_ty) {
                 ctx.flag_error_with_msg(
                     pos,
@@ -552,7 +585,7 @@ fn trans_exp<T: Frame + 'static>(
                         dst_ty, src_ty
                     ),
                 );
-                (ERROR_TR_EXP, Type::Error)
+                error_type_check_output()
             } else {
                 match var.as_ref() {
                     Var::SimpleVar(span, pos) => {
@@ -568,11 +601,11 @@ fn trans_exp<T: Frame + 'static>(
                                     ctx.get_span(span)
                                 ),
                                 );
-                                (ERROR_TR_EXP, Type::Error)
+                                error_type_check_output()
                             }
                             Some(EnvEntry::FunEntry { .. }) => {
                                 ctx.flag_error_with_msg(pos, "Cannot assign to a function");
-                                (ERROR_TR_EXP, Type::Error)
+                                error_type_check_output()
                             }
                             Some(EnvEntry::VarEntry { ty, readonly, .. }) => {
                                 if readonly {
@@ -580,16 +613,22 @@ fn trans_exp<T: Frame + 'static>(
                                         pos,
                                         "Cannot assign to readonly location",
                                     );
-                                    (ERROR_TR_EXP, Type::Error)
+                                    error_type_check_output()
                                 } else if matches!(ty, Type::Error) {
-                                    (ERROR_TR_EXP, Type::Error)
+                                    error_type_check_output()
                                 } else {
-                                    (translate::assignment(dst_ir, src_ir), Type::Unit)
+                                    (
+                                        translate::assignment(dst_ir, src_ir, &mut ctx.gen),
+                                        Type::Unit,
+                                    )
                                 }
                             }
                         }
                     }
-                    _ => (translate::assignment(dst_ir, src_ir), Type::Unit),
+                    _ => (
+                        translate::assignment(dst_ir, src_ir, &mut ctx.gen),
+                        Type::Unit,
+                    ),
                 }
             }
         }
@@ -601,13 +640,13 @@ fn trans_exp<T: Frame + 'static>(
         } => {
             let (cond_ir, test_ty) = trans_exp::<T>(ctx, level.clone(), test.as_ref(), break_label);
             if matches!(test_ty, Type::Error) {
-                (ERROR_TR_EXP, Type::Error)
+                error_type_check_output()
             } else if !matches!(test_ty, Type::Int) {
                 ctx.flag_error_with_msg(
                     pos,
                     &format!("Conditionals must evaluate to INT but got {} here", test_ty),
                 );
-                (ERROR_TR_EXP, Type::Error)
+                error_type_check_output()
             } else {
                 let (then_ir, then_ty) =
                     trans_exp::<T>(ctx, level.clone(), then.as_ref(), break_label);
@@ -620,19 +659,22 @@ fn trans_exp<T: Frame + 'static>(
                                 then_ty
                             ),
                         );
-                        (ERROR_TR_EXP, Type::Error)
+                        error_type_check_output()
                     } else {
-                        (translate::conditional(cond_ir, then_ir, None), then_ty)
+                        (
+                            translate::conditional(cond_ir, then_ir, None, &mut ctx.gen),
+                            then_ty,
+                        )
                     }
                 } else {
                     let (else_ir, else_ty) =
                         trans_exp::<T>(ctx, level.clone(), els.as_ref().unwrap(), break_label);
                     if !else_ty.compatible_with(&then_ty) {
                         ctx.flag_error_with_msg (pos, &format!("if-then-else branches have incompatible types: then has type {}, else has type {}", then_ty, else_ty));
-                        (ERROR_TR_EXP, Type::Error)
+                        error_type_check_output()
                     } else {
                         (
-                            translate::conditional(cond_ir, then_ir, Some(else_ir)),
+                            translate::conditional(cond_ir, then_ir, Some(else_ir), &mut ctx.gen),
                             then_ty,
                         )
                     }
@@ -646,24 +688,29 @@ fn trans_exp<T: Frame + 'static>(
             // since logically, the while condition is re-evaluated each iteration.
             let (cond_ir, cond_ty) = trans_exp::<T>(ctx, level.clone(), test, while_done_label);
             if matches!(cond_ty, Type::Error) {
-                (ERROR_TR_EXP, Type::Error)
+                error_type_check_output()
             } else if !matches!(cond_ty, Type::Int) {
                 ctx.flag_error_with_msg(
                     pos,
                     &format!("while condition must be of Int but got {}", cond_ty),
                 );
-                (ERROR_TR_EXP, Type::Error)
+                error_type_check_output()
             } else {
                 let (body_ir, body_ty) = trans_exp::<T>(ctx, level.clone(), body, while_done_label);
                 match body_ty {
                     Type::Unit => (
-                        translate::while_loop(cond_ir, body_ir, while_done_label.unwrap()),
+                        translate::while_loop(
+                            cond_ir,
+                            body_ir,
+                            while_done_label.unwrap(),
+                            &mut ctx.gen,
+                        ),
                         Type::Unit,
                     ),
-                    Type::Error => (ERROR_TR_EXP, Type::Error),
+                    Type::Error => error_type_check_output(),
                     _ => {
                         ctx.flag_error_with_msg(pos, "while body must not produce a value");
-                        (ERROR_TR_EXP, Type::Error)
+                        error_type_check_output()
                     }
                 }
             }
@@ -693,7 +740,7 @@ fn trans_exp<T: Frame + 'static>(
             ctx.varfun_env.begin_scope();
 
             let sym = ctx.intern(var);
-            let acc = level.borrow_mut().alloc_local(*escape);
+            let acc = Level::alloc_local(level.clone(), *escape);
 
             ctx.varfun_env.enter(
                 sym,
@@ -709,25 +756,31 @@ fn trans_exp<T: Frame + 'static>(
             match body_ty {
                 Type::Unit => {
                     if err {
-                        (ERROR_TR_EXP, Type::Error)
+                        error_type_check_output()
                     } else {
                         (
-                            translate::for_loop(lo_ir, hi_ir, body_ir, for_done_label.unwrap()),
+                            translate::for_loop(
+                                lo_ir,
+                                hi_ir,
+                                body_ir,
+                                for_done_label.unwrap(),
+                                &mut ctx.gen,
+                            ),
                             Type::Unit,
                         )
                     }
                 }
-                Type::Error => (ERROR_TR_EXP, Type::Error),
+                Type::Error => error_type_check_output(),
                 _ => {
                     ctx.flag_error_with_msg(pos, "for body must not produce a value");
-                    (ERROR_TR_EXP, Type::Error)
+                    error_type_check_output()
                 }
             }
         }
         Exp::BreakExp(pos) => {
             if break_label.is_none() {
                 ctx.flag_error_with_msg(pos, "naked break statement");
-                (ERROR_TR_EXP, Type::Error)
+                error_type_check_output()
             } else {
                 (translate::break_stmt(break_label.unwrap()), Type::Unit)
             }
@@ -747,9 +800,17 @@ fn trans_exp<T: Frame + 'static>(
             ctx.type_env.end_scope();
             ctx.varfun_env.end_scope();
 
-            (translate::let_exp(var_init_irs, let_body_ir), let_body_ty)
+            (
+                translate::let_exp(var_init_irs, let_body_ir, &mut ctx.gen),
+                let_body_ty,
+            )
         }
-        Exp::ArrayExp { typ, init, pos, .. } => {
+        Exp::ArrayExp {
+            typ,
+            size,
+            init,
+            pos,
+        } => {
             let sym = ctx.intern(typ);
             let arr_ty_opt = ctx.type_env.look(sym).map(|e| e.clone());
             if arr_ty_opt.is_none() {
@@ -760,31 +821,48 @@ fn trans_exp<T: Frame + 'static>(
                         ctx.get_span(typ)
                     ),
                 );
-                (ERROR_TR_EXP, Type::Error)
+                error_type_check_output()
             } else {
                 match arr_ty_opt.as_ref().unwrap() {
                     Type::Array(ele_ty_sym, _) => {
-                        let (_, init_val_ty) =
-                            trans_exp::<T>(ctx, level.clone(), init, break_label);
+                        let (size_ir, size_ty) =
+                            trans_exp::<T>(ctx, level.clone(), size, break_label);
+                        match size_ty {
+                            Type::Int => {
+                                let (init_val_ir, init_val_ty) =
+                                    trans_exp::<T>(ctx, level.clone(), init, break_label);
 
-                        let ele_ty = ctx.type_env.look(*ele_ty_sym);
-                        if ele_ty.is_none() {
-                            ctx.flag_error_with_msg(
-                                pos,
-                                &format!(
-                                    "array element has undeclared type {}",
-                                    ctx.resolve_unchecked(&ele_ty_sym)
-                                ),
-                            );
-                            (ERROR_TR_EXP, Type::Error)
-                        } else if !init_val_ty.compatible_with(ele_ty.unwrap()) {
-                            ctx.flag_error_with_msg (pos, &format!(
-                                "array initialized with type {} but declared with type {}, init={:?}",
-                                init_val_ty, ele_ty.unwrap(), init
-                            ));
-                            (ERROR_TR_EXP, Type::Error)
-                        } else {
-                            (translate::array_exp(), arr_ty_opt.unwrap().clone())
+                                let ele_ty = ctx.type_env.look(*ele_ty_sym);
+                                if ele_ty.is_none() {
+                                    ctx.flag_error_with_msg(
+                                        pos,
+                                        &format!(
+                                            "array element has undeclared type {}",
+                                            ctx.resolve_unchecked(&ele_ty_sym)
+                                        ),
+                                    );
+                                    error_type_check_output()
+                                } else if !init_val_ty.compatible_with(ele_ty.unwrap()) {
+                                    ctx.flag_error_with_msg (pos, &format!(
+                                        "array initialized with type {} but declared with type {}, init={:?}",
+                                        init_val_ty, ele_ty.unwrap(), init
+                                    ));
+                                    error_type_check_output()
+                                } else {
+                                    (
+                                        translate::array_exp::<T>(
+                                            size_ir,
+                                            init_val_ir,
+                                            &mut ctx.gen,
+                                        ),
+                                        arr_ty_opt.unwrap().clone(),
+                                    )
+                                }
+                            }
+                            _ => {
+                                ctx.flag_error_with_msg(pos, "array length is not an int");
+                                error_type_check_output()
+                            }
                         }
                     }
                     _ => {
@@ -792,7 +870,7 @@ fn trans_exp<T: Frame + 'static>(
                             pos,
                             &format!("{} is not of array type!", ctx.get_span(typ)),
                         );
-                        (ERROR_TR_EXP, Type::Error)
+                        error_type_check_output()
                     }
                 }
             }
@@ -801,7 +879,7 @@ fn trans_exp<T: Frame + 'static>(
 }
 
 fn trans_var<T: Frame + 'static>(
-    ctx: &mut TypeCheckingContext,
+    ctx: &mut TypeCheckingContext<T>,
     level: Rc<RefCell<Level>>,
     var: &Var,
     break_label: Option<Label>,
@@ -816,7 +894,7 @@ fn trans_var<T: Frame + 'static>(
                         pos,
                         &format!("use of undeclared variable {}", ctx.get_span(span)),
                     );
-                    (ERROR_TR_EXP, Type::Error)
+                    error_type_check_output()
                 }
                 Some(EnvEntry::FunEntry { .. }) => {
                     // this version of tiger does not support using functions as lvalues.
@@ -829,11 +907,14 @@ fn trans_var<T: Frame + 'static>(
                             ctx.get_span(span)
                         ),
                     );
-                    (ERROR_TR_EXP, Type::Error)
+                    error_type_check_output()
                 }
-                Some(EnvEntry::VarEntry { ty, .. }) => match ty {
-                    Type::Error => (ERROR_TR_EXP, Type::Error),
-                    _ => (translate::simple_var(), ty.clone()),
+                Some(EnvEntry::VarEntry { access, ty, .. }) => match ty {
+                    Type::Error => error_type_check_output(),
+                    _ => (
+                        translate::simple_var::<T>(access.clone(), level, &mut ctx.gen),
+                        ty.clone(),
+                    ),
                 },
             }
         }
@@ -858,7 +939,7 @@ fn trans_var<T: Frame + 'static>(
                                 pos,
                                 &format!("{} is not a field of the record", ctx.get_span(rhs_span)),
                             );
-                            (ERROR_TR_EXP, Type::Error)
+                            error_type_check_output()
                         }
                         Some(s) => {
                             // in our cute toy language every record field
@@ -866,7 +947,11 @@ fn trans_var<T: Frame + 'static>(
                             //  size, so we don't even have to do any
                             // extra work calculating the record size.
                             (
-                                translate::record_field(lhs_var_ir, field_offset),
+                                translate::record_field::<T>(
+                                    lhs_var_ir,
+                                    field_offset,
+                                    &mut ctx.gen,
+                                ),
                                 ctx.type_env.look(*s).unwrap().clone(),
                             )
                         }
@@ -881,7 +966,7 @@ fn trans_var<T: Frame + 'static>(
                             x
                         ),
                     );
-                    (ERROR_TR_EXP, Type::Error)
+                    error_type_check_output()
                 }
             }
         }
@@ -894,14 +979,19 @@ fn trans_var<T: Frame + 'static>(
 
                     match idx_ty {
                         Type::Int => {
-                            let sym = ctx.symbols.intern("exit");
+                            let sym = ctx.gen.intern("exit");
                             let exit_fn_entry = ctx.varfun_env.look(sym);
                             match exit_fn_entry {
                                 None => {
                                     panic!("bug in impl, missing the built-in exit procedure");
                                 }
                                 Some(EnvEntry::FunEntry { label, .. }) => (
-                                    translate::subscript_var(lhs_ir, idx_ir, *label),
+                                    translate::subscript_var::<T>(
+                                        lhs_ir,
+                                        idx_ir,
+                                        *label,
+                                        &mut ctx.gen,
+                                    ),
                                     ctx.type_env.look(ele_ty).unwrap().clone(),
                                 ),
                                 Some(x) => {
@@ -909,27 +999,27 @@ fn trans_var<T: Frame + 'static>(
                                 }
                             }
                         }
-                        Type::Error => (ERROR_TR_EXP, Type::Error),
+                        Type::Error => error_type_check_output(),
                         _ => {
                             ctx.flag_error_with_msg(pos, "array index must be of Int type!");
-                            (ERROR_TR_EXP, Type::Error)
+                            error_type_check_output()
                         }
                     }
                 }
-                Type::Error => (ERROR_TR_EXP, Type::Error),
+                Type::Error => error_type_check_output(),
                 x => {
                     ctx.flag_error_with_msg(
                         pos,
                         &format!("Subscript is only valid for array, used on {}", x),
                     );
-                    (ERROR_TR_EXP, Type::Error)
+                    error_type_check_output()
                 }
             }
         }
     }
 }
 
-fn ty_to_type(ctx: &mut TypeCheckingContext, ty: &Ty, _pos: &LineCol) -> Type {
+fn ty_to_type<T: Frame>(ctx: &mut TypeCheckingContext<T>, ty: &Ty, _pos: &LineCol) -> Type {
     // return the translated type, as well as whether type is forward referencing some unknown type.
     match ty {
         Ty::NameTy(span, _) => {
@@ -989,7 +1079,7 @@ fn ty_to_type(ctx: &mut TypeCheckingContext, ty: &Ty, _pos: &LineCol) -> Type {
 }
 
 fn trans_dec<T: Frame + 'static>(
-    ctx: &mut TypeCheckingContext,
+    ctx: &mut TypeCheckingContext<T>,
     level: Rc<RefCell<Level>>,
     dec: &Dec,
     break_label: Option<Label>,
@@ -1048,12 +1138,8 @@ fn trans_dec<T: Frame + 'static>(
                     }
                     escapes.push(field.escape);
                 }
-                let (new_level, new_level_label) = Level::new_level::<T>(
-                    level.clone(),
-                    escapes,
-                    &mut ctx.gen,
-                    &mut ctx.symbols,
-                );
+                let (new_level, new_level_label) =
+                    Level::new_level::<T>(level.clone(), escapes, &mut ctx.gen);
                 let funentry = EnvEntry::FunEntry {
                     level: new_level,
                     label: new_level_label,
@@ -1087,7 +1173,7 @@ fn trans_dec<T: Frame + 'static>(
                             let var_entry = EnvEntry::VarEntry {
                                 ty: formals[i].clone(),
                                 readonly: true,
-                                access: (
+                                access: translate::Access(
                                     level.clone(),
                                     level.borrow().formal_without_static_link(i),
                                 ),
@@ -1138,7 +1224,7 @@ fn trans_dec<T: Frame + 'static>(
                         ctx.flag_error_with_msg (pos, &format!("Variable {} is declared with unknown type and initiated with nil. Fix by using the long form, e.g. var {} : <your-type> = ...", name, name));
                     } else {
                         // no return type specified, infer it
-                        let acc = level.borrow_mut().alloc_local(*escape);
+                        let acc = Level::alloc_local(level, *escape);
                         ctx.varfun_env.enter(
                             var_name_sym,
                             EnvEntry::VarEntry {
@@ -1164,7 +1250,10 @@ fn trans_dec<T: Frame + 'static>(
                                     ty: Type::Error,
                                     readonly: true,
                                     // access is a dummy value because type checking failed
-                                    access: (level.clone(), frame::Access::InFrame(42)),
+                                    access: translate::Access(
+                                        level.clone(),
+                                        frame::Access::InFrame(42),
+                                    ),
                                 },
                             );
                         }
@@ -1177,11 +1266,14 @@ fn trans_dec<T: Frame + 'static>(
                                         ty: Type::Error,
                                         readonly: true,
                                         // access is a dummy value because type checking failed
-                                        access: (level.clone(), frame::Access::InFrame(42)),
+                                        access: translate::Access(
+                                            level.clone(),
+                                            frame::Access::InFrame(42),
+                                        ),
                                     },
                                 );
                             } else {
-                                let acc = level.borrow_mut().alloc_local(*escape);
+                                let acc = Level::alloc_local(level, *escape);
                                 ctx.varfun_env.enter(
                                     var_name_sym,
                                     EnvEntry::VarEntry {
@@ -1340,12 +1432,7 @@ pub fn translate<T: Frame + 'static>(input: &str, ast: &mut Exp) -> Result<TrExp
 
     escape::find_escapes(&mut ctx, ast);
 
-    let (main_level, _) = Level::new_level::<T>(
-        Level::outermost(),
-        Vec::new(),
-        &mut ctx.gen,
-        &mut ctx.symbols,
-    );
+    let (main_level, _) = Level::new_level::<T>(Level::outermost(), Vec::new(), &mut ctx.gen);
     let (exp, _) = trans_exp::<T>(&mut ctx, main_level, ast, None);
 
     if ctx.has_error() {
@@ -1363,7 +1450,7 @@ mod tests {
         frame::{Escapes, Frame},
         symbol::Interner,
         symbol::Symbol,
-        temp::{GenTemporary, Label},
+        temp::{self, GenTemporary, Label},
         tiger_y::parse,
     };
 
@@ -1383,6 +1470,62 @@ mod tests {
     }
 
     impl Frame for TestFrame {
+        fn external_call(name: &str, exps: Vec<crate::ir::IrExp>) -> crate::ir::IrExp
+        where
+            Self: Sized,
+        {
+            todo!()
+        }
+
+        fn word_size() -> usize
+        where
+            Self: Sized,
+        {
+            4
+        }
+
+        fn registers() -> &'static [frame::Register]
+        where
+            Self: Sized,
+        {
+            &[]
+        }
+
+        fn string(label: crate::temp::Label, val: &str) -> String
+        where
+            Self: Sized,
+        {
+            todo!()
+        }
+
+        fn frame_pointer(gen: &mut GenTemporary) -> crate::temp::Temp
+        where
+            Self: Sized,
+        {
+            todo!()
+        }
+
+        fn proc_entry_exit1()
+        where
+            Self: Sized,
+        {
+            todo!()
+        }
+
+        fn proc_entry_exit2()
+        where
+            Self: Sized,
+        {
+            todo!()
+        }
+
+        fn proc_entry_exit3()
+        where
+            Self: Sized,
+        {
+            todo!()
+        }
+
         fn new(name: Label, formals: Vec<Escapes>) -> Self {
             let mut gen = GenTemporary::new();
             let mut pool = Interner::new();

@@ -39,14 +39,15 @@ use crate::{
     absyn::{Dec, Exp, Var},
     semant::TypeCheckingContext,
     symtab::SymbolTable,
+    frame::Frame
 };
 use std::num::NonZeroUsize;
 
 type DepthEscapeRef<'a> = (NonZeroUsize, &'a mut bool);
 type EscapeEnv<'a> = SymbolTable<DepthEscapeRef<'a>>;
 
-fn traverse_exp<'a>(
-    ctx: &mut TypeCheckingContext,
+fn traverse_exp<'a, T: Frame>(
+    ctx: &mut TypeCheckingContext<T>,
     env: &mut EscapeEnv<'a>,
     d: NonZeroUsize,
     exp: &'a mut Exp,
@@ -128,8 +129,8 @@ fn traverse_exp<'a>(
     }
 }
 
-fn traverse_var<'a>(
-    ctx: &mut TypeCheckingContext,
+fn traverse_var<'a, T: Frame>(
+    ctx: &mut TypeCheckingContext<T>,
     env: &mut EscapeEnv<'a>,
     cur_depth: NonZeroUsize,
     var: &'a mut Var,
@@ -166,8 +167,8 @@ fn traverse_var<'a>(
     }
 }
 
-fn traverse_dec<'a>(
-    ctx: &mut TypeCheckingContext,
+fn traverse_dec<'a, T: Frame>(
+    ctx: &mut TypeCheckingContext<T>,
     env: &mut EscapeEnv<'a>,
     depth: NonZeroUsize,
     dec: &'a mut Dec,
@@ -191,7 +192,7 @@ fn traverse_dec<'a>(
     }
 }
 
-pub fn find_escapes(ctx: &mut TypeCheckingContext, prog: &mut Exp) {
+pub fn find_escapes<T: Frame>(ctx: &mut TypeCheckingContext<T>, prog: &mut Exp) {
     let mut env = EscapeEnv::empty();
     env.begin_scope();
     let d = NonZeroUsize::MIN;

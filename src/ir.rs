@@ -3,7 +3,7 @@ use crate::temp;
 use crate::absyn::{Oper};
 use crate::int_types::TigerInt;
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum IrExp {
     Const(TigerInt),
     Name(temp::Label),
@@ -14,7 +14,7 @@ pub enum IrExp {
     Eseq(Box<IrStm>, Box<IrExp>),
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum IrStm {
     Move(Box<IrExp>, Box<IrExp>),
     Exp(Box<IrExp>),
@@ -24,7 +24,7 @@ pub enum IrStm {
     Label(temp::Label),
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum IrBinop {
     Plus,
     Minus,
@@ -38,7 +38,7 @@ pub enum IrBinop {
     Xor,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum IrRelop {
     Eq,
     Ne,

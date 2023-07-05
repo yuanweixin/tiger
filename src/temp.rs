@@ -31,6 +31,11 @@ impl GenTemporary {
     }
 
     #[inline]
+    pub fn resolve_label(&self, l: Label) -> Option<&str> {
+        self.resolve(&l.0)
+    }
+
+    #[inline]
     pub fn intern(&mut self, name: &str) -> Symbol {
         self.pool.intern(name)
     }

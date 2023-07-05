@@ -17,7 +17,7 @@ pub enum Level {
         // use Rc because the Level objects form a dag where the child levels point back at the parent levels.
         // this whole mechanism just to be able to mutate some shit is fucking crazy.
         parent: Rc<RefCell<Level>>,
-        frame: Box<dyn Frame>,
+        frame: Rc<dyn Frame>,
     },
 }
 
@@ -37,10 +37,11 @@ impl PartialEq for Level {
     }
 }
 
-pub struct Access(Rc<RefCell<Level>>, frame::Access);
+#[derive(Clone, Debug)]
+pub struct Access(pub Rc<RefCell<Level>>, pub frame::Access);
 
-#[derive(Debug)]
-enum Conditional {
+#[derive(Debug, Clone)]
+pub enum Conditional {
     Truthy,
     Falsy,
     Cond(IrRelop, Box<IrExp>, Box<IrExp>), // rel, lhs, rhs
@@ -56,7 +57,7 @@ impl Conditional {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum TrExp {
     Ex(Box<IrExp>),
     Nx(Box<IrStm>),
@@ -65,31 +66,25 @@ pub enum TrExp {
 
 use TrExp::*;
 
-// A dummy IR to be returned in translation if a type check error happens.
-pub const ERROR_TR_EXP: TrExp = Ex(Box::new(Const(42)));
-
 impl Level {
     pub fn outermost() -> Rc<RefCell<Self>> {
         Rc::new(RefCell::new(Level::Top))
     }
 
     pub fn alloc_local(myself: Rc<RefCell<Level>>, escape: bool) -> Access {
-        match *myself.borrow_mut() {
+        let frame_access = match *myself.borrow_mut() {
             Level::Top => {
                 panic!("impl bug, cannot allocate local in top level");
             }
-            Level::Nested { mut frame, .. } => {
-                let frame_access = frame.alloc_local(escape);
-                Access(myself, frame_access)
-            }
-        }
+            Level::Nested { frame, .. } => frame.alloc_local(escape),
+        };
+        Access(myself, frame_access)
     }
 
     pub fn new_level<T: Frame + 'static>(
         parent: Rc<RefCell<Level>>,
         mut escapes: Vec<bool>,
         gen_temp_label: &mut GenTemporary,
-        pool: &mut Interner,
     ) -> (Rc<RefCell<Level>>, Label) {
         // prepend true for the static link
         escapes.insert(0, true);
@@ -97,7 +92,7 @@ impl Level {
         (
             Rc::new(RefCell::new(Level::Nested {
                 parent: parent.clone(),
-                frame: Box::new(T::new(function_label, escapes)),
+                frame: Rc::new(T::new(function_label, escapes)),
             })),
             function_label,
         )
@@ -133,7 +128,7 @@ fn make_seq(stmts: Vec<IrStm>) -> Box<IrStm> {
     Box::new(so_far)
 }
 
-fn un_ex(tr: TrExp, gen: &mut GenTemporary, pool: &mut Interner) -> Box<IrExp> {
+fn un_ex(tr: TrExp, gen: &mut GenTemporary) -> Box<IrExp> {
     match tr {
         Ex(exp) => exp,
         Cx(cond) => {
@@ -169,7 +164,7 @@ fn un_cx(tr: TrExp) -> Conditional {
     }
 }
 
-fn un_nx(tr: TrExp, gen: &mut GenTemporary, pool: &mut Interner) -> Box<IrStm> {
+fn un_nx(tr: TrExp, gen: &mut GenTemporary) -> Box<IrStm> {
     match tr {
         Nx(stm) => stm,
         Cx(c) => {
@@ -181,15 +176,9 @@ fn un_nx(tr: TrExp, gen: &mut GenTemporary, pool: &mut Interner) -> Box<IrStm> {
     }
 }
 
-pub fn binop(
-    o: &Oper,
-    lhs: TrExp,
-    rhs: TrExp,
-    gen: &mut GenTemporary,
-    pool: &mut Interner,
-) -> TrExp {
-    let left = un_ex(lhs, gen, pool);
-    let right = un_ex(rhs, gen, pool);
+pub fn binop(o: &Oper, lhs: TrExp, rhs: TrExp, gen: &mut GenTemporary) -> TrExp {
+    let left = un_ex(lhs, gen);
+    let right = un_ex(rhs, gen);
     match o {
         PlusOp => Ex(Box::new(Binop(Plus, left, right))),
         MinusOp => Ex(Box::new(Binop(Minus, left, right))),
@@ -209,12 +198,11 @@ pub fn string_cmp<T: Frame>(
     lhs: TrExp,
     rhs: TrExp,
     gen: &mut GenTemporary,
-    pool: &mut Interner,
 ) -> TrExp {
     if is_equality {
         Ex(Box::new(T::external_call(
             "stringEqual",
-            vec![*un_ex(lhs, gen, pool), *un_ex(rhs, gen, pool)],
+            vec![*un_ex(lhs, gen), *un_ex(rhs, gen)],
         )))
     } else {
         let r = gen.new_temp();
@@ -223,7 +211,7 @@ pub fn string_cmp<T: Frame>(
                 Box::new(Temp(r)),
                 Box::new(T::external_call(
                     "stringEqual",
-                    vec![*un_ex(lhs, gen, pool), *un_ex(rhs, gen, pool)],
+                    vec![*un_ex(lhs, gen), *un_ex(rhs, gen)],
                 )),
             )),
             Box::new(Binop(Xor, Box::new(Temp(r)), Box::new(Const(1)))),
@@ -231,18 +219,37 @@ pub fn string_cmp<T: Frame>(
     }
 }
 
+
+
 pub fn call_exp<T: Frame>(
     func: Label,
-    caller_level: Level,
+    caller_level: Rc<RefCell<Level>>,
     args: Vec<TrExp>,
-    callee_level: Level,
+    callee_level: Rc<RefCell<Level>>,
+    gen: &mut GenTemporary,
 ) -> TrExp {
-    // self call: pass my static link to the callee, not my frame pointer.
-    // calling direct child: pass FP to callee.
-    // call a sibling (share parent): pass parent fp
-    // call parent
-    // TODO
-    Ex(Box::new(Const(42)))
+    // let mut augmented_args = Vec::new();
+
+    // if *callee_level.borrow() == Level::Top {
+    //     // happens iff calling one of the built-in procs.
+    //     // no static link for them because they don't need them!
+    //     for arg in args {
+    //         augmented_args.push(*un_ex(arg, gen));
+    //     }
+    //     let fn_name = gen.resolve_label(func);
+    //     if fn_name.is_none() {
+    //         panic!("impl bug, call_exp has unknown fn_name; did you type check this first?");
+    //     }
+    //     return Ex(Box::new(T::external_call(fn_name.unwrap(), augmented_args)));
+    // }
+    // resolve the common ancestor.
+    // it is assumed the input has been typed checked successfully.
+    // all user defined functions run under the scope of `main`, so this means
+    // the common ancestor always exist.
+    //
+    // given a callee, the common ancestor can be:
+    // 1. the
+    return Ex(Box::new(Const(42)));
 }
 
 pub fn nil_exp() -> TrExp {
@@ -256,10 +263,9 @@ pub fn int_exp(i: TigerInt) -> TrExp {
 pub fn string_exp<T: Frame>(
     s: &str,
     gen: &mut GenTemporary,
-    pool: &mut Interner,
     frags: &mut Vec<frame::Frag<T>>,
 ) -> TrExp {
-    for frag in frags {
+    for frag in frags.iter() {
         match frag {
             frame::Frag::String(label, ..) => {
                 return Ex(Box::new(Name(*label)));
@@ -273,11 +279,7 @@ pub fn string_exp<T: Frame>(
     Ex(Box::new(Name(l)))
 }
 
-pub fn record_exp<T: Frame>(
-    site_irs: Vec<TrExp>,
-    gen: &mut GenTemporary,
-    pool: &mut Interner,
-) -> TrExp {
+pub fn record_exp<T: Frame>(site_irs: Vec<TrExp>, gen: &mut GenTemporary) -> TrExp {
     let r = gen.new_temp();
     let i = gen.new_temp();
     let done = gen.new_label();
@@ -285,45 +287,40 @@ pub fn record_exp<T: Frame>(
     let test = gen.new_label();
     let mut instrs = Vec::new();
 
-    // TODO, this could end up in an overflow situation which would be unfortunate. we should prob catch that.
     instrs.push(Move(
         Box::new(Temp(r)),
         Box::new(T::external_call(
             "malloc",
-            vec![Const((T::word_size() * site_irs.len()) as i32)],
+            vec![Const(
+                T::word_size().checked_mul(site_irs.len()).unwrap() as i32
+            )],
         )),
     ));
-    let mut idx = 0;
+    let mut idx: usize = 0;
     for site_ir in site_irs {
-        // TODO we could conceivably overflow this, prob best to check.
-        let offset = (idx * T::word_size()) as i32;
+        let offset = idx.checked_mul(T::word_size()).unwrap() as i32;
         instrs.push(Move(
             Box::new(Mem(Box::new(Binop(
                 Plus,
                 Box::new(Temp(r)),
                 Box::new(Const(offset)),
             )))),
-            un_ex(site_ir, gen, pool),
+            un_ex(site_ir, gen),
         ));
         idx += 1;
     }
     Ex(Box::new(Eseq(make_seq(instrs), Box::new(Temp(r)))))
 }
 
-pub fn seq_exp(
-    exp_irs: Vec<TrExp>,
-    has_return_value: bool,
-    gen: &mut GenTemporary,
-    pool: &mut Interner,
-) -> TrExp {
+pub fn seq_exp(exp_irs: Vec<TrExp>, has_return_value: bool, gen: &mut GenTemporary) -> TrExp {
     if exp_irs.len() == 0 {
         // for example, an empty let block
         Nx(Box::new(Exp(Box::new(Const(0)))))
     } else if exp_irs.len() == 1 {
         if has_return_value {
-            Ex(un_ex(exp_irs.into_iter().next().unwrap(), gen, pool))
+            Ex(un_ex(exp_irs.into_iter().next().unwrap(), gen))
         } else {
-            Nx(un_nx(exp_irs.into_iter().next().unwrap(), gen, pool))
+            Nx(un_nx(exp_irs.into_iter().next().unwrap(), gen))
         }
     } else {
         let mut irstms = Vec::new();
@@ -331,66 +328,45 @@ pub fn seq_exp(
             let upper = exp_irs.len() - 1;
             let mut iter = exp_irs.into_iter();
             while irstms.len() < upper {
-                irstms.push(*un_nx(iter.next().unwrap(), gen, pool));
+                irstms.push(*un_nx(iter.next().unwrap(), gen));
             }
             Ex(Box::new(Eseq(
                 make_seq(irstms),
-                un_ex(iter.next().unwrap(), gen, pool),
+                un_ex(iter.next().unwrap(), gen),
             )))
         } else {
             for tr in exp_irs.into_iter() {
-                irstms.push(*un_nx(tr, gen, pool));
+                irstms.push(*un_nx(tr, gen));
             }
             Nx(make_seq(irstms))
         }
     }
 }
 
-pub fn assignment(
-    dst_ir: TrExp,
-    src_ir: TrExp,
-    gen: &mut GenTemporary,
-    pool: &mut Interner,
-) -> TrExp {
-    Nx(Box::new(Move(
-        un_ex(dst_ir, gen, pool),
-        un_ex(src_ir, gen, pool),
-    )))
+pub fn assignment(dst_ir: TrExp, src_ir: TrExp, gen: &mut GenTemporary) -> TrExp {
+    Nx(Box::new(Move(un_ex(dst_ir, gen), un_ex(src_ir, gen))))
 }
 
-pub fn array_exp<T: Frame>(
-    size_ir: TrExp,
-    init_val_ir: TrExp,
-    gen: &mut GenTemporary,
-    pool: &mut Interner,
-) -> TrExp {
+pub fn array_exp<T: Frame>(size_ir: TrExp, init_val_ir: TrExp, gen: &mut GenTemporary) -> TrExp {
     Ex(Box::new(T::external_call(
         "initArray",
-        vec![*un_ex(size_ir, gen, pool), *un_ex(init_val_ir, gen, pool)],
+        vec![*un_ex(size_ir, gen), *un_ex(init_val_ir, gen)],
     )))
 }
 
-pub fn let_exp(
-    var_init_irs: Vec<TrExp>,
-    let_body_ir: TrExp,
-    gen: &mut GenTemporary,
-    pool: &mut Interner,
-) -> TrExp {
+pub fn let_exp(var_init_irs: Vec<TrExp>, let_body_ir: TrExp, gen: &mut GenTemporary) -> TrExp {
     if var_init_irs.len() == 0 {
         return let_body_ir;
     }
     let mut seqs = Vec::new();
     for ir in var_init_irs {
-        seqs.push(*un_nx(ir, gen, pool));
+        seqs.push(*un_nx(ir, gen));
     }
     if let Nx(_) = let_body_ir {
-        seqs.push(*un_nx(let_body_ir, gen, pool));
+        seqs.push(*un_nx(let_body_ir, gen));
         Nx(make_seq(seqs))
     } else {
-        Ex(Box::new(Eseq(
-            make_seq(seqs),
-            un_ex(let_body_ir, gen, pool),
-        )))
+        Ex(Box::new(Eseq(make_seq(seqs), un_ex(let_body_ir, gen))))
     }
 }
 
@@ -404,7 +380,6 @@ pub fn for_loop(
     body_ir: TrExp,
     for_done_label: Label,
     gen: &mut GenTemporary,
-    pool: &mut Interner,
 ) -> TrExp {
     // note the i < limit check is done BEFORE incrementing i to avoid the edge
     // case where limit == intmax, where if we increment i first we either get
@@ -412,8 +387,8 @@ pub fn for_loop(
     let test_label = gen.new_label();
     let body_label = gen.new_label();
     let cont_label = gen.new_label();
-    let i = Temp(gen.new_temp());
-    let limit = Temp(gen.new_temp());
+    let i = gen.new_temp();
+    let limit = gen.new_temp();
     // the extra check after `body` avoids overflow where hi=maxint.
     // let var i := lo
     //  var limit := hi
@@ -422,17 +397,29 @@ pub fn for_loop(
     //             if i == limit goto done;
     //             i := i + 1)
     Nx(make_seq(vec![
-        Move(Box::new(i), un_ex(lo_ir, gen, pool)),
-        Move(Box::new(limit), un_ex(hi_ir, gen, pool)),
+        Move(Box::new(Temp(i)), un_ex(lo_ir, gen)),
+        Move(Box::new(Temp(limit)), un_ex(hi_ir, gen)),
         Label(test_label),
-        Cjump(Le, Box::new(i), Box::new(limit), body_label, for_done_label),
+        Cjump(
+            Le,
+            Box::new(Temp(i)),
+            Box::new(Temp(limit)),
+            body_label,
+            for_done_label,
+        ),
         Label(body_label),
-        *un_nx(body_ir, gen, pool),
-        Cjump(Eq, Box::new(i), Box::new(limit), for_done_label, cont_label),
+        *un_nx(body_ir, gen),
+        Cjump(
+            Eq,
+            Box::new(Temp(i)),
+            Box::new(Temp(limit)),
+            for_done_label,
+            cont_label,
+        ),
         Label(cont_label),
         Move(
-            Box::new(i),
-            Box::new(Binop(Plus, Box::new(i), Box::new(Const(1)))),
+            Box::new(Temp(i)),
+            Box::new(Binop(Plus, Box::new(Temp(i)), Box::new(Const(1)))),
         ),
         Jump(Box::new(Name(test_label)), vec![test_label]),
     ]))
@@ -443,7 +430,6 @@ pub fn while_loop(
     body_ir: TrExp,
     done_label: Label,
     gen: &mut GenTemporary,
-    pool: &mut Interner,
 ) -> TrExp {
     let test = gen.new_label();
     let done = gen.new_label();
@@ -453,7 +439,7 @@ pub fn while_loop(
         Label(test),
         un_cx(cond_ir).eval(body, done),
         Label(body),
-        *un_nx(body_ir, gen, pool),
+        *un_nx(body_ir, gen),
         Jump(Box::new(Name(test)), vec![test]),
         Label(done),
     ]))
@@ -465,7 +451,6 @@ fn full_conditional(
     then_ir: TrExp,
     else_ir: TrExp,
     gen: &mut GenTemporary,
-    pool: &mut Interner,
 ) -> TrExp {
     fn helper(
         branch_ir: TrExp,
@@ -473,17 +458,16 @@ fn full_conditional(
         false_cx: Label,
         done: Label,
         gen: &mut GenTemporary,
-        pool: &mut Interner,
         return_register: IrExp,
     ) -> IrStm {
         match branch_ir {
-            Cx(cond) => un_cx(branch_ir).eval(true_cx, false_cx),
+            Cx(..) => un_cx(branch_ir).eval(true_cx, false_cx),
             Ex(..) => *make_seq(vec![
-                Move(Box::new(return_register), un_ex(branch_ir, gen, pool)),
+                Move(Box::new(return_register), un_ex(branch_ir, gen)),
                 Jump(Box::new(Name(done)), vec![done]),
             ]),
             Nx(..) => *make_seq(vec![
-                *un_nx(branch_ir, gen, pool),
+                *un_nx(branch_ir, gen),
                 Jump(Box::new(Name(done)), vec![done]),
             ]),
         }
@@ -494,66 +478,104 @@ fn full_conditional(
     let true_cx_branch_label = gen.new_label();
     let false_cx_branch_label = gen.new_label();
     let done = gen.new_label();
-    let r = Temp(gen.new_temp());
-    let true_branch_stmt = helper(
-        then_ir,
-        true_cx_branch_label,
-        false_cx_branch_label,
-        done,
-        gen,
-        pool,
-        r,
-    );
-    let false_branch_stmt = helper(
-        else_ir,
-        true_cx_branch_label,
-        false_cx_branch_label,
-        done,
-        gen,
-        pool,
-        r,
-    );
+    let r = gen.new_temp();
 
-    match (then_ir, else_ir) {
-        (Nx(..), Nx(..)) => Nx(make_seq(vec![
-            un_cx(cond_ir).eval(true_branch_label, false_branch_label),
-            Label(true_branch_label),
-            true_branch_stmt,
-            Label(false_branch_label),
-            false_branch_stmt,
-            Label(done),
-        ])),
+    match (&then_ir, &else_ir) {
+        (Nx(..), Nx(..)) => {
+            let true_branch_stmt = helper(
+                then_ir,
+                true_cx_branch_label,
+                false_cx_branch_label,
+                done,
+                gen,
+                Temp(r),
+            );
+            let false_branch_stmt = helper(
+                else_ir,
+                true_cx_branch_label,
+                false_cx_branch_label,
+                done,
+                gen,
+                Temp(r),
+            );
+
+            Nx(make_seq(vec![
+                un_cx(cond_ir).eval(true_branch_label, false_branch_label),
+                Label(true_branch_label),
+                true_branch_stmt,
+                Label(false_branch_label),
+                false_branch_stmt,
+                Label(done),
+            ]))
+        }
         (Nx(..), _) | (_, Nx(..)) => {
             panic!("impl bug, conditional ir generation should be invoked on if-then-else branch with the same return types on both branches");
         }
-        (Cx(..), _) | (_, Cx(..)) => Ex(Box::new(Eseq(
-            make_seq(vec![
-                un_cx(cond_ir).eval(true_branch_label, false_branch_label),
-                Label(true_branch_label),
-                true_branch_stmt,
-                Label(false_branch_label),
-                false_branch_stmt,
-                Label(false_cx_branch_label),
-                Move(Box::new(r), Box::new(Const(0))),
-                Jump(Box::new(Name(done)), vec![done]),
-                Label(true_cx_branch_label),
-                Move(Box::new(r), Box::new(Const(1))),
-                Jump(Box::new(Name(done)), vec![done]),
-                Label(done),
-            ]),
-            Box::new(r),
-        ))),
-        (_, _) => Ex(Box::new(Eseq(
-            make_seq(vec![
-                un_cx(cond_ir).eval(true_branch_label, false_branch_label),
-                Label(true_branch_label),
-                true_branch_stmt,
-                Label(false_branch_label),
-                false_branch_stmt,
-                Label(done),
-            ]),
-            Box::new(r),
-        ))),
+        (Cx(..), _) | (_, Cx(..)) => {
+            let true_branch_stmt = helper(
+                then_ir,
+                true_cx_branch_label,
+                false_cx_branch_label,
+                done,
+                gen,
+                Temp(r),
+            );
+            let false_branch_stmt = helper(
+                else_ir,
+                true_cx_branch_label,
+                false_cx_branch_label,
+                done,
+                gen,
+                Temp(r),
+            );
+            Ex(Box::new(Eseq(
+                make_seq(vec![
+                    un_cx(cond_ir).eval(true_branch_label, false_branch_label),
+                    Label(true_branch_label),
+                    true_branch_stmt,
+                    Label(false_branch_label),
+                    false_branch_stmt,
+                    Label(false_cx_branch_label),
+                    Move(Box::new(Temp(r)), Box::new(Const(0))),
+                    Jump(Box::new(Name(done)), vec![done]),
+                    Label(true_cx_branch_label),
+                    Move(Box::new(Temp(r)), Box::new(Const(1))),
+                    Jump(Box::new(Name(done)), vec![done]),
+                    Label(done),
+                ]),
+                Box::new(Temp(r)),
+            )))
+        }
+        (_, _) => {
+            let true_branch_stmt = helper(
+                then_ir,
+                true_cx_branch_label,
+                false_cx_branch_label,
+                done,
+                gen,
+                Temp(r),
+            );
+            let false_branch_stmt = helper(
+                else_ir,
+                true_cx_branch_label,
+                false_cx_branch_label,
+                done,
+                gen,
+                Temp(r),
+            );
+
+            Ex(Box::new(Eseq(
+                make_seq(vec![
+                    un_cx(cond_ir).eval(true_branch_label, false_branch_label),
+                    Label(true_branch_label),
+                    true_branch_stmt,
+                    Label(false_branch_label),
+                    false_branch_stmt,
+                    Label(done),
+                ]),
+                Box::new(Temp(r)),
+            )))
+        }
     }
 }
 
@@ -562,7 +584,6 @@ pub fn conditional(
     then_ir: TrExp,
     else_ir: Option<TrExp>,
     gen: &mut GenTemporary,
-    pool: &mut Interner,
 ) -> TrExp {
     if else_ir.is_none() {
         let t = gen.new_label();
@@ -570,12 +591,12 @@ pub fn conditional(
         Nx(make_seq(vec![
             un_cx(cond_ir).eval(t, f),
             Label(t),
-            *un_nx(then_ir, gen, pool),
+            *un_nx(then_ir, gen),
             Label(f),
         ]))
     } else {
         // complexity comes from attempt at pattern matching special cases.
-        full_conditional(cond_ir, then_ir, else_ir.unwrap(), gen, pool)
+        full_conditional(cond_ir, then_ir, else_ir.unwrap(), gen)
     }
 }
 
@@ -585,7 +606,7 @@ pub fn simple_var<T: Frame>(
     gen: &mut GenTemporary,
 ) -> TrExp {
     let final_level = access.0;
-    let mut cur_level = current_level;
+    let cur_level = current_level.clone();
     let mut access_expr = Temp(T::frame_pointer(gen));
 
     while *final_level.borrow() != *cur_level.borrow() {
@@ -601,11 +622,11 @@ pub fn simple_var<T: Frame>(
         // k_i = the offset of the static link in the frame.
         // since static link is always the first formal parameter in the frame, we
         // can access its offset as level.frame.formals()[0]
-        match *cur_level.borrow() {
+        match &*cur_level.borrow() {
             Level::Top => {
                 panic!("impl bug! ran out of levels while accessing a variable in some parent level, did this code pass type checking first?");
             }
-            Level::Nested { parent, frame } => match frame.as_ref().formals()[0] {
+            Level::Nested { frame, .. } => match frame.as_ref().formals()[0] {
                 frame::Access::InReg(..) => {
                     panic!("impl bug, static link should always be InFrame")
                 }
@@ -646,11 +667,10 @@ pub fn record_field<T: Frame>(
     lhs_var_ir: TrExp,
     field_pos: usize,
     gen: &mut GenTemporary,
-    pool: &mut Interner,
 ) -> TrExp {
     Ex(Box::new(Mem(Box::new(Binop(
         Plus,
-        un_ex(lhs_var_ir, gen, pool),
+        un_ex(lhs_var_ir, gen),
         // hmm, this could potentially overflow in extreme edge case.
         Box::new(Const((field_pos * T::word_size()) as i32)),
     )))))
@@ -662,25 +682,32 @@ pub fn subscript_var<T: Frame>(
     idx_ir: TrExp,
     exit_label: Label,
     gen: &mut GenTemporary,
-    pool: &mut Interner,
 ) -> TrExp {
+    // byte offset of idx+1 basically.
     let idx = Binop(
         Plus,
         Box::new(Const(T::word_size() as i32)),
         Box::new(Binop(
             Mul,
-            un_ex(idx_ir, gen, pool),
+            un_ex(idx_ir, gen),
             Box::new(Const(T::word_size() as i32)),
         )),
     );
     let bad = gen.new_label();
     let upper_check = gen.new_label();
     let access = gen.new_label();
+    let lhs_unexed = un_ex(lhs_ir, gen);
     Ex(Box::new(Eseq(
         make_seq(vec![
-            Cjump(Ge, Box::new(idx), Box::new(Const(0)), upper_check, bad),
+            Cjump(
+                Ge,
+                Box::new(idx.clone()),
+                Box::new(Const(0)),
+                upper_check,
+                bad,
+            ),
             Label(upper_check),
-            Cjump(Lt, Box::new(idx), un_ex(lhs_ir, gen, pool), access, bad),
+            Cjump(Lt, Box::new(idx.clone()), lhs_unexed.clone(), access, bad),
             Label(bad),
             Exp(Box::new(T::external_call(
                 "exit",
@@ -688,15 +715,10 @@ pub fn subscript_var<T: Frame>(
             ))),
             Label(access),
         ]),
-        Box::new(Mem(Box::new(Binop(
-            Plus,
-            un_ex(lhs_ir, gen, pool),
-            Box::new(idx),
-        )))),
+        Box::new(Mem(Box::new(Binop(Plus, lhs_unexed, Box::new(idx))))),
     )))
 }
 
-// TODO
 // pub fn proc_entry_exit(fragments: &mut Vec<Fragment>, level: Level, body: TrExp) {
 pub fn proc_entry_exit(level: Rc<RefCell<Level>>, body: TrExp) {
     // todo!()

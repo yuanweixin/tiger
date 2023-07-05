@@ -17,7 +17,7 @@ pub enum Access {
 
 pub type Escapes = bool;
 
-type Register = &'static str;
+pub type Register = &'static str;
 
 pub trait Frame : Debug {
     // We could also have put Sized on the trait.
@@ -30,7 +30,7 @@ pub trait Frame : Debug {
     fn alloc_local(&mut self, escapes: Escapes) -> Access;
     fn external_call(name: &str, exps: Vec<IrExp>) -> IrExp where Self:Sized;
     fn word_size() -> usize where Self:Sized;
-    fn registers() -> &[Register] where Self:Sized;
+    fn registers() -> &'static [Register] where Self:Sized;
     // TODO not sure what kind of table this is
     // fn temp_map -> Sym
     fn string(label: temp::Label, val: &str) -> String where Self:Sized; // TODO signature
