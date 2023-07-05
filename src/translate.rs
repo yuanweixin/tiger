@@ -263,11 +263,13 @@ pub fn call_exp<T: Frame>(
     // here's the cases.
     // callee's parent is the top level
     //    callee is one of the predefined, external call
-    // b calls a, a is ancestor (could have >1 scopes in-between) of b (includes the case where b == a)
-    //    pass the static link of a
+    // b is a's parent -> pass b's FP.
+    // b calls a, a is ancestor (have at least 1 scope between a and b)
+    //    keep going up b until including a, building up the static link expression.
+    // b calls a, where b == a (special case of above)
+    //    pass the static link of a which is caller.fp
     // b calls a, a and b share ancestor
-    //    keep going up b until get to frame x before a's ancestor. pass x.static_link
-    //    b is a's parent -> pass b's FP.
+    //    keep going up b until get to frame before a's ancestor, building up the static link expression.
 
     let mut augmented_args = Vec::new();
     if *callee_level.borrow() == Level::Top {
@@ -310,6 +312,8 @@ pub fn call_exp<T: Frame>(
         };
     }
 
+    // this is the "recursive" case where we keep going up the caller until the caller's
+    // parent is equal to the callee's parent.
     let mut p = caller_level;
     // start at the current frame's FP.
     let mut expr = Temp(T::frame_pointer(gen));
@@ -320,6 +324,7 @@ pub fn call_exp<T: Frame>(
         let tmp = p.borrow().get_parent();
         p = tmp;
     }
+    augmented_args.push(expr);
     for arg in args {
         augmented_args.push(*un_ex(arg, gen));
     }
