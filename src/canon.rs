@@ -277,6 +277,9 @@ pub fn basic_blocks(
     stmts: Vec<IrStm>,
     gen: &mut GenTemporary,
 ) -> (HashMap<temp::Label, Block>, temp::Label) {
+    // according to Appel (p180), this basic blocks function is applied to each function body in turn.
+    // the "epilogue" will not be part of this body, but will eventually follow the last statement.
+    //
     // From a list of cleaned trees, produce a list of
     //  basic blocks satisfying the following properties:
     //       1. and 2. as above;
@@ -469,7 +472,27 @@ pub fn trace_schedule(
     }
     // TODO figure 8.3 has situation where the Label(done), epilogue statements is already part of the
     // trace. Idk at what point or where those are supposed to be added in. The next line prob wrong
-    // but putting it here for now.
+    // but putting it here for now. Although, in canon.ml given on Appel's website, they do just tag on
+    // the done label as the last IrStm of the output.
     res.push(Label(done_label));
     res
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{
+        absyn, frame,
+        frame::{Escapes, Frame},
+        ir::{IrExp, IrStm},
+        symbol::Interner,
+        symbol::Symbol,
+        temp::{self, GenTemporary, Label},
+    };
+
+    #[test]
+    fn basic_block() {
+
+    }
+
 }
