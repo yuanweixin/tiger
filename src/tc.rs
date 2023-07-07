@@ -18,6 +18,8 @@ mod semant;
 mod escape;
 mod canon;
 
+use crate::frame::x86_64::x86_64_Frame;
+
 lrlex_mod!("tiger.l");
 lrpar_mod!("tiger.y");
 
@@ -40,11 +42,11 @@ fn main() {
         util::exit(util::ReturnCode::OtherErrors);
     }
 
-    let lexerdef = tiger_l::lexerdef();
+    let lexerdef: lrlex::LRNonStreamingLexerDef<lrlex::DefaultLexerTypes> = tiger_l::lexerdef();
 
     let lexer = lexerdef.lexer(input.as_ref().unwrap());
 
-    let (_, errs) = tiger_y::parse(&lexer);
+    let (ast_opt, errs) = tiger_y::parse(&lexer);
 
     if errs.len() > 0 {
         for e in errs {
@@ -53,7 +55,14 @@ fn main() {
         util::exit(util::ReturnCode::SyntaxError);
     }
 
+    let ir = semant::translate::<x86_64_Frame>(input.as_ref().unwrap(), &mut ast_opt.unwrap().unwrap());
 
+    if ir.is_err() {
+        println!("type checking failed");
+        util::exit(util::ReturnCode::TypeError);
+    }
+
+    println!("{:#?}", ir.unwrap());
 }
 
 

@@ -1,3 +1,5 @@
+pub mod x86_64;
+
 use crate::{
     temp::{self, GenTemporary},
     ir,
