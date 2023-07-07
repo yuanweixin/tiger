@@ -1,6 +1,9 @@
-use crate::{temp, ir::IrExp, ir::IrExp::*, ir::IrStm, ir::IrStm::*, temp::GenTemporary};
+use crate::{ir::IrExp, ir::IrExp::*, ir::IrStm, ir::{IrStm::*, IrRelop, IrRelop::*}, temp, temp::GenTemporary};
 
-use std::{collections::VecDeque, iter::Peekable};
+use std::{
+    collections::{HashMap, VecDeque},
+    iter::Peekable,
+};
 
 #[inline]
 fn nop() -> IrStm {
@@ -216,8 +219,64 @@ pub fn linearize(i: IrStm, gen: &mut GenTemporary) -> Vec<IrStm> {
     helper(lift_stm(i, gen), Vec::new())
 }
 
-type Block = Vec<IrStm>;
-pub fn basic_blocks(stmts: Vec<IrStm>, gen: &mut GenTemporary) -> Vec<Block> {
+pub struct Block {
+    stmts: Vec<IrStm>,
+    marked: bool,
+}
+
+impl Block {
+    fn new() -> Self {
+        Self {
+            stmts: Vec::new(),
+            marked: false,
+        }
+    }
+
+    fn label(&self) -> temp::Label {
+        match self.stmts[0] {
+            Label(l) => l,
+            _ => panic!("impl bug: block.label() should only be called on a nonempty block with Label as first stmt")
+        }
+    }
+
+    fn successors(&self) -> Vec<temp::Label> {
+        match &self.stmts[self.stmts.len() - 1] {
+            // Order here important, we want the false branch of the Cjump first so that
+            // if the corresponding basic block has not been included in an existing trace,
+            // it will be selected before the true block is considered.
+            Cjump(_, _, _, t, f) => vec![f.clone(), t.clone()],
+            Jump(_, labels) => labels.clone(),
+            _ => panic!("impl bug: block does not end in a Jump or Cjump"),
+        }
+    }
+
+    #[inline]
+    fn push(&mut self, i: IrStm) {
+        // convenience method.
+        self.stmts.push(i);
+    }
+
+    #[inline]
+    fn len(&self) -> usize {
+        // convenience method.
+        self.stmts.len()
+    }
+}
+
+#[cfg(debug_assertions)]
+fn validate_block(this_block: &Block) {
+    debug_assert!(this_block.len() > 0);
+    debug_assert!(matches!(this_block.stmts[0], Label(..)));
+    debug_assert!(
+        matches!(this_block.stmts[this_block.len() - 1], Cjump(..))
+            || matches!(this_block.stmts[this_block.len() - 1], Jump(..))
+    );
+}
+
+pub fn basic_blocks(
+    stmts: Vec<IrStm>,
+    gen: &mut GenTemporary,
+) -> (HashMap<temp::Label, Block>, temp::Label) {
     // From a list of cleaned trees, produce a list of
     //  basic blocks satisfying the following properties:
     //       1. and 2. as above;
@@ -227,17 +286,18 @@ pub fn basic_blocks(stmts: Vec<IrStm>, gen: &mut GenTemporary) -> Vec<Block> {
     //           6.  Every block ends with a JUMP or CJUMP;
     //        Also produce the "label" to which control will be passed
     //        upon exit.
-    let mut blist = Vec::new();
-    let mut this_block = Vec::new();
+    let mut blist = HashMap::new();
+    let mut this_block = Block::new();
+    let done_label = gen.new_label();
 
-    let mut iter =  stmts.into_iter().peekable() ;
+    let mut iter = stmts.into_iter().peekable();
     while iter.len() > 0 {
         // add the start label.
         match iter.peek() {
-            None => {},
+            None => {}
             Some(Label(..)) => {
                 this_block.push(iter.next().unwrap());
-            },
+            }
             Some(_) => {
                 let l = gen.new_label();
                 this_block.push(Label(l));
@@ -249,15 +309,21 @@ pub fn basic_blocks(stmts: Vec<IrStm>, gen: &mut GenTemporary) -> Vec<Block> {
                 Jump(..) | Cjump(..) => {
                     // clean end of block
                     this_block.push(iter.next().unwrap());
-                    blist.push(this_block);
-                    this_block = Vec::new();
+                    if cfg!(debug_assertions) {
+                        validate_block(&this_block);
+                    }
+                    blist.insert(this_block.label(), this_block);
+                    this_block = Block::new();
                     break;
                 }
                 Label(l) => {
                     // need to make up a jump to the label of the next block
                     this_block.push(Jump(Box::new(Name(*l)), vec![*l]));
-                    blist.push(this_block);
-                    this_block = Vec::new();
+                    if cfg!(debug_assertions) {
+                        validate_block(&this_block);
+                    }
+                    blist.insert(this_block.label(), this_block);
+                    this_block = Block::new();
                     break;
                 }
                 _ => {
@@ -268,18 +334,40 @@ pub fn basic_blocks(stmts: Vec<IrStm>, gen: &mut GenTemporary) -> Vec<Block> {
         }
         // did we run out of stmts before encountering Jump or Cjump? If so add a end label.
         if this_block.len() > 0 {
-            let end_label = gen.new_label();
-            this_block.push(Jump(Box::new(Name(end_label)), vec![end_label]));
-            blist.push(this_block);
-            this_block = Vec::with_capacity(0); // need this to satisfy borrow checker.
+            this_block.push(Jump(Box::new(Name(done_label)), vec![done_label]));
+            if cfg!(debug_assertions) {
+                validate_block(&this_block);
+            }
+            blist.insert(this_block.label(), this_block);
+            this_block = Block::new(); // need this to satisfy borrow checker.
 
-            assert!(iter.len() == 0); // sanity check
+            debug_assert!(iter.len() == 0); // sanity check
         }
     }
-    blist
+    (blist, done_label)
 }
 
-pub fn trace_schedule(_: Vec<Vec<IrStm>>, _: temp::Label) -> Vec<IrStm> {
+fn invert_cjump(r: IrRelop, a: Box<IrExp>, b: Box<IrExp>, lt: temp::Label, lf: temp::Label) -> IrStm {
+    let new_op = match r {
+           Eq => Ne,
+           Ne => Eq,
+        Lt => Ge,
+        Gt => Le,
+        Le => Gt,
+        Ge => Lt,
+        Ult => Uge,
+        Ule => Ugt,
+        Ugt => Ule,
+        Uge => Ult
+    };
+    Cjump(new_op, a, b, lf, lt)
+}
+
+pub fn trace_schedule(
+    mut blist: HashMap<temp::Label, Block>,
+    done_label: temp::Label,
+    gen: &mut GenTemporary,
+) -> Vec<IrStm> {
     // From a list of basic blocks satisfying properties 1-6,
     //         along with an "exit" label,
     //     produce a list of stms such that:
@@ -288,5 +376,100 @@ pub fn trace_schedule(_: Vec<Vec<IrStm>>, _: temp::Label) -> Vec<IrStm> {
     //         The blocks are reordered to satisfy property 7; also
     //     in this reordering as many JUMP(T.NAME(lab)) statements
     //         as possible are eliminated by falling through into T.LABEL(lab).
-    todo!()
+    let mut res = Vec::new();
+    while !blist.is_empty() {
+        let mut new_trace = Vec::new();
+
+        let (head_label, _) = blist.iter().next().unwrap();
+        let mut b = Some(blist.remove(&head_label.clone()).unwrap());
+        while b.is_some() && !b.as_ref().unwrap().marked {
+            b.as_mut().unwrap().marked = true;
+            let succs = b.as_ref().unwrap().successors();
+            new_trace.push(b.unwrap());
+            b = None;
+            for succ_label in succs {
+                match blist.remove(&succ_label) {
+                    None => continue,
+                    Some(block) => {
+                        b = Some(block);
+                        break;
+                    }
+                }
+            }
+
+            if b.is_none() {
+                // means, we are done with the trace as we cannot find unmarked blocks of any of the successors.
+                // time to output the trace.
+                let mut blk_iter = new_trace.into_iter().peekable();
+                // this must exist by construction. need it to be Option to be able to swap the next block's iter into this
+                // when we are done with the current block.
+                let mut cur_blk = blk_iter.next().map(|b| b.stmts.into_iter().peekable());
+                // this may or may not exist.
+                let mut nxt_blk = blk_iter.next().map(|b| b.stmts.into_iter().peekable());
+
+                while cur_blk.is_some() {
+                    let cb_iter = cur_blk.unwrap();
+                    for stmt in cb_iter {
+                        match stmt {
+                            Jump(..) => {
+                                // is next exist? if so we skip this jump and that label because it must be my label
+                                if nxt_blk.is_some() {
+                                    nxt_blk = nxt_blk.map(|mut it| {
+                                        if cfg!(debug_assertions) {
+                                            match it.next() {
+                                                Some(Label(..)) => {},
+                                                x => panic!("basic block expected to start with Label but got {:#?}", x)
+                                            }
+                                        } else {
+                                            it.next(); // consume the first stmt, which should be the Label.
+                                        }
+                                        it
+                                    });
+                                } else {
+                                    res.push(stmt);
+                                }
+                            }
+                            Cjump(p, a, b, lt, lf) => {
+                                // am i followed by my false label?
+                                // yes -> add me
+                                // no because next block is my true label -> negate me and add that
+                                // no because next block doesn't exist -> make up label lf', add me with false to lf', label lf', and jump to original lf
+                                if nxt_blk.is_some() {
+                                    // it would be a bug if unwrap() fails as every basic block must be nonempty.
+                                    match nxt_blk.as_mut().unwrap().peek().unwrap() {
+                                        Label(nxt_lb) => {
+                                            if nxt_lb == lf {
+                                                res.push(Cjump(p, a, b, lt, lf));
+                                            } else {
+                                                debug_assert!(nxt_lb == lt, "impl bug: cjump in a basic block with an existing next block is not followed by its true or false label");
+                                                // followed by true label.
+                                                res.push(invert_cjump(p, a, b, lt, lf));
+                                            }
+                                        }
+                                        _ => {
+                                            panic!("impl bug: basic block must start with a Label")
+                                        }
+                                    }
+                                } else {
+                                    let lff = gen.new_label();
+                                    res.push(Cjump(p, a, b, lt, lff));
+                                    res.push(Label(lff));
+                                    res.push(Jump(Box::new(Name(lf)), vec![lf]));
+                                }
+                            }
+                            _ => res.push(stmt),
+                        }
+                    }
+                    cur_blk = nxt_blk;
+                    nxt_blk = blk_iter.next().map(|b| b.stmts.into_iter().peekable());
+                }
+                break;
+            }
+        }
+    }
+    // TODO figure 8.3 has situation where the Label(done), epilogue statements is already part of the
+    // trace. Idk at what point or where those are supposed to be added in. The next line prob wrong
+    // but putting it here for now.
+    res.push(Label(done_label));
+    res
 }

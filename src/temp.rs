@@ -8,6 +8,12 @@ pub struct Temp(NonZeroUsize);
 #[derive(Eq, PartialEq, Copy, Clone, Hash, Debug)]
 pub struct Label(Symbol);
 
+impl PartialEq<Label> for &Label {
+    fn eq(&self, rhs: &Label) -> bool {
+        return self.0 == rhs.0
+    }
+}
+
 impl Temp {
     pub fn new_temp_for_test() -> Self {
         Temp(NonZeroUsize::MIN)
