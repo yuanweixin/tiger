@@ -2,7 +2,6 @@ pub mod x86_64;
 
 use crate::{
     temp::{self, GenTemporary},
-    ir,
     temp::{Temp, Label},
     ir::{IrStm, IrExp}
 };

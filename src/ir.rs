@@ -1,5 +1,4 @@
 // appel's tree ir language
-use crate::absyn::types::Oper;
 use crate::int_types::TigerInt;
 use crate::temp;
 

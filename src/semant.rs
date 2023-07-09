@@ -988,25 +988,12 @@ fn trans_var<T: Frame + 'static>(
 
                     match idx_ty {
                         Type::Int => {
-                            let sym = ctx.gen.intern("exit");
-                            let exit_fn_entry = ctx.varfun_env.look(sym);
-                            match exit_fn_entry {
-                                None => {
-                                    panic!("bug in impl, missing the built-in exit procedure");
-                                }
-                                Some(EnvEntry::FunEntry { label, .. }) => (
-                                    translate::subscript_var::<T>(
-                                        lhs_ir,
-                                        idx_ir,
-                                        *label,
-                                        &mut ctx.gen,
-                                    ),
-                                    ctx.type_env.look(ele_ty).unwrap().clone(),
-                                ),
-                                Some(x) => {
-                                    panic!("bug in impl, `exit` should be a FunEntry but is {}", x);
-                                }
-                            }
+                            let subscript_ir = translate::subscript_var::<T>(
+                                lhs_ir,
+                                idx_ir,
+                                &mut ctx.gen,
+                            );
+                            (subscript_ir, ctx.type_env.look(ele_ty).unwrap().clone())
                         }
                         Type::Error => error_type_check_output(),
                         _ => {
@@ -1454,13 +1441,10 @@ pub fn translate<T: Frame + 'static>(input: &str, ast: &mut Exp) -> Result<TrExp
 mod tests {
     use super::*;
     use crate::{
-        absyn, frame,
+        frame,
         frame::{Escapes, Frame},
         ir::{IrExp, IrStm},
-        symbol::Interner,
-        symbol::Symbol,
         temp::{self, GenTemporary, Label},
-        tiger_y::parse,
     };
 
     use lrlex::lrlex_mod;
@@ -1478,7 +1462,7 @@ mod tests {
     }
 
     impl Frame for TestFrame {
-        fn external_call(name: &str, exps: Vec<crate::ir::IrExp>) -> crate::ir::IrExp
+        fn external_call(_: &str, _: Vec<crate::ir::IrExp>) -> crate::ir::IrExp
         where
             Self: Sized,
         {
@@ -1499,21 +1483,21 @@ mod tests {
             &[]
         }
 
-        fn string(label: crate::temp::Label, val: &str) -> String
+        fn string(_: crate::temp::Label, _: &str) -> String
         where
             Self: Sized,
         {
             todo!()
         }
 
-        fn frame_pointer(gen: &mut GenTemporary) -> crate::temp::Temp
+        fn frame_pointer(_: &mut GenTemporary) -> crate::temp::Temp
         where
             Self: Sized,
         {
             temp::Temp::new_temp_for_test()
         }
 
-        fn proc_entry_exit1(&self, body: IrStm) -> IrStm
+        fn proc_entry_exit1(&self, _: IrStm) -> IrStm
         {
             IrStm::Exp(Box::new(IrExp::Const(42)))
         }
@@ -1532,9 +1516,8 @@ mod tests {
             todo!()
         }
 
-        fn new(name: Label, formals: Vec<Escapes>) -> Self {
+        fn new(_: Label, formals: Vec<Escapes>) -> Self {
             let mut gen = GenTemporary::new();
-            let mut pool = Interner::new();
 
             let mut frame_formals = Vec::with_capacity(1 + formals.len());
             // dummy values.
@@ -1556,7 +1539,7 @@ mod tests {
         fn formals(&self) -> &[frame::Access] {
             &self.formals[1..]
         }
-        fn alloc_local(&mut self, escapes: Escapes) -> frame::Access {
+        fn alloc_local(&mut self, _: Escapes) -> frame::Access {
             frame::Access::InFrame(42)
         }
     }
@@ -1597,14 +1580,6 @@ mod tests {
         }
         // some dummy value.
         result.unwrap()
-    }
-
-    fn test_is_good(input: &str) {
-        test_input_helper(input, true, None);
-    }
-
-    fn test_is_bad(input: &str) {
-        test_input_helper(input, false, None);
     }
 
     fn test_file(path: DirEntry, is_good: bool) {
@@ -1829,7 +1804,7 @@ mod tests {
     ",
             ),
         ];
-        for (desc, input) in inputs {
+        for (_, input) in inputs {
             test_input_helper(input, true, None);
         }
     }
@@ -2128,7 +2103,7 @@ mod tests {
     ";
         let ast = test_input_helper(input, true, None);
         match &ast {
-            Exp::LetExp { decs, body, .. } => {
+            Exp::LetExp { decs, .. } => {
                 assert!(decs.len() == 1);
                 match decs[0] {
                     Dec::VarDec { escape: false, .. } => {}

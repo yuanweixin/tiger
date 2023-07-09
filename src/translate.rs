@@ -73,10 +73,12 @@ pub enum TrExp {
 }
 
 // convenience functions to avoid typing Box::new...
+#[allow(non_snake_case)]
 fn Ex(ie: IrExp) -> TrExp {
     TrExp::Ex(Box::new(ie))
 }
 
+#[allow(non_snake_case)]
 fn Nx(is: IrStm) -> TrExp {
     TrExp::Nx(Box::new(is))
 }
@@ -168,9 +170,9 @@ fn make_seq(stmts: Vec<IrStm>) -> IrStm {
     let mut iter = stmts.into_iter();
     let last = iter.next().unwrap();
     let sec_last = iter.next().unwrap();
-    let mut so_far = IrStm::Seq(Box::new(sec_last), Box::new(last));
+    let mut so_far = Seq(sec_last, last);
     while let Some(nxt) = iter.next() {
-        so_far = IrStm::Seq(Box::new(nxt), Box::new(so_far));
+        so_far = Seq(nxt, so_far);
     }
     so_far
 }
@@ -369,10 +371,6 @@ pub fn string_exp(s: &str, gen: &mut GenTemporary, frags: &mut Vec<frame::Frag>)
 
 pub fn record_exp<T: Frame>(site_irs: Vec<TrExp>, gen: &mut GenTemporary) -> TrExp {
     let r = gen.new_temp();
-    let i = gen.new_temp();
-    let done = gen.new_label();
-    let body = gen.new_label();
-    let test = gen.new_label();
     let mut instrs = Vec::new();
 
     instrs.push(Move(
@@ -494,11 +492,10 @@ pub fn for_loop(
 pub fn while_loop(
     cond_ir: TrExp,
     body_ir: TrExp,
-    done_label: temp::Label,
+    done: temp::Label,
     gen: &mut GenTemporary,
 ) -> TrExp {
     let test = gen.new_label();
-    let done = gen.new_label();
     let body = gen.new_label();
 
     Nx(make_seq(vec![
@@ -571,7 +568,7 @@ fn full_conditional(
                 Label(done),
             ]))
         }
-        (TrExp::Nx(..), a) | (a, TrExp::Nx(..)) => {
+        (TrExp::Nx(..), _) | (_, TrExp::Nx(..)) => {
             panic!("impl bug, conditional ir generation should be invoked on if-then-else branch with the same return types on both branches. got then={:#?}, else={:#?}", then_ir, else_ir);
         }
         (TrExp::Cx(..), _) | (_, TrExp::Cx(..)) => {
@@ -712,7 +709,6 @@ const INVALID_ARRAY_ACCESS_EXIT_CODE: i32 = -1;
 pub fn subscript_var<T: Frame>(
     lhs_ir: TrExp,
     idx_ir: TrExp,
-    exit_label: temp::Label,
     gen: &mut GenTemporary,
 ) -> TrExp {
     // byte offset of idx+1 basically.
