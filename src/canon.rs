@@ -552,7 +552,7 @@ mod tests {
         }
 
         #[test]
-        fn eseq_simple() {
+        fn eseq_hoit_simple() {
             let mut gen = GenTemporary::new();
             let l = gen.new_label();
             let t = gen.new_temp();
@@ -563,7 +563,7 @@ mod tests {
         }
 
         #[test]
-        fn eseq_nested() {
+        fn eseq_hoist_from_nested() {
             let mut gen = GenTemporary::new();
             let l = gen.new_label();
             let l2 = gen.new_label();
@@ -573,6 +573,16 @@ mod tests {
             let actual = linearize(Exp(Eseq(Label(l), Eseq(Label(l2), Temp(t)))), &mut gen);
             assert_eq!(expected, actual);
         }
+
+        fn eseq_hoist_jump(){}
+        fn eseq_hoist_cjump(){}
+        fn eseq_hoist_call(){}
+        fn eseq_hoist_call_args(){}
+        fn eseq_hoist_binop(){}
+        fn eseq_hoist_mem(){}
+        fn move_temp_call_unaffected(){}
+        fn exp_call_unaffected(){}
+        fn naked_call_get_wrapped_into_move_temporary() {}
 
 
         #[test]
@@ -590,8 +600,14 @@ mod tests {
             assert_eq!(expected, actual);
         }
 
+
     }
 
     #[test]
     fn basic_block() {}
+
+    // validates all the original statement present.
+    // TODO kinda pita with the elimination of jumps and rearranging of cjumps.
+    #[test]
+    fn trace() {}
 }
