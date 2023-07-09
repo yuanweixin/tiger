@@ -1,7 +1,7 @@
 // appel's tree ir language
-use crate::temp;
-use crate::absyn::types::{Oper};
+use crate::absyn::types::Oper;
 use crate::int_types::TigerInt;
+use crate::temp;
 
 #[derive(Debug, Clone)]
 pub enum IrExp {
@@ -50,4 +50,60 @@ pub enum IrRelop {
     Ule,
     Ugt,
     Uge,
+}
+
+/// a collection of helper methods to avoid having to type Box::new
+/// when constructing IrExp and IrStm. This would also make refactoring
+/// much easier if we decide to change the representation. The function
+/// names are intentionally in pascal case to mirror the name of the enum
+/// values to make usage seamless.
+#[allow(non_snake_case)]
+pub mod helpers {
+    use super::*;
+
+    #[inline]
+    pub fn Binop(r: IrBinop, a: IrExp, b: IrExp) -> IrExp {
+        IrExp::Binop(r, Box::new(a), Box::new(b))
+    }
+
+    #[inline]
+    pub fn Mem(e: IrExp) -> IrExp {
+        IrExp::Mem(Box::new(e))
+    }
+
+    #[inline]
+    pub fn Call(f: IrExp, args: Vec<IrExp>) -> IrExp {
+        IrExp::Call(Box::new(f), args)
+    }
+
+    #[inline]
+    pub fn Eseq(s: IrStm, e: IrExp) -> IrExp {
+        IrExp::Eseq(Box::new(s), Box::new(e))
+    }
+
+    #[inline]
+    pub fn Move(a: IrExp, b: IrExp) -> IrStm {
+        IrStm::Move(Box::new(a), Box::new(b))
+    }
+
+    #[inline]
+    pub fn Exp(a: IrExp) -> IrStm {
+        IrStm::Exp(Box::new(a))
+    }
+
+    #[inline]
+    pub fn Jump(a: IrExp, l: Vec<temp::Label>) -> IrStm {
+        IrStm::Jump(Box::new(a), l)
+    }
+
+    #[inline]
+    pub fn Cjump(r: IrRelop, a: IrExp, b: IrExp, t: temp::Label, f: temp::Label) -> IrStm {
+        IrStm::Cjump(r, Box::new(a), Box::new(b), t, f)
+    }
+
+
+    #[inline]
+    pub fn Seq(a: IrStm, b: IrStm) -> IrStm {
+        IrStm::Seq(Box::new(a), Box::new(b))
+    }
 }
