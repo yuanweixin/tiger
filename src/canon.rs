@@ -1,4 +1,11 @@
-use crate::{ir::IrExp, ir::IrExp::*, ir::IrStm, ir::{IrStm::*, IrRelop, IrRelop::*}, temp, temp::GenTemporary};
+use crate::{
+    ir::IrExp,
+    ir::IrExp::*,
+    ir::IrStm,
+    ir::{IrRelop, IrRelop::*, IrStm::*},
+    temp,
+    temp::GenTemporary,
+};
 
 use std::{
     collections::{HashMap, VecDeque},
@@ -6,8 +13,8 @@ use std::{
 };
 
 #[inline]
-fn nop() -> IrStm {
-    Exp(Box::new(Const(0)))
+fn nop(nop_marker_label: temp::Label) -> IrStm {
+    Label(nop_marker_label)
 }
 
 impl std::ops::Rem for IrStm {
@@ -18,9 +25,14 @@ impl std::ops::Rem for IrStm {
     }
 }
 
-fn reorder(mut ev: VecDeque<IrExp>, gen: &mut GenTemporary) -> (IrStm, VecDeque<IrExp>) {
+fn reorder(
+    mut ev: VecDeque<IrExp>,
+    gen: &mut GenTemporary,
+    nop_marker_label: temp::Label,
+) -> (IrStm, VecDeque<IrExp>) {
     if ev.is_empty() {
-        (nop(), VecDeque::with_capacity(0))
+        // note: this can insert a bunch of spurious nop statements.
+        (nop(nop_marker_label), VecDeque::with_capacity(0))
     } else {
         match ev[0] {
             Call(..) => {
@@ -31,12 +43,16 @@ fn reorder(mut ev: VecDeque<IrExp>, gen: &mut GenTemporary) -> (IrStm, VecDeque<
                     Box::new(Temp(t)),
                 );
                 ev.push_front(eseq);
-                reorder(ev, gen)
+                reorder(ev, gen, nop_marker_label)
             }
             _ => {
                 let e0 = ev.pop_front().unwrap();
-                let (stmt, e) = lift_exp(e0, gen);
-                let (stmts_rest, mut e_rest) = reorder(ev, gen);
+                let (stmt, e) = lift_exp(e0, gen, nop_marker_label);
+                if ev.is_empty() {
+                    // there's nothing more to do, just return to avoid generating nop's.
+                    return (stmt, VecDeque::from(vec![e]));
+                }
+                let (stmts_rest, mut e_rest) = reorder(ev, gen, nop_marker_label);
                 if commutes(&stmts_rest, &e) {
                     e_rest.push_front(e);
                     (stmt % stmts_rest, e_rest)
@@ -53,19 +69,29 @@ fn reorder(mut ev: VecDeque<IrExp>, gen: &mut GenTemporary) -> (IrStm, VecDeque<
     }
 }
 
-fn reorder_exp<F>(ev: VecDeque<IrExp>, make: F, gen: &mut GenTemporary) -> (IrStm, IrExp)
+fn reorder_exp<F>(
+    ev: VecDeque<IrExp>,
+    make: F,
+    gen: &mut GenTemporary,
+    nop_marker_label: temp::Label,
+) -> (IrStm, IrExp)
 where
     F: FnOnce(VecDeque<IrExp>) -> IrExp,
 {
-    let (s, ee) = reorder(ev, gen);
+    let (s, ee) = reorder(ev, gen, nop_marker_label);
     (s, make(ee))
 }
 
-fn reorder_stm<F>(ev: VecDeque<IrExp>, make: F, gen: &mut GenTemporary) -> IrStm
+fn reorder_stm<F>(
+    ev: VecDeque<IrExp>,
+    make: F,
+    gen: &mut GenTemporary,
+    nop_marker_label: temp::Label,
+) -> IrStm
 where
     F: FnOnce(VecDeque<IrExp>) -> IrStm,
 {
-    let (s, ee) = reorder(ev, gen);
+    let (s, ee) = reorder(ev, gen, nop_marker_label);
     s % make(ee)
 }
 
@@ -80,13 +106,14 @@ fn commutes(s: &IrStm, e: &IrExp) -> bool {
     }
 }
 
-fn lift_stm(s: IrStm, gen: &mut GenTemporary) -> IrStm {
+fn lift_stm(s: IrStm, gen: &mut GenTemporary, nop_marker_label: temp::Label) -> IrStm {
     match s {
-        Seq(a, b) => lift_stm(*a, gen) % lift_stm(*b, gen),
+        Seq(a, b) => lift_stm(*a, gen, nop_marker_label) % lift_stm(*b, gen, nop_marker_label),
         Jump(e, labs) => reorder_stm(
             VecDeque::from(vec![*e]),
             |mut ev| Jump(Box::new(ev.pop_front().unwrap()), labs),
             gen,
+            nop_marker_label,
         ),
         Cjump(p, a, b, t, f) => reorder_stm(
             VecDeque::from(vec![*a, *b]),
@@ -100,6 +127,7 @@ fn lift_stm(s: IrStm, gen: &mut GenTemporary) -> IrStm {
                 )
             },
             gen,
+            nop_marker_label,
         ),
         Move(dst, src) => {
             // lack of box matching forces this shitty nested match
@@ -116,12 +144,14 @@ fn lift_stm(s: IrStm, gen: &mut GenTemporary) -> IrStm {
                             )
                         },
                         gen,
+                        nop_marker_label,
                     )
                 }
                 (Temp(t), b) => reorder_stm(
                     VecDeque::from(vec![b]),
                     |mut ev| Move(Box::new(Temp(t)), Box::new(ev.pop_front().unwrap())),
                     gen,
+                    nop_marker_label,
                 ),
                 (Mem(e), b) => reorder_stm(
                     VecDeque::from(vec![*e, b]),
@@ -132,12 +162,18 @@ fn lift_stm(s: IrStm, gen: &mut GenTemporary) -> IrStm {
                         )
                     },
                     gen,
+                    nop_marker_label,
                 ),
-                (Eseq(s, e), src) => lift_stm(Seq(s, Box::new(Move(e, Box::new(src)))), gen),
+                (Eseq(s, e), src) => lift_stm(
+                    Seq(s, Box::new(Move(e, Box::new(src)))),
+                    gen,
+                    nop_marker_label,
+                ),
                 (a, b) => reorder_stm(
                     VecDeque::with_capacity(0),
                     |_| Move(Box::new(a), Box::new(b)),
                     gen,
+                    nop_marker_label,
                 ),
             }
         }
@@ -154,19 +190,21 @@ fn lift_stm(s: IrStm, gen: &mut GenTemporary) -> IrStm {
                         )))
                     },
                     gen,
+                    nop_marker_label,
                 )
             }
             e => reorder_stm(
                 VecDeque::from(vec![e]),
                 |mut ev| Exp(Box::new(ev.pop_front().unwrap())),
                 gen,
+                nop_marker_label,
             ),
         },
-        s => reorder_stm(VecDeque::with_capacity(0), |_| s, gen),
+        s => reorder_stm(VecDeque::with_capacity(0), |_| s, gen, nop_marker_label),
     }
 }
 
-fn lift_exp(e: IrExp, gen: &mut GenTemporary) -> (IrStm, IrExp) {
+fn lift_exp(e: IrExp, gen: &mut GenTemporary, nop_marker_label: temp::Label) -> (IrStm, IrExp) {
     match e {
         Binop(p, a, b) => reorder_exp(
             VecDeque::from(vec![*a, *b]),
@@ -178,15 +216,17 @@ fn lift_exp(e: IrExp, gen: &mut GenTemporary) -> (IrStm, IrExp) {
                 )
             },
             gen,
+            nop_marker_label,
         ),
         Mem(a) => reorder_exp(
             VecDeque::from(vec![*a]),
             |mut ev| Mem(Box::new(ev.pop_front().unwrap())),
             gen,
+            nop_marker_label,
         ),
         Eseq(s, e) => {
-            let stmt = lift_stm(*s, gen);
-            let (stmts, ee) = lift_exp(*e, gen);
+            let stmt = lift_stm(*s, gen, nop_marker_label);
+            let (stmts, ee) = lift_exp(*e, gen, nop_marker_label);
             (stmt % stmts, ee)
         }
         Call(e, el) => {
@@ -196,9 +236,10 @@ fn lift_exp(e: IrExp, gen: &mut GenTemporary) -> (IrStm, IrExp) {
                 vd,
                 |mut ev| Call(Box::new(ev.pop_front().unwrap()), Vec::from(ev)),
                 gen,
+                nop_marker_label,
             )
         }
-        e => reorder_exp(VecDeque::with_capacity(0), |_| e, gen),
+        e => reorder_exp(VecDeque::with_capacity(0), |_| e, gen, nop_marker_label),
     }
 }
 
@@ -207,16 +248,22 @@ pub fn linearize(i: IrStm, gen: &mut GenTemporary) -> Vec<IrStm> {
     //    satisfying the following properties:
     //       1.  No SEQ's or ESEQ's
     //       2.  The parent of every CALL is an EXP(..) or a MOVE(TEMP t,..)
-    fn helper(i: IrStm, mut rest: Vec<IrStm>) -> Vec<IrStm> {
+    fn helper(i: IrStm, mut rest: Vec<IrStm>, nop_marker_label: temp::Label) -> Vec<IrStm> {
         match i {
-            Seq(a, b) => helper(*a, helper(*b, rest)),
+            Seq(a, b) => helper(*a, helper(*b, rest, nop_marker_label), nop_marker_label),
+            Label(l) if l == nop_marker_label => rest,
             _ => {
                 rest.insert(0, i);
                 rest
             }
         }
     }
-    helper(lift_stm(i, gen), Vec::new())
+    let nop_marker_label = gen.new_label();
+    helper(
+        lift_stm(i, gen, nop_marker_label),
+        Vec::new(),
+        nop_marker_label,
+    )
 }
 
 pub struct Block {
@@ -350,10 +397,16 @@ pub fn basic_blocks(
     (blist, done_label)
 }
 
-fn invert_cjump(r: IrRelop, a: Box<IrExp>, b: Box<IrExp>, lt: temp::Label, lf: temp::Label) -> IrStm {
+fn invert_cjump(
+    r: IrRelop,
+    a: Box<IrExp>,
+    b: Box<IrExp>,
+    lt: temp::Label,
+    lf: temp::Label,
+) -> IrStm {
     let new_op = match r {
-           Eq => Ne,
-           Ne => Eq,
+        Eq => Ne,
+        Ne => Eq,
         Lt => Ge,
         Gt => Le,
         Le => Gt,
@@ -361,7 +414,7 @@ fn invert_cjump(r: IrRelop, a: Box<IrExp>, b: Box<IrExp>, lt: temp::Label, lf: t
         Ult => Uge,
         Ule => Ugt,
         Ugt => Ule,
-        Uge => Ult
+        Uge => Ult,
     };
     Cjump(new_op, a, b, lf, lt)
 }
@@ -490,9 +543,120 @@ mod tests {
         temp::{self, GenTemporary, Label},
     };
 
-    #[test]
-    fn basic_block() {
-
+    fn caller_linearize(i: IrStm) -> Vec<IrStm> {
+        let mut gen = GenTemporary::new();
+        linearize(Exp(Box::new(Const(42))), &mut gen)
     }
 
+    mod linearize {
+        use super::*;
+
+        #[test]
+        fn const_is_identity() {
+            let mut gen = GenTemporary::new();
+            match linearize(Exp(Box::new(Const(42))), &mut gen).as_slice() {
+                [Exp(x)] => {
+                    match **x {
+                        Const(42) => {},
+                        _ => assert!(false)
+                    }
+                }
+                x => {
+                    println!("got {:#?}", x);
+                    assert!(false);
+                }
+            }
+        }
+
+        #[test]
+        fn name_is_identity() {
+            let mut gen = GenTemporary::new();
+            let l = gen.new_label();
+            match linearize(Exp(Box::new(Name(l))), &mut gen).as_slice() {
+                [Exp(x)] => {
+                    match **x {
+                        Name(y) if y == l => {},
+                        _ => assert!(false)
+                    }
+                }
+                x => {
+                    println!("got {:#?}", x);
+                    assert!(false);
+                }
+            }
+        }
+
+        #[test]
+        fn temp_is_identity() {
+            let mut gen = GenTemporary::new();
+            let t = gen.new_temp();
+            match linearize(Exp(Box::new(Temp(t))), &mut gen).as_slice() {
+                [Exp(x)] => {
+                    match **x {
+                        Temp(x) if x == t => {},
+                        _ => assert!(false)
+                    }
+                }
+                x => {
+                    println!("got {:#?}", x);
+                    assert!(false);
+                }
+            }
+        }
+
+        #[test]
+        fn top_level_eseq_remains() {
+            // TODO refactor this shit code to have helpers to initiaize
+            // so that don't need to type Box::new() every fucking where.
+            // let mut gen = GenTemporary::new();
+            // let t = gen.new_temp();
+            // match linearize(Exp(Box::new(Eseq(Box::new(), Box::new(Temp(t))))), &mut gen).as_slice() {
+            //     [Exp(x)] => {
+            //         match **x {
+            //             Temp(x) if x == t => {},
+            //             _ => assert!(false)
+            //         }
+            //     }
+            //     x => {
+            //         println!("got {:#?}", x);
+            //         assert!(false);
+            //     }
+            // }
+        }
+
+        fn binop() {}
+
+        fn mem() {}
+
+        fn exp_call() {}
+
+        fn move_() {}
+
+        fn jump() {}
+
+        fn cjump() {}
+
+        #[test]
+        fn seq_is_eliminated() {
+             let mut gen = GenTemporary::new();
+            let t = gen.new_temp();
+            match linearize(Seq(Box::new(Exp(Box::new(Const(1)))), Box::new(Exp(Box::new(Const(2))))), &mut gen).as_slice() {
+                [Exp(x), Exp(y)] => {
+                    match (&**x, &**y) {
+                        (Const(1), Const(2)) => {},
+                        _ => assert!(false)
+                    }
+                }
+                x => {
+                    println!("got {:#?}", x);
+                    assert!(false);
+                }
+            }
+        }
+
+        fn label() {}
+    }
+
+    #[test]
+    fn basic_block() {}
 }
