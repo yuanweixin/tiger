@@ -171,12 +171,7 @@ fn lift_stm(s: IrStm, gen: &mut GenTemporary, nop_marker_label: temp::Label) -> 
                 vd.push_front(*e);
                 reorder_stm(
                     vd,
-                    |mut ev| {
-                        Exp(Call(
-                            ev.pop_front().unwrap(),
-                            Vec::from(ev),
-                        ))
-                    },
+                    |mut ev| Exp(Call(ev.pop_front().unwrap(), Vec::from(ev))),
                     gen,
                     nop_marker_label,
                 )
@@ -196,13 +191,7 @@ fn lift_exp(e: IrExp, gen: &mut GenTemporary, nop_marker_label: temp::Label) -> 
     match e {
         IrExp::Binop(p, a, b) => reorder_exp(
             VecDeque::from(vec![*a, *b]),
-            |mut ev| {
-                Binop(
-                    p.clone(),
-                    ev.pop_front().unwrap(),
-                    ev.pop_front().unwrap(),
-                )
-            },
+            |mut ev| Binop(p.clone(), ev.pop_front().unwrap(), ev.pop_front().unwrap()),
             gen,
             nop_marker_label,
         ),
@@ -511,10 +500,7 @@ pub fn trace_schedule(
             }
         }
     }
-    // TODO figure 8.3 has situation where the Label(done), epilogue statements is already part of the
-    // trace. Idk at what point or where those are supposed to be added in. The next line prob wrong
-    // but putting it here for now. Although, in canon.ml given on Appel's website, they do just tag on
-    // the done label as the last IrStm of the output.
+    // tack on the done label as the last IrStm of the output.
     res.push(Label(done_label));
     res
 }
@@ -542,107 +528,56 @@ mod tests {
         #[test]
         fn const_is_identity() {
             let mut gen = GenTemporary::new();
-            match linearize(Exp(Const(42)), &mut gen).as_slice() {
-                [IrStm::Exp(x)] => match **x {
-                    Const(42) => {}
-                    _ => assert!(false),
-                },
-                x => {
-                    println!("got {:#?}", x);
-                    assert!(false);
-                }
-            }
+            let expected = vec![Exp(Const(42))];
+            let actual = linearize(expected[0].clone(), &mut gen);
+            assert_eq!(expected, actual);
         }
 
         #[test]
         fn name_is_identity() {
             let mut gen = GenTemporary::new();
             let l = gen.new_label();
-            match linearize(Exp(Name(l)), &mut gen).as_slice() {
-                [IrStm::Exp(x)] => match **x {
-                    Name(y) if y == l => {}
-                    _ => assert!(false),
-                },
-                x => {
-                    println!("got {:#?}", x);
-                    assert!(false);
-                }
-            }
+            let expected = vec![Exp(Name(l))];
+            let actual = linearize(expected[0].clone(), &mut gen);
+            assert_eq!(expected, actual);
         }
 
         #[test]
         fn temp_is_identity() {
             let mut gen = GenTemporary::new();
             let t = gen.new_temp();
-            match linearize(Exp(Temp(t)), &mut gen).as_slice() {
-                [IrStm::Exp(x)] => match **x {
-                    Temp(x) if x == t => {}
-                    _ => assert!(false),
-                },
-                x => {
-                    println!("got {:#?}", x);
-                    assert!(false);
-                }
-            }
+            let expected = vec![Exp(Temp(t))];
+            let actual = linearize(expected[0].clone(), &mut gen);
+            assert_eq!(expected, actual);
         }
 
         #[test]
-        fn top_level_eseq_remains() {
-            // TODO refactor this shit code to have helpers to initiaize
-            // so that don't need to type Box::new() every fucking where.
-            // let mut gen = GenTemporary::new();
-            // let t = gen.new_temp();
-            // match linearize(Exp(Box::new(Eseq(Box::new(), Box::new(Temp(t))))), &mut gen).as_slice() {
-            //     [Exp(x)] => {
-            //         match **x {
-            //             Temp(x) if x == t => {},
-            //             _ => assert!(false)
-            //         }
-            //     }
-            //     x => {
-            //         println!("got {:#?}", x);
-            //         assert!(false);
-            //     }
-            // }
+        fn eseq_simple() {
+            let mut gen = GenTemporary::new();
+            let l = gen.new_label();
+            let t = gen.new_temp();
+
+            let expected = vec![Label(l), Exp(Temp(t))];
+            let actual = linearize(Exp(Eseq(Label(l), Temp(t))), &mut gen);
+            assert_eq!(expected, actual);
         }
 
-        fn binop() {}
-
-        fn mem() {}
-
-        fn exp_call() {}
-
-        fn move_() {}
-
-        fn jump() {}
-
-        fn cjump() {}
 
         #[test]
         fn seq_is_eliminated() {
             let mut gen = GenTemporary::new();
             let t = gen.new_temp();
-            match linearize(
+            let expected = vec![Exp(Const(1)), Exp(Const(2))];
+            let actual = linearize(
                 Seq(
                     Exp(Const(1)),
                     Exp(Const(2)),
                 ),
                 &mut gen,
-            )
-            .as_slice()
-            {
-                [IrStm::Exp(x), IrStm::Exp(y)] => match (&**x, &**y) {
-                    (Const(1), Const(2)) => {}
-                    _ => assert!(false),
-                },
-                x => {
-                    println!("got {:#?}", x);
-                    assert!(false);
-                }
-            }
+            );
+            assert_eq!(expected, actual);
         }
 
-        fn label() {}
     }
 
     #[test]
