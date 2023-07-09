@@ -562,6 +562,18 @@ mod tests {
             assert_eq!(expected, actual);
         }
 
+        #[test]
+        fn eseq_nested() {
+            let mut gen = GenTemporary::new();
+            let l = gen.new_label();
+            let l2 = gen.new_label();
+            let t = gen.new_temp();
+
+            let expected = vec![Label(l), Label(l2), Exp(Temp(t))];
+            let actual = linearize(Exp(Eseq(Label(l), Eseq(Label(l2), Temp(t)))), &mut gen);
+            assert_eq!(expected, actual);
+        }
+
 
         #[test]
         fn seq_is_eliminated() {
