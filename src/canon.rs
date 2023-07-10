@@ -619,7 +619,7 @@ mod tests {
         }
 
         #[test]
-        fn eseq_hoist_simple() {
+        fn exp_eseq() {
             let mut gen: GenTemporaryImpl = GenTemporary::new();
             let l = gen.new_label();
             let t = gen.new_temp();
@@ -711,7 +711,7 @@ mod tests {
         }
 
         #[test]
-        fn binop_right_eseq() {
+        fn binop_right_eseq_commutes() {
             let mut gen: GenTemporaryImpl = GenTemporary::new();
             let l = gen.new_label();
             let l2 = gen.new_label();
@@ -730,7 +730,32 @@ mod tests {
         }
 
         #[test]
-        fn cjump_right_eseq() {
+        fn binop_right_eseq_no_commute() {
+            let mut gen = GenTemporaryForTest::new(vec![2]);
+            let l = test_helpers::new_label(999);
+            let l2 = test_helpers::new_label(1000);
+            let t = test_helpers::new_temp(1001);
+            let t2 = test_helpers::new_temp(2);
+            let t3 = test_helpers::new_temp(3);
+            let expected = vec![
+                Move(Temp(t2), Temp(t3)),
+                Label(l),
+                Label(l2),
+                Exp(Binop(Plus, Temp(t2), Temp(t))),
+            ];
+            let actual = linearize(
+                Exp(Binop(
+                    Plus,
+                    Temp(t3),
+                    Eseq(Label(l), Eseq(Label(l2), Temp(t))),
+                )),
+                &mut gen,
+            );
+            assert_eq!(expected, actual);
+        }
+
+        #[test]
+        fn cjump_right_eseq_no_commute() {
             let mut gen = GenTemporaryForTest::new(vec![1]);
 
             let l = test_helpers::new_label(999);
@@ -760,44 +785,155 @@ mod tests {
         }
 
         #[test]
-        fn binop_eseq_right() {
+        fn cjump_right_eseq_commutes() {
             let mut gen: GenTemporaryImpl = GenTemporary::new();
+
             let l = gen.new_label();
             let l2 = gen.new_label();
             let t = gen.new_temp();
 
-            let expected = vec![Label(l), Label(l2), Exp(Binop(Plus, Const(2), Temp(t)))];
+            let expected = vec![Label(l), Label(l2), Cjump(Gt, Const(42), Temp(t), l, l2)];
             let actual = linearize(
-                Exp(Binop(
-                    Plus,
-                    Const(2),
+                Cjump(
+                    Gt,
+                    Const(42),
                     Eseq(Label(l), Eseq(Label(l2), Temp(t))),
+                    l,
+                    l2,
+                ),
+                &mut gen,
+            );
+            assert_eq!(expected, actual);
+        }
+
+        #[test]
+        fn move_temp_eseq() {
+            let mut gen: GenTemporaryImpl = GenTemporary::new();
+            let l = gen.new_label();
+            let l2 = gen.new_label();
+            let t = gen.new_temp();
+            let t2 = gen.new_temp();
+
+            let expected = vec![Label(l), Label(l2), Move(Temp(t), Temp(t2))];
+            let actual = linearize(
+                Move(Temp(t), Eseq(Label(l), Eseq(Label(l2), Temp(t2)))),
+                &mut gen,
+            );
+            assert_eq!(expected, actual);
+        }
+
+        #[test]
+        fn move_mem_eseq_left() {
+            let mut gen: GenTemporaryImpl = GenTemporary::new();
+            let l = gen.new_label();
+            let l2 = gen.new_label();
+            let t = gen.new_temp();
+            let t2 = gen.new_temp();
+
+            let expected = vec![Label(l), Label(l2), Move(Mem(Temp(t)), Temp(t2))];
+            let actual = linearize(
+                Move(Mem(Eseq(Label(l), Eseq(Label(l2), Temp(t)))), Temp(t2)),
+                &mut gen,
+            );
+            assert_eq!(expected, actual);
+        }
+
+        #[test]
+        fn move_mem_eseq_right() {
+            let mut gen: GenTemporaryImpl = GenTemporary::new();
+            let t = gen.new_temp();
+
+            let expected = vec![Move(Temp(t), Const(42)), Move(Temp(t), Mem(Temp(t)))];
+            let actual = linearize(
+                Move(Temp(t), Mem(Eseq(Move(Temp(t), Const(42)), Temp(t)))),
+                &mut gen,
+            );
+            assert_eq!(expected, actual);
+        }
+
+        #[test]
+        fn exp_call_eseq() {
+            let mut gen = GenTemporaryForTest::new(vec![2]);
+            let t = test_helpers::new_temp(100);
+            let l = test_helpers::new_label(101);
+            let l2 = test_helpers::new_label(102);
+            let t2 = test_helpers::new_temp(2);
+
+            let expected = vec![
+                Label(l),
+                Move(Temp(t2), Temp(t)),
+                Label(l2),
+                Exp(Call(Temp(t2), vec![Const(1), Const(42)])),
+            ];
+            let actual = linearize(
+                // l2 commutes with const(1), then it cannot commute with temp(t), so temp(t) is moved to a fresh temp.
+                // in this case it doesn't matter but the rewriting rule is mechanical and dumb.
+                Exp(Call(
+                    Eseq(Label(l), Temp(t)),
+                    vec![Const(1), Eseq(Label(l2), Const(42))],
                 )),
                 &mut gen,
             );
             assert_eq!(expected, actual);
         }
-        // fn eseq_hoist_cjump(){}
-        // fn eseq_hoist_call(){}
-        // fn eseq_hoist_call_args(){}
-        // fn eseq_hoist_binop(){}
-        // fn eseq_hoist_mem(){}
-        // fn move_temp_call_unaffected(){}
-        // fn exp_call_unaffected(){}
-        // fn naked_call_get_wrapped_into_move_temporary() {}
 
-        // #[test]
-        // fn seq_is_eliminated() {
-        //     let mut gen : GenTemporaryImpl = GenTemporary::new();
-        //     let t = gen.new_temp();
-        //     let expected = vec![Exp(Const(1)), Exp(Const(2))];
-        //     let actual = linearize(Seq(Exp(Const(1)), Exp(Const(2))), &mut gen);
-        //     assert_eq!(expected, actual);
-        // }
+        #[test]
+        fn exp_call_eseq_no_commute() {
+            let mut gen = GenTemporaryForTest::new(vec![2, 3]);
+            let t = test_helpers::new_temp(100);
+            let t2 = test_helpers::new_temp(2);
+            let t3 = test_helpers::new_temp(3);
+
+            let expected = vec![
+                Move(Temp(t), Const(42)),
+                Move(Temp(t3), Temp(t)),
+                Move(Temp(t2), Temp(t)),
+                Move(Temp(t), Const(43)),
+                Exp(Call(Temp(t3), vec![Temp(t2), Temp(t)])),
+            ];
+            let actual = linearize(
+                Exp(Call(
+                    Eseq(Move(Temp(t), Const(42)), Temp(t)),
+                    vec![Temp(t), Eseq(Move(Temp(t), Const(43)), Temp(t))],
+                )),
+                &mut gen,
+            );
+            assert_eq!(expected, actual);
+        }
+
+        #[test]
+        fn move_temp_call_eseq() {
+            let mut gen: GenTemporaryImpl = GenTemporary::new();
+            let t = gen.new_temp();
+
+            let expected = vec![
+                Move(Temp(t), Const(43)),
+                Move(Temp(t), Call(Temp(t), vec![Temp(t)])),
+            ];
+            let actual = linearize(
+                Move(
+                    Temp(t),
+                    Call(Eseq(Move(Temp(t), Const(43)), Temp(t)), vec![Temp(t)]),
+                ),
+                &mut gen,
+            );
+            assert_eq!(expected, actual);
+        }
+
+        #[test]
+        fn seq_is_eliminated() {
+            let mut gen : GenTemporaryImpl = GenTemporary::new();
+            let t = gen.new_temp();
+            let expected = vec![Exp(Const(1)), Exp(Const(2))];
+            let actual = linearize(Seq(Exp(Const(1)), Exp(Const(2))), &mut gen);
+            assert_eq!(expected, actual);
+        }
     }
 
     #[test]
-    fn basic_block() {}
+    fn basic_block() {
+
+    }
 
     // validates all the original statement present.
     // TODO kinda pita with the elimination of jumps and rearranging of cjumps.
