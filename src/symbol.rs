@@ -26,6 +26,7 @@ pub mod test_helpers {
     use string_interner::Symbol;
     use super::*;
 
+    #[inline]
     pub fn new_symbol(s: NonZeroUsize) -> super::Symbol {
         super::Symbol(DefaultSymbol::try_from_usize(s.get()).unwrap())
     }

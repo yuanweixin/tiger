@@ -97,6 +97,8 @@ pub mod test_helpers {
         Temp(NonZeroUsize::new(s).unwrap())
     }
 
+    // NOTE: the underlying library increments the passed in usize by 1,
+    // so in test code should expect the output to have a value s+1
     pub fn new_label(s: usize) -> Label {
         Label(symbol::test_helpers::new_symbol(NonZeroUsize::new(s).unwrap()))
     }

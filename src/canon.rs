@@ -248,6 +248,7 @@ pub fn linearize(i: IrStm, gen: &mut dyn GenTemporary) -> Vec<IrStm> {
     )
 }
 
+#[derive(Debug)]
 pub struct Block {
     stmts: Vec<IrStm>,
     marked: bool,
@@ -357,6 +358,9 @@ pub fn basic_blocks(
                     blist.insert(this_block.label(), this_block);
                     this_block = Block::new();
                     break;
+                }
+                IrStm::Seq(..) => {
+                    panic!("impl bug: Seq encountered during construction of basic block, but it ought to have been eliminated by the linearize step");
                 }
                 _ => {
                     // normal stmt, add it.
@@ -529,9 +533,17 @@ mod tests {
     }
 
     impl GenTemporaryForTest {
-        fn new(syms: Vec<usize>) -> Self {
+        fn new_for_linearize(syms: Vec<usize>) -> Self {
             Self {
+                // very shitty, includes 1 to account for use in linearize
+                // where a placeholder label get generated to represent nop.
                 syms: Box::new(itertools::chain(vec![1].into_iter(), syms.into_iter()).into_iter()),
+            }
+        }
+
+        fn empty(syms: Vec<usize>) -> Self {
+            Self {
+                syms: Box::new(syms.into_iter()),
             }
         }
     }
@@ -566,7 +578,7 @@ mod tests {
             }
         }
 
-        fn make_string(temp: temp::Temp) -> String {
+        fn make_string(_: temp::Temp) -> String {
             panic!();
         }
 
@@ -580,7 +592,7 @@ mod tests {
             }
         }
 
-        fn named_label(s: &str, pool: &mut Interner) -> Label {
+        fn named_label(_: &str, _: &mut Interner) -> Label {
             panic!();
         }
     }
@@ -589,8 +601,6 @@ mod tests {
         use crate::temp::GenTemporaryImpl;
 
         use super::*;
-
-        const NOP_LABEL_ID: NonZeroUsize = NonZeroUsize::MIN;
 
         #[test]
         fn const_is_identity() {
@@ -731,7 +741,7 @@ mod tests {
 
         #[test]
         fn binop_right_eseq_no_commute() {
-            let mut gen = GenTemporaryForTest::new(vec![2]);
+            let mut gen = GenTemporaryForTest::new_for_linearize(vec![2]);
             let l = test_helpers::new_label(999);
             let l2 = test_helpers::new_label(1000);
             let t = test_helpers::new_temp(1001);
@@ -756,7 +766,7 @@ mod tests {
 
         #[test]
         fn cjump_right_eseq_no_commute() {
-            let mut gen = GenTemporaryForTest::new(vec![1]);
+            let mut gen = GenTemporaryForTest::new_for_linearize(vec![1]);
 
             let l = test_helpers::new_label(999);
             let l2 = test_helpers::new_label(1000);
@@ -853,7 +863,7 @@ mod tests {
 
         #[test]
         fn exp_call_eseq() {
-            let mut gen = GenTemporaryForTest::new(vec![2]);
+            let mut gen = GenTemporaryForTest::new_for_linearize(vec![2]);
             let t = test_helpers::new_temp(100);
             let l = test_helpers::new_label(101);
             let l2 = test_helpers::new_label(102);
@@ -879,7 +889,7 @@ mod tests {
 
         #[test]
         fn exp_call_eseq_no_commute() {
-            let mut gen = GenTemporaryForTest::new(vec![2, 3]);
+            let mut gen = GenTemporaryForTest::new_for_linearize(vec![2, 3]);
             let t = test_helpers::new_temp(100);
             let t2 = test_helpers::new_temp(2);
             let t3 = test_helpers::new_temp(3);
@@ -922,7 +932,7 @@ mod tests {
 
         #[test]
         fn seq_is_eliminated() {
-            let mut gen : GenTemporaryImpl = GenTemporary::new();
+            let mut gen: GenTemporaryImpl = GenTemporary::new();
             let t = gen.new_temp();
             let expected = vec![Exp(Const(1)), Exp(Const(2))];
             let actual = linearize(Seq(Exp(Const(1)), Exp(Const(2))), &mut gen);
@@ -930,9 +940,135 @@ mod tests {
         }
     }
 
-    #[test]
-    fn basic_block() {
+    mod basic_block {
+        use super::*;
+        use crate::{
+            canon::basic_blocks,
+            temp::{test_helpers, GenTemporary, GenTemporaryImpl},
+        };
 
+        #[test]
+        fn single_block_no_begin_label_no_jump_cjump_end() {
+            // checks
+            // 1. insertion of label if not present
+            // 2. insertion of jump to end label if not present
+            // 3. insertion of jump at end of block if not present.
+            let t = test_helpers::new_temp(1);
+            let stmts = vec![Move(Temp(t), Const(1))];
+            let mut gen: GenTemporaryImpl = GenTemporary::new();
+            let (blk_map, end_lbl) = basic_blocks(stmts, &mut gen);
+            assert_eq!(1, blk_map.len());
+            let (lbl, blk) = blk_map.into_iter().next().unwrap();
+            assert_eq!(
+                vec![
+                    Label(lbl),
+                    Move(Temp(t), Const(1)),
+                    Jump(Name(end_lbl), vec![end_lbl])
+                ],
+                blk.stmts
+            );
+        }
+
+        #[test]
+        fn jumps_only() {
+            let lbl = test_helpers::new_label(1);
+            let stmts = vec![Jump(Name(lbl), vec![lbl]), Jump(Name(lbl), vec![lbl])];
+            let mut gen: GenTemporaryImpl = GenTemporary::new();
+            let (blk_map, _) = basic_blocks(stmts, &mut gen);
+            assert_eq!(2, blk_map.len());
+            for (blk_lbl, blk) in blk_map {
+                assert_eq!(vec![Label(blk_lbl), Jump(Name(lbl), vec![lbl])], blk.stmts);
+            }
+        }
+
+        #[test]
+        fn cjumps_only() {
+            let l1 = test_helpers::new_label(1);
+            let l2 = test_helpers::new_label(1);
+            let stmts = vec![
+                Cjump(Ge, Const(1), Const(1), l1, l2),
+                Cjump(Ge, Const(1), Const(1), l1, l2),
+            ];
+            let mut gen: GenTemporaryImpl = GenTemporary::new();
+            let (blk_map, _) = basic_blocks(stmts, &mut gen);
+            assert_eq!(2, blk_map.len());
+            for (blk_lbl, blk) in blk_map {
+                assert_eq!(
+                    vec![Label(blk_lbl), Cjump(Ge, Const(1), Const(1), l1, l2)],
+                    blk.stmts
+                );
+            }
+        }
+
+        #[test]
+        #[should_panic]
+        fn craps_out_on_seq() {
+            let mut gen: GenTemporaryImpl = GenTemporary::new();
+            let l = test_helpers::new_label(200);
+            let input = vec![Seq(Label(l), Label(l))];
+
+            basic_blocks(input, &mut gen);
+        }
+
+        #[test]
+        fn potpourri() {
+            let mut gen = GenTemporaryForTest::empty(vec![1, 2, 3, 4]);
+            let l1 = test_helpers::new_label(200);
+            let l2 = test_helpers::new_label(201);
+            let t = test_helpers::new_label(101);
+            let f = test_helpers::new_label(102);
+            // Seq is not included here because irl never show up as the input would have been
+            // already transformed by linearize to eliminate Seq's.
+            let input = vec![
+                // label insert expected
+                Exp(Const(1)),
+                Exp(Const(2)),
+                Jump(Name(t), vec![t]),
+                // label insert expected
+                Cjump(Ge, Const(1), Const(1), t, f),
+                Label(l1),
+                Jump(Name(t), vec![t]),
+                Label(l2),
+                Cjump(Ge, Const(1), Const(1), t, f),
+                // label insert expected
+                Exp(Const(3)),
+                // jump insert to end label expected
+            ];
+            let (blk_map, end_lbl) = basic_blocks(input, &mut gen);
+            assert_eq!(5, blk_map.len());
+
+            assert_eq!(
+                vec![Label(l1), Jump(Name(t), vec![t])],
+                blk_map.get(&l1).unwrap().stmts
+            );
+            assert_eq!(
+                vec![Label(l2), Cjump(Ge, Const(1), Const(1), t, f)],
+                blk_map.get(&l2).unwrap().stmts
+            );
+
+            let tmp_lbl = test_helpers::new_label(2);
+            assert_eq!(
+                vec![
+                    Label(tmp_lbl),
+                    Exp(Const(1)),
+                    Exp(Const(2)),
+                    Jump(Name(t), vec![t])
+                ],
+                blk_map.get(&tmp_lbl).unwrap().stmts
+            );
+
+            let tmp_lbl = test_helpers::new_label(3);
+            assert_eq!(
+                vec![Label(tmp_lbl), Cjump(Ge, Const(1), Const(1), t, f)],
+                blk_map.get(&tmp_lbl).unwrap().stmts
+            );
+
+            let tmp_lbl = test_helpers::new_label(4);
+            assert_eq!(
+                vec![Label(tmp_lbl), Exp(Const(3)), Jump(Name(end_lbl), vec![end_lbl])],
+                blk_map.get(&tmp_lbl).unwrap().stmts
+            );
+        }
     }
 
     // validates all the original statement present.
