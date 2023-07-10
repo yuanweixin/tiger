@@ -519,19 +519,19 @@ mod tests {
         ir::{IrBinop::*, IrExp, IrRelop::*, IrStm},
         symbol::Interner,
         symbol::Symbol,
-        temp::{self, GenTemporary, Label, test_helpers},
+        temp::{self, test_helpers, GenTemporary, Label},
     };
-    use std::num::NonZeroUsize;
     use itertools;
+    use std::num::NonZeroUsize;
 
     struct GenTemporaryForTest {
-        syms: Box<dyn Iterator<Item=usize>>
+        syms: Box<dyn Iterator<Item = usize>>,
     }
 
     impl GenTemporaryForTest {
         fn new(syms: Vec<usize>) -> Self {
             Self {
-                syms: Box::new(itertools::chain(vec![1].into_iter(), syms.into_iter()).into_iter())
+                syms: Box::new(itertools::chain(vec![1].into_iter(), syms.into_iter()).into_iter()),
             }
         }
     }
@@ -562,7 +562,7 @@ mod tests {
                 None => {
                     panic!("test impl bug or actual bug: ran out of symbols");
                 }
-                Some(s) => test_helpers::new_temp(s)
+                Some(s) => test_helpers::new_temp(s),
             }
         }
 
@@ -576,7 +576,7 @@ mod tests {
                 None => {
                     panic!("test impl bug or actual bug: ran out of symbols");
                 }
-                Some(s) => temp::test_helpers::new_label(s)
+                Some(s) => temp::test_helpers::new_label(s),
             }
         }
 
@@ -590,11 +590,11 @@ mod tests {
 
         use super::*;
 
-        const NOP_LABEL_ID : NonZeroUsize = NonZeroUsize::MIN;
+        const NOP_LABEL_ID: NonZeroUsize = NonZeroUsize::MIN;
 
         #[test]
         fn const_is_identity() {
-            let mut gen : GenTemporaryImpl = GenTemporary::new();
+            let mut gen: GenTemporaryImpl = GenTemporary::new();
             let expected = vec![Exp(Const(42))];
             let actual = linearize(Exp(Const(42)), &mut gen);
             assert_eq!(expected, actual);
@@ -620,7 +620,7 @@ mod tests {
 
         #[test]
         fn eseq_hoist_simple() {
-            let mut gen : GenTemporaryImpl = GenTemporary::new();
+            let mut gen: GenTemporaryImpl = GenTemporary::new();
             let l = gen.new_label();
             let t = gen.new_temp();
 
@@ -631,7 +631,7 @@ mod tests {
 
         #[test]
         fn eseq_eseq() {
-            let mut gen : GenTemporaryImpl = GenTemporary::new();
+            let mut gen: GenTemporaryImpl = GenTemporary::new();
             let l = gen.new_label();
             let l2 = gen.new_label();
             let t = gen.new_temp();
@@ -643,7 +643,7 @@ mod tests {
 
         #[test]
         fn binop_eseq_left() {
-            let mut gen : GenTemporaryImpl = GenTemporary::new();
+            let mut gen: GenTemporaryImpl = GenTemporary::new();
             let l = gen.new_label();
             let l2 = gen.new_label();
             let t = gen.new_temp();
@@ -662,7 +662,7 @@ mod tests {
 
         #[test]
         fn mem_eseq() {
-            let mut gen : GenTemporaryImpl = GenTemporary::new();
+            let mut gen: GenTemporaryImpl = GenTemporary::new();
             let l = gen.new_label();
             let l2 = gen.new_label();
             let t = gen.new_temp();
@@ -712,7 +712,7 @@ mod tests {
 
         #[test]
         fn binop_right_eseq() {
-            let mut gen : GenTemporaryImpl = GenTemporary::new();
+            let mut gen: GenTemporaryImpl = GenTemporary::new();
             let l = gen.new_label();
             let l2 = gen.new_label();
             let t = gen.new_temp();
@@ -729,36 +729,62 @@ mod tests {
             assert_eq!(expected, actual);
         }
 
-        // #[test]
-        // fn cjump_right_eseq() {
-        //     let mut gen: GenTemporary = GenTemporary::new();
+        #[test]
+        fn cjump_right_eseq() {
+            let mut gen = GenTemporaryForTest::new(vec![1]);
 
-        //     let l = gen.new_label();
-        //     let l2 = gen.new_label();
-        //     let t = gen.new_temp();
-        //     let t2 = gen.new_temp();
+            let l = test_helpers::new_label(999);
+            let l2 = test_helpers::new_label(1000);
+            let t = test_helpers::new_temp(1001);
+            let t2 = test_helpers::new_temp(1002);
 
-        //     let expected = vec![Move(Temp(?), Temp(t2)), Label(l), Label(l2), Cjump(Gt, Temp(?), Temp(t2), l, l2)];
-        //     let actual = linearize(
-        //         Cjump(
-        //             Gt,
-        //             Temp(t2),
-        //             Eseq(Label(l), Eseq(Label(l2), Temp(t))),
-        //             l,
-        //             l2,
-        //         ),
-        //         &mut gen,
-        //     );
-        //     assert_eq!(expected, actual);
-        // }
-        // // fn eseq_hoist_cjump(){}
-        // // fn eseq_hoist_call(){}
-        // // fn eseq_hoist_call_args(){}
-        // // fn eseq_hoist_binop(){}
-        // // fn eseq_hoist_mem(){}
-        // // fn move_temp_call_unaffected(){}
-        // // fn exp_call_unaffected(){}
-        // // fn naked_call_get_wrapped_into_move_temporary() {}
+            let exp_generated_temp = test_helpers::new_temp(1);
+
+            let expected = vec![
+                Move(Temp(exp_generated_temp), Temp(t2)),
+                Label(l),
+                Label(l2),
+                Cjump(Gt, Temp(exp_generated_temp), Temp(t), l, l2),
+            ];
+            let actual = linearize(
+                Cjump(
+                    Gt,
+                    Temp(t2),
+                    Eseq(Label(l), Eseq(Label(l2), Temp(t))),
+                    l,
+                    l2,
+                ),
+                &mut gen,
+            );
+            assert_eq!(expected, actual);
+        }
+
+        #[test]
+        fn binop_eseq_right() {
+            let mut gen: GenTemporaryImpl = GenTemporary::new();
+            let l = gen.new_label();
+            let l2 = gen.new_label();
+            let t = gen.new_temp();
+
+            let expected = vec![Label(l), Label(l2), Exp(Binop(Plus, Const(2), Temp(t)))];
+            let actual = linearize(
+                Exp(Binop(
+                    Plus,
+                    Const(2),
+                    Eseq(Label(l), Eseq(Label(l2), Temp(t))),
+                )),
+                &mut gen,
+            );
+            assert_eq!(expected, actual);
+        }
+        // fn eseq_hoist_cjump(){}
+        // fn eseq_hoist_call(){}
+        // fn eseq_hoist_call_args(){}
+        // fn eseq_hoist_binop(){}
+        // fn eseq_hoist_mem(){}
+        // fn move_temp_call_unaffected(){}
+        // fn exp_call_unaffected(){}
+        // fn naked_call_get_wrapped_into_move_temporary() {}
 
         // #[test]
         // fn seq_is_eliminated() {
