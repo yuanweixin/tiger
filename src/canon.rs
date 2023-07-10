@@ -52,7 +52,11 @@ fn reorder(
                     return (stmt, VecDeque::from(vec![e]));
                 }
                 let (stmts_rest, mut e_rest) = reorder(ev, gen, nop_marker_label);
-                if commutes(&stmts_rest, &e) {
+
+                // the comparison with nop_marker_label is a small optimization to
+                // eliminate the introduction of a new, unnecessary temporary in order to evaluate
+                // e before the nop placeholder.
+                if commutes(&stmts_rest, &e) || Label(nop_marker_label) == stmts_rest {
                     e_rest.push_front(e);
                     (stmt % stmts_rest, e_rest)
                 } else {
@@ -228,6 +232,7 @@ pub fn linearize(i: IrStm, gen: &mut GenTemporary) -> Vec<IrStm> {
     fn helper(i: IrStm, mut rest: Vec<IrStm>, nop_marker_label: temp::Label) -> Vec<IrStm> {
         match i {
             IrStm::Seq(a, b) => helper(*a, helper(*b, rest, nop_marker_label), nop_marker_label),
+            // explicitly eliminate the nop statements.
             Label(l) if l == nop_marker_label => rest,
             _ => {
                 rest.insert(0, i);
@@ -511,7 +516,7 @@ mod tests {
     use crate::{
         absyn, frame,
         frame::{Escapes, Frame},
-        ir::{IrExp, IrStm},
+        ir::{IrBinop::*, IrExp, IrRelop::*, IrStm},
         symbol::Interner,
         symbol::Symbol,
         temp::{self, GenTemporary, Label},
@@ -552,7 +557,7 @@ mod tests {
         }
 
         #[test]
-        fn eseq_hoit_simple() {
+        fn eseq_hoist_simple() {
             let mut gen = GenTemporary::new();
             let l = gen.new_label();
             let t = gen.new_temp();
@@ -563,7 +568,7 @@ mod tests {
         }
 
         #[test]
-        fn eseq_hoist_from_nested() {
+        fn eseq_eseq() {
             let mut gen = GenTemporary::new();
             let l = gen.new_label();
             let l2 = gen.new_label();
@@ -574,33 +579,65 @@ mod tests {
             assert_eq!(expected, actual);
         }
 
-        fn eseq_hoist_jump(){}
-        fn eseq_hoist_cjump(){}
-        fn eseq_hoist_call(){}
-        fn eseq_hoist_call_args(){}
-        fn eseq_hoist_binop(){}
-        fn eseq_hoist_mem(){}
-        fn move_temp_call_unaffected(){}
-        fn exp_call_unaffected(){}
-        fn naked_call_get_wrapped_into_move_temporary() {}
+        #[test]
+        fn binop_eseq() {
+            let mut gen = GenTemporary::new();
+            let l = gen.new_label();
+            let l2 = gen.new_label();
+            let t = gen.new_temp();
 
+            let expected = vec![Label(l), Label(l2), Exp(Binop(Plus, Temp(t), Const(2)))];
+            let actual = linearize(
+                Exp(Binop(
+                    Plus,
+                    Eseq(Label(l), Eseq(Label(l2), Temp(t))),
+                    Const(2),
+                )),
+                &mut gen,
+            );
+            assert_eq!(expected, actual);
+        }
+
+        #[test]
+        fn mem_eseq() {
+            let mut gen = GenTemporary::new();
+            let l = gen.new_label();
+            let l2 = gen.new_label();
+            let t = gen.new_temp();
+
+            let expected = vec![Label(l), Label(l2), Exp(Mem(Temp(t)))];
+            let actual = linearize(Exp(Mem(Eseq(Label(l), Eseq(Label(l2), Temp(t))))), &mut gen);
+            assert_eq!(expected, actual);
+        }
+
+        #[test]
+        fn jump_eseq() {
+  let mut gen = GenTemporary::new();
+            let l = gen.new_label();
+            let l2 = gen.new_label();
+            let t = gen.new_temp();
+
+            let expected = vec![Label(l), Label(l2), Jump(Temp(t), vec![l])];
+            let actual = linearize(Jump(Eseq(Label(l), Eseq(Label(l2), Temp(t))), vec![l]), &mut gen);
+            assert_eq!(expected, actual);
+        }
+        // fn eseq_hoist_cjump(){}
+        // fn eseq_hoist_call(){}
+        // fn eseq_hoist_call_args(){}
+        // fn eseq_hoist_binop(){}
+        // fn eseq_hoist_mem(){}
+        // fn move_temp_call_unaffected(){}
+        // fn exp_call_unaffected(){}
+        // fn naked_call_get_wrapped_into_move_temporary() {}
 
         #[test]
         fn seq_is_eliminated() {
             let mut gen = GenTemporary::new();
             let t = gen.new_temp();
             let expected = vec![Exp(Const(1)), Exp(Const(2))];
-            let actual = linearize(
-                Seq(
-                    Exp(Const(1)),
-                    Exp(Const(2)),
-                ),
-                &mut gen,
-            );
+            let actual = linearize(Seq(Exp(Const(1)), Exp(Const(2))), &mut gen);
             assert_eq!(expected, actual);
         }
-
-
     }
 
     #[test]
