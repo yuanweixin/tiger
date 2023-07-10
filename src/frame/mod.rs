@@ -50,7 +50,7 @@ pub trait Frame : Debug {
     // which will be used to retrieve the temp object.
     //
     // in retrospect, might have been easier to respect tradition and just do these as global states.
-    fn frame_pointer(gen: &mut GenTemporary) -> temp::Temp where Self:Sized;
+    fn frame_pointer(gen: &mut dyn GenTemporary) -> temp::Temp where Self:Sized;
 }
 
 pub enum Frag {

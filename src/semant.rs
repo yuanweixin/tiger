@@ -9,7 +9,7 @@ use crate::{
     frame::Frame,
     symbol::Symbol,
     symtab::SymbolTable,
-    temp::{GenTemporary, Label},
+    temp::{GenTemporary, GenTemporaryImpl, Label},
     translate,
     translate::{Level, TrExp},
 };
@@ -51,13 +51,13 @@ pub struct TypeCheckingContext<'a> {
     varfun_env: SymbolTable<EnvEntry>,
     has_err: bool,
     input: &'a str,
-    gen: GenTemporary,
+    gen: Box<dyn GenTemporary>,
     frags: Vec<frame::Frag>,
 }
 
 impl<'a> TypeCheckingContext<'a> {
     fn new(input: &'a str) -> Self {
-        let mut gen = GenTemporary::new();
+        let mut gen : GenTemporaryImpl = GenTemporary::new();
         let type_env = Self::base_env_type_env(&mut gen);
         let varfun_env = Self::base_varfun_env(&mut gen);
         Self {
@@ -66,7 +66,7 @@ impl<'a> TypeCheckingContext<'a> {
             varfun_env,
             has_err: false,
             input,
-            gen,
+            gen: Box::new(gen),
             frags: Vec::new(),
         }
     }
@@ -80,7 +80,7 @@ impl<'a> TypeCheckingContext<'a> {
         ret
     }
 
-    fn base_env_type_env(gen: &mut GenTemporary) -> SymbolTable<Type> {
+    fn base_env_type_env(gen: &mut dyn GenTemporary) -> SymbolTable<Type> {
         let mut res = SymbolTable::empty();
         res.begin_scope();
         res.enter(gen.intern("int"), Type::Int);
@@ -88,7 +88,7 @@ impl<'a> TypeCheckingContext<'a> {
         res
     }
 
-    fn base_varfun_env(gen: &mut GenTemporary) -> SymbolTable<EnvEntry> {
+    fn base_varfun_env(gen: &mut dyn GenTemporary) -> SymbolTable<EnvEntry> {
         let mut res = SymbolTable::empty();
         res.begin_scope();
         res.enter(
@@ -281,7 +281,7 @@ fn trans_exp<T: Frame + 'static>(
                 Oper::PlusOp | Oper::MinusOp | Oper::TimesOp | Oper::DivideOp => {
                     match (lhs_ty, rhs_ty) {
                         (Type::Int, Type::Int) => (
-                            translate::binop(oper, lhs_ir, rhs_ir, &mut ctx.gen),
+                            translate::binop(oper, lhs_ir, rhs_ir, ctx.gen.as_mut()),
                             Type::Int,
                         ),
                         (Type::Error, _) | (_, Type::Error) => error_type_check_output(),
@@ -313,7 +313,7 @@ fn trans_exp<T: Frame + 'static>(
                 }
                 Oper::LtOp | Oper::LeOp | Oper::GtOp | Oper::GeOp => match (lhs_ty, rhs_ty) {
                     (Type::Int, Type::Int) => (
-                        translate::binop(oper, lhs_ir, rhs_ir, &mut ctx.gen),
+                        translate::binop(oper, lhs_ir, rhs_ir, ctx.gen.as_mut()),
                         Type::Int,
                     ),
                     (Type::Error, _) | (_, Type::Error) => error_type_check_output(),
@@ -361,13 +361,13 @@ fn trans_exp<T: Frame + 'static>(
                                     matches!(oper, Oper::EqOp),
                                     lhs_ir,
                                     rhs_ir,
-                                    &mut ctx.gen,
+                                    ctx.gen.as_mut(),
                                 ),
                                 Type::Int,
                             )
                         } else {
                             (
-                                translate::binop(oper, lhs_ir, rhs_ir, &mut ctx.gen),
+                                translate::binop(oper, lhs_ir, rhs_ir, ctx.gen.as_mut()),
                                 Type::Int,
                             )
                         }
@@ -381,7 +381,7 @@ fn trans_exp<T: Frame + 'static>(
         Exp::StringExp(s, _) => {
             let x = &ctx.input[s.start()..s.end()];
             (
-                translate::string_exp(x, &mut ctx.gen, &mut ctx.frags),
+                translate::string_exp(x, ctx.gen.as_mut(), &mut ctx.frags),
                 Type::String,
             )
         }
@@ -449,7 +449,7 @@ fn trans_exp<T: Frame + 'static>(
                                     level,
                                     arg_irs,
                                     callee_level,
-                                    &mut ctx.gen,
+                                    ctx.gen.as_mut(),
                                     result == Type::Unit,
                                 ),
                                 result.clone(),
@@ -540,7 +540,7 @@ fn trans_exp<T: Frame + 'static>(
                             error_type_check_output()
                         } else {
                             (
-                                translate::record_exp::<T>(site_irs, &mut ctx.gen),
+                                translate::record_exp::<T>(site_irs, ctx.gen.as_mut()),
                                 Type::Record(name_types.clone(), ord.clone()),
                             )
                         }
@@ -564,7 +564,7 @@ fn trans_exp<T: Frame + 'static>(
                 exp_irs.push(exp_ir);
             }
             (
-                translate::seq_exp(exp_irs, !matches!(ret_val, Type::Unit), &mut ctx.gen),
+                translate::seq_exp(exp_irs, !matches!(ret_val, Type::Unit), ctx.gen.as_mut()),
                 ret_val,
             )
         }
@@ -625,7 +625,7 @@ fn trans_exp<T: Frame + 'static>(
                                     error_type_check_output()
                                 } else {
                                     (
-                                        translate::assignment(dst_ir, src_ir, &mut ctx.gen),
+                                        translate::assignment(dst_ir, src_ir, ctx.gen.as_mut()),
                                         Type::Unit,
                                     )
                                 }
@@ -633,7 +633,7 @@ fn trans_exp<T: Frame + 'static>(
                         }
                     }
                     _ => (
-                        translate::assignment(dst_ir, src_ir, &mut ctx.gen),
+                        translate::assignment(dst_ir, src_ir, ctx.gen.as_mut()),
                         Type::Unit,
                     ),
                 }
@@ -669,7 +669,7 @@ fn trans_exp<T: Frame + 'static>(
                         error_type_check_output()
                     } else {
                         (
-                            translate::conditional(cond_ir, then_ir, None, &mut ctx.gen),
+                            translate::conditional(cond_ir, then_ir, None, ctx.gen.as_mut()),
                             then_ty,
                         )
                     }
@@ -683,7 +683,7 @@ fn trans_exp<T: Frame + 'static>(
                         (
                             // TODO handle the Nil branch type in `conditional`
                             // in order to generate more efficient IR.
-                            translate::conditional(cond_ir, then_ir, Some(else_ir), &mut ctx.gen),
+                            translate::conditional(cond_ir, then_ir, Some(else_ir), ctx.gen.as_mut()),
                             then_ty,
                         )
                     }
@@ -712,7 +712,7 @@ fn trans_exp<T: Frame + 'static>(
                             cond_ir,
                             body_ir,
                             while_done_label.unwrap(),
-                            &mut ctx.gen,
+                            ctx.gen.as_mut(),
                         ),
                         Type::Unit,
                     ),
@@ -773,7 +773,7 @@ fn trans_exp<T: Frame + 'static>(
                                 hi_ir,
                                 body_ir,
                                 for_done_label.unwrap(),
-                                &mut ctx.gen,
+                                ctx.gen.as_mut(),
                             ),
                             Type::Unit,
                         )
@@ -810,7 +810,7 @@ fn trans_exp<T: Frame + 'static>(
             ctx.varfun_env.end_scope();
 
             (
-                translate::let_exp(var_init_irs, let_body_ir, &mut ctx.gen),
+                translate::let_exp(var_init_irs, let_body_ir, ctx.gen.as_mut()),
                 let_body_ty,
             )
         }
@@ -862,7 +862,7 @@ fn trans_exp<T: Frame + 'static>(
                                         translate::array_exp::<T>(
                                             size_ir,
                                             init_val_ir,
-                                            &mut ctx.gen,
+                                            ctx.gen.as_mut(),
                                         ),
                                         arr_ty_opt.unwrap().clone(),
                                     )
@@ -921,7 +921,7 @@ fn trans_var<T: Frame + 'static>(
                 Some(EnvEntry::VarEntry { access, ty, .. }) => match ty {
                     Type::Error => error_type_check_output(),
                     _ => (
-                        translate::simple_var::<T>(access.clone(), level, &mut ctx.gen),
+                        translate::simple_var::<T>(access.clone(), level, ctx.gen.as_mut()),
                         ty.clone(),
                     ),
                 },
@@ -959,7 +959,7 @@ fn trans_var<T: Frame + 'static>(
                                 translate::record_field::<T>(
                                     lhs_var_ir,
                                     field_offset,
-                                    &mut ctx.gen,
+                                    ctx.gen.as_mut(),
                                 ),
                                 ctx.type_env.look(*s).unwrap().clone(),
                             )
@@ -991,7 +991,7 @@ fn trans_var<T: Frame + 'static>(
                             let subscript_ir = translate::subscript_var::<T>(
                                 lhs_ir,
                                 idx_ir,
-                                &mut ctx.gen,
+                                ctx.gen.as_mut(),
                             );
                             (subscript_ir, ctx.type_env.look(ele_ty).unwrap().clone())
                         }
@@ -1135,7 +1135,7 @@ fn trans_dec<T: Frame + 'static>(
                     escapes.push(field.escape);
                 }
                 let (new_level, new_level_label) =
-                    Level::new_level::<T>(level.clone(), escapes, &mut ctx.gen);
+                    Level::new_level::<T>(level.clone(), escapes, ctx.gen.as_mut());
                 let funentry = EnvEntry::FunEntry {
                     level: new_level,
                     label: new_level_label,
@@ -1196,7 +1196,7 @@ fn trans_dec<T: Frame + 'static>(
                                 ),
                             );
                         }
-                        translate::proc_entry_exit(level.clone(), fun_body_ir, &mut ctx.frags, &mut ctx.gen);
+                        translate::proc_entry_exit(level.clone(), fun_body_ir, &mut ctx.frags, ctx.gen.as_mut());
                     }
                 }
                 ctx.varfun_env.end_scope();
@@ -1427,7 +1427,7 @@ pub fn translate<T: Frame + 'static>(input: &str, ast: &mut Exp) -> Result<TrExp
 
     escape::find_escapes(&mut ctx, ast);
 
-    let (main_level, _) = Level::new_level::<T>(Level::outermost(), Vec::new(), &mut ctx.gen);
+    let (main_level, _) = Level::new_level::<T>(Level::outermost(), Vec::new(), ctx.gen.as_mut());
     let (exp, _) = trans_exp::<T>(&mut ctx, main_level, ast, None);
 
     if ctx.has_error() {
@@ -1483,18 +1483,18 @@ mod tests {
             &[]
         }
 
-        fn string(_: crate::temp::Label, _: &str) -> String
+        fn string(_: temp::Label, _: &str) -> String
         where
             Self: Sized,
         {
             todo!()
         }
 
-        fn frame_pointer(_: &mut GenTemporary) -> crate::temp::Temp
+        fn frame_pointer(_: &mut dyn GenTemporary) -> temp::Temp
         where
             Self: Sized,
         {
-            temp::Temp::new_temp_for_test()
+            temp::test_helpers::new_temp(1)
         }
 
         fn proc_entry_exit1(&self, _: IrStm) -> IrStm
@@ -1517,7 +1517,7 @@ mod tests {
         }
 
         fn new(_: Label, formals: Vec<Escapes>) -> Self {
-            let mut gen = GenTemporary::new();
+            let mut gen : GenTemporaryImpl = GenTemporary::new();
 
             let mut frame_formals = Vec::with_capacity(1 + formals.len());
             // dummy values.

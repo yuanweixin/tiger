@@ -126,7 +126,7 @@ impl Level {
     pub fn new_level<T: Frame + 'static>(
         parent: Rc<RefCell<Level>>,
         mut escapes: Vec<bool>,
-        gen_temp_label: &mut GenTemporary,
+        gen_temp_label: &mut dyn GenTemporary,
     ) -> (Rc<RefCell<Level>>, temp::Label) {
         // prepend true for the static link
         escapes.insert(0, true);
@@ -177,7 +177,7 @@ fn make_seq(stmts: Vec<IrStm>) -> IrStm {
     so_far
 }
 
-fn un_ex(tr: TrExp, gen: &mut GenTemporary) -> IrExp {
+fn un_ex(tr: TrExp, gen: &mut dyn GenTemporary) -> IrExp {
     match tr {
         TrExp::Ex(exp) => *exp,
         TrExp::Cx(cond) => {
@@ -213,7 +213,7 @@ fn un_cx(tr: TrExp) -> Conditional {
     }
 }
 
-fn un_nx(tr: TrExp, gen: &mut GenTemporary) -> IrStm {
+fn un_nx(tr: TrExp, gen: &mut dyn GenTemporary) -> IrStm {
     match tr {
         TrExp::Nx(stm) => *stm,
         TrExp::Cx(c) => {
@@ -225,7 +225,7 @@ fn un_nx(tr: TrExp, gen: &mut GenTemporary) -> IrStm {
     }
 }
 
-pub fn binop(o: &Oper, lhs: TrExp, rhs: TrExp, gen: &mut GenTemporary) -> TrExp {
+pub fn binop(o: &Oper, lhs: TrExp, rhs: TrExp, gen: &mut dyn GenTemporary) -> TrExp {
     let left = un_ex(lhs, gen);
     let right = un_ex(rhs, gen);
     match o {
@@ -246,7 +246,7 @@ pub fn string_cmp<T: Frame>(
     is_equality: bool,
     lhs: TrExp,
     rhs: TrExp,
-    gen: &mut GenTemporary,
+    gen: &mut dyn GenTemporary,
 ) -> TrExp {
     if is_equality {
         Ex(T::external_call(
@@ -270,7 +270,7 @@ pub fn call_exp<T: Frame>(
     caller_level: Rc<RefCell<Level>>,
     args: Vec<TrExp>,
     callee_level: Rc<RefCell<Level>>,
-    gen: &mut GenTemporary,
+    gen: &mut dyn GenTemporary,
     is_unit_return_type: bool,
 ) -> TrExp {
     // here's the cases.
@@ -354,7 +354,7 @@ pub fn int_exp(i: TigerInt) -> TrExp {
     Ex(Const(i))
 }
 
-pub fn string_exp(s: &str, gen: &mut GenTemporary, frags: &mut Vec<frame::Frag>) -> TrExp {
+pub fn string_exp(s: &str, gen: &mut dyn GenTemporary, frags: &mut Vec<frame::Frag>) -> TrExp {
     for frag in frags.iter() {
         match frag {
             frame::Frag::String(label, ..) => {
@@ -369,7 +369,7 @@ pub fn string_exp(s: &str, gen: &mut GenTemporary, frags: &mut Vec<frame::Frag>)
     Ex(Name(l))
 }
 
-pub fn record_exp<T: Frame>(site_irs: Vec<TrExp>, gen: &mut GenTemporary) -> TrExp {
+pub fn record_exp<T: Frame>(site_irs: Vec<TrExp>, gen: &mut dyn GenTemporary) -> TrExp {
     let r = gen.new_temp();
     let mut instrs = Vec::new();
 
@@ -394,7 +394,7 @@ pub fn record_exp<T: Frame>(site_irs: Vec<TrExp>, gen: &mut GenTemporary) -> TrE
     Ex(Eseq(make_seq(instrs), Temp(r)))
 }
 
-pub fn seq_exp(exp_irs: Vec<TrExp>, has_return_value: bool, gen: &mut GenTemporary) -> TrExp {
+pub fn seq_exp(exp_irs: Vec<TrExp>, has_return_value: bool, gen: &mut dyn GenTemporary) -> TrExp {
     if exp_irs.len() == 0 {
         // for example, an empty let block
         Nx(Exp(Const(0)))
@@ -422,18 +422,18 @@ pub fn seq_exp(exp_irs: Vec<TrExp>, has_return_value: bool, gen: &mut GenTempora
     }
 }
 
-pub fn assignment(dst_ir: TrExp, src_ir: TrExp, gen: &mut GenTemporary) -> TrExp {
+pub fn assignment(dst_ir: TrExp, src_ir: TrExp, gen: &mut dyn GenTemporary) -> TrExp {
     Nx(Move(un_ex(dst_ir, gen), un_ex(src_ir, gen)))
 }
 
-pub fn array_exp<T: Frame>(size_ir: TrExp, init_val_ir: TrExp, gen: &mut GenTemporary) -> TrExp {
+pub fn array_exp<T: Frame>(size_ir: TrExp, init_val_ir: TrExp, gen: &mut dyn GenTemporary) -> TrExp {
     Ex(T::external_call(
         "initArray",
         vec![un_ex(size_ir, gen), un_ex(init_val_ir, gen)],
     ))
 }
 
-pub fn let_exp(var_init_irs: Vec<TrExp>, let_body_ir: TrExp, gen: &mut GenTemporary) -> TrExp {
+pub fn let_exp(var_init_irs: Vec<TrExp>, let_body_ir: TrExp, gen: &mut dyn GenTemporary) -> TrExp {
     if var_init_irs.len() == 0 {
         return let_body_ir;
     }
@@ -458,7 +458,7 @@ pub fn for_loop(
     hi_ir: TrExp,
     body_ir: TrExp,
     for_done_label: temp::Label,
-    gen: &mut GenTemporary,
+    gen: &mut dyn GenTemporary,
 ) -> TrExp {
     // note the i < limit check is done BEFORE incrementing i to avoid the edge
     // case where limit == intmax, where if we increment i first we either get
@@ -493,7 +493,7 @@ pub fn while_loop(
     cond_ir: TrExp,
     body_ir: TrExp,
     done: temp::Label,
-    gen: &mut GenTemporary,
+    gen: &mut dyn GenTemporary,
 ) -> TrExp {
     let test = gen.new_label();
     let body = gen.new_label();
@@ -513,14 +513,14 @@ fn full_conditional(
     cond_ir: TrExp,
     then_ir: TrExp,
     else_ir: TrExp,
-    gen: &mut GenTemporary,
+    gen: &mut dyn GenTemporary,
 ) -> TrExp {
     fn helper(
         branch_ir: TrExp,
         true_cx: temp::Label,
         false_cx: temp::Label,
         done: temp::Label,
-        gen: &mut GenTemporary,
+        gen: &mut dyn GenTemporary,
         return_register: IrExp,
     ) -> IrStm {
         match branch_ir {
@@ -643,7 +643,7 @@ pub fn conditional(
     cond_ir: TrExp,
     then_ir: TrExp,
     else_ir: Option<TrExp>,
-    gen: &mut GenTemporary,
+    gen: &mut dyn GenTemporary,
 ) -> TrExp {
     if else_ir.is_none() {
         let t = gen.new_label();
@@ -663,7 +663,7 @@ pub fn conditional(
 pub fn simple_var<T: Frame>(
     access: Access,
     current_level: Rc<RefCell<Level>>,
-    gen: &mut GenTemporary,
+    gen: &mut dyn GenTemporary,
 ) -> TrExp {
     let final_level = access.0;
     let cur_level = current_level.clone();
@@ -695,7 +695,7 @@ pub fn simple_var<T: Frame>(
 pub fn record_field<T: Frame>(
     lhs_var_ir: TrExp,
     field_pos: usize,
-    gen: &mut GenTemporary,
+    gen: &mut dyn GenTemporary,
 ) -> TrExp {
     Ex(Mem(Binop(
         Plus,
@@ -709,7 +709,7 @@ const INVALID_ARRAY_ACCESS_EXIT_CODE: i32 = -1;
 pub fn subscript_var<T: Frame>(
     lhs_ir: TrExp,
     idx_ir: TrExp,
-    gen: &mut GenTemporary,
+    gen: &mut dyn GenTemporary,
 ) -> TrExp {
     // byte offset of idx+1 basically.
     let idx = Binop(
@@ -741,7 +741,7 @@ pub fn proc_entry_exit(
     level: Rc<RefCell<Level>>,
     body: TrExp,
     frags: &mut Vec<frame::Frag>,
-    gen: &mut GenTemporary,
+    gen: &mut dyn GenTemporary,
 ) {
     match &*level.borrow() {
         Level::Top => panic!("impl bug, proc_entry_exit cannot be used on Top level"),

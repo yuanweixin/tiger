@@ -3,8 +3,9 @@ use crate::{
     ir::{IrExp, IrStm},
     temp,
     temp::{GenTemporary, Label},
-    symbol::Interner
+    symbol::Interner,
 };
+use std::num::NonZeroUsize;
 
 #[derive(Debug)]
 pub struct x86_64_Frame {
@@ -41,11 +42,11 @@ impl Frame for x86_64_Frame {
         todo!()
     }
 
-    fn frame_pointer(gen: &mut GenTemporary) -> crate::temp::Temp
+    fn frame_pointer(gen: &mut dyn GenTemporary) -> crate::temp::Temp
     where
         Self: Sized,
     {
-        temp::Temp::new_temp_for_test()
+        temp::test_helpers::new_temp(1)
     }
 
     fn proc_entry_exit1(&self, body: IrStm) -> IrStm {
@@ -67,21 +68,22 @@ impl Frame for x86_64_Frame {
     }
 
     fn new(name: Label, formals: Vec<Escapes>) -> Self {
-        let mut gen = GenTemporary::new();
-        let mut pool = Interner::new();
+        todo!();
+        // let mut gen = GenTemporary::new();
+        // let mut pool = Interner::new();
 
-        let mut frame_formals = Vec::with_capacity(1 + formals.len());
-        // dummy values.
-        // this first one is for the static link.
-        frame_formals.push(Access::InFrame(42));
+        // let mut frame_formals = Vec::with_capacity(1 + formals.len());
+        // // dummy values.
+        // // this first one is for the static link.
+        // frame_formals.push(Access::InFrame(42));
 
-        for _ in formals {
-            frame_formals.push(Access::InFrame(42));
-        }
-        x86_64_Frame {
-            name: gen.new_label(),
-            formals: frame_formals,
-        }
+        // for _ in formals {
+        //     frame_formals.push(Access::InFrame(42));
+        // }
+        // x86_64_Frame {
+        //     name: gen.new_label(),
+        //     formals: frame_formals,
+        // }
     }
     fn name(&self) -> Label {
         self.name

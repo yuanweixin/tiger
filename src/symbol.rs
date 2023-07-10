@@ -21,6 +21,15 @@ impl Interner {
     }
 }
 
+pub mod test_helpers {
+    use std::num::NonZeroUsize;
+    use string_interner::Symbol;
+    use super::*;
+
+    pub fn new_symbol(s: NonZeroUsize) -> super::Symbol {
+        super::Symbol(DefaultSymbol::try_from_usize(s.get()).unwrap())
+    }
+}
 #[cfg(test)]
 mod tests {
     use super::*;
