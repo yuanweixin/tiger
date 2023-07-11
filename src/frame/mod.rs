@@ -32,7 +32,7 @@ pub trait Frame : Debug {
     fn new(name: Label, formals: Vec<Escapes>, gen: &mut dyn Uuids) -> Self where Self:Sized;
     fn name(&self) -> Label;
     fn formals(&self) -> &[Access];
-    fn alloc_local(&mut self, escapes: Escapes) -> Access;
+    fn alloc_local(&mut self, escapes: Escapes,  gen: &mut dyn Uuids) -> Access;
     fn external_call(fn_name: Label, exps: Vec<IrExp>) -> IrExp where Self:Sized;
     fn word_size() -> usize where Self:Sized;
     fn registers<'a>() -> &'a [Register<'a>] where Self:Sized;

@@ -1,10 +1,10 @@
 use crate::{
-    frame::{Access, Frame, Register, Escapes},
+    frame::{Access, Escapes, Frame, Register},
     ir,
-    ir::{IrExp, IrStm, helpers::*},
-    temp,
-    temp::{Uuids, Label},
+    ir::{helpers::*, IrExp, IrStm},
     symbol::Interner,
+    temp,
+    temp::{Label, Uuids},
 };
 use std::num::NonZeroUsize;
 
@@ -12,10 +12,10 @@ use std::num::NonZeroUsize;
 pub struct x86_64_Frame {
     name: Label,
     formals: Vec<Access>,
-    next_local_offset : i32
+    next_local_offset: i32,
 }
 
-const RBP : &str = "rbp";
+const RBP: &str = "rbp";
 
 impl Frame for x86_64_Frame {
     fn external_call(name: Label, exps: Vec<ir::IrExp>) -> ir::IrExp
@@ -83,7 +83,7 @@ impl Frame for x86_64_Frame {
         Self {
             name,
             formals,
-            next_local_offset: -8
+            next_local_offset: -8,
         }
     }
 
@@ -94,9 +94,14 @@ impl Frame for x86_64_Frame {
     fn formals(&self) -> &[Access] {
         &self.formals[1..]
     }
-    fn alloc_local(&mut self, escapes: Escapes) -> Access {
-        let res = Access::InFrame(self.next_local_offset);
-        self.next_local_offset.checked_add(-8).unwrap();
-        res
+
+    fn alloc_local(&mut self, escapes: Escapes, gen: &mut dyn Uuids) -> Access {
+        if escapes {
+            let res = Access::InFrame(self.next_local_offset);
+            self.next_local_offset.checked_add(-8).unwrap();
+            res
+        } else {
+            Access::InReg(gen.new_temp())
+        }
     }
 }

@@ -749,7 +749,7 @@ fn trans_exp<T: Frame + 'static>(
             ctx.varfun_env.begin_scope();
 
             let sym = ctx.intern(var);
-            let acc = Level::alloc_local(level.clone(), *escape);
+            let acc = Level::alloc_local(level.clone(), *escape, ctx.gen.as_mut());
 
             ctx.varfun_env.enter(
                 sym,
@@ -1219,7 +1219,7 @@ fn trans_dec<T: Frame + 'static>(
                         ctx.flag_error_with_msg (pos, &format!("Variable {} is declared with unknown type and initiated with nil. Fix by using the long form, e.g. var {} : <your-type> = ...", name, name));
                     } else {
                         // no return type specified, infer it
-                        let acc = Level::alloc_local(level, *escape);
+                        let acc = Level::alloc_local(level, *escape, ctx.gen.as_mut());
                         ctx.varfun_env.enter(
                             var_name_sym,
                             EnvEntry::VarEntry {
@@ -1268,7 +1268,7 @@ fn trans_dec<T: Frame + 'static>(
                                     },
                                 );
                             } else {
-                                let acc = Level::alloc_local(level, *escape);
+                                let acc = Level::alloc_local(level, *escape, ctx.gen.as_mut());
                                 ctx.varfun_env.enter(
                                     var_name_sym,
                                     EnvEntry::VarEntry {
@@ -1539,7 +1539,7 @@ mod tests {
         fn formals(&self) -> &[frame::Access] {
             &self.formals[1..]
         }
-        fn alloc_local(&mut self, _: Escapes) -> frame::Access {
+        fn alloc_local(&mut self, _: Escapes, _: &mut dyn Uuids) -> frame::Access {
             frame::Access::InFrame(42)
         }
     }

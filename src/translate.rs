@@ -113,12 +113,12 @@ impl Level {
         Rc::new(RefCell::new(Level::Top))
     }
 
-    pub fn alloc_local(myself: Rc<RefCell<Level>>, escape: bool) -> Access {
+    pub fn alloc_local(myself: Rc<RefCell<Level>>, escape: bool,  gen: &mut dyn Uuids) -> Access {
         let frame_access = match *myself.borrow_mut() {
             Level::Top => {
                 panic!("impl bug, cannot allocate local in top level");
             }
-            Level::Nested { ref frame, .. } => frame.borrow_mut().alloc_local(escape),
+            Level::Nested { ref frame, .. } => frame.borrow_mut().alloc_local(escape, gen),
         };
         Access(myself, frame_access)
     }
