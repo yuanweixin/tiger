@@ -1174,29 +1174,118 @@ mod tests {
                 Jump(Name(done_label), vec![done_label]),
                 Label(l2),
                 Jump(Name(l3), vec![l3]),
-                Label(done_label) // this should always follow
+                Label(done_label), // this should always follow
             ];
             assert_eq!(expected, actual);
         }
 
-        // #[test]
-        // fn jump_to_end_lbl_follow_by_end_lbl() {
-        //     todo!()
-        // }
+        #[test]
+        fn jump_to_end_lbl_follow_by_end_lbl() {
+            let l1 = test_helpers::new_label(100);
+            let done_label = test_helpers::new_label(200);
+            let mut gen: GenTemporaryImpl = GenTemporary::new();
+            let blocks = vec![Block {
+                marked: false,
+                stmts: vec![Label(l1), Jump(Name(done_label), vec![done_label])],
+            }];
+            let actual = trace_schedule(blocks, done_label, &mut gen);
+            let expected: Vec<IrStm> = vec![
+                Label(l1),
+                // will just tolerate this jump followed by its target label because the
+                // done_label isn't part of the blocklist but is instead tacked on at the end.
+                // we can always remove it if we need to.
+                Jump(Name(done_label), vec![done_label]),
+                Label(done_label), // this should always follow
+            ];
+            assert_eq!(expected, actual);
+        }
 
-        // #[test]
-        // fn cjump_follow_by_false_label_left_alone() {
-        //     todo!()
-        // }
+        #[test]
+        fn cjump_follow_by_false_label_left_alone() {
+            let l1 = test_helpers::new_label(100);
+            let lt = test_helpers::new_label(201);
+            let lf = test_helpers::new_label(202);
+            let done_label = test_helpers::new_label(300);
+            let mut gen: GenTemporaryImpl = GenTemporary::new();
+            let blocks = vec![
+                Block {
+                    marked: false,
+                    stmts: vec![Label(l1), Cjump(Ge, Const(0), Const(0), lt, lf)],
+                },
+                Block {
+                    marked: false,
+                    stmts: vec![Label(lf), Jump(Name(done_label), vec![done_label])],
+                },
+            ];
+            let actual = trace_schedule(blocks, done_label, &mut gen);
+            let expected: Vec<IrStm> = vec![
+                Label(l1),
+                Cjump(Ge, Const(0), Const(0), lt, lf),
+                Label(lf),
+                Jump(Name(done_label), vec![done_label]),
+                Label(done_label), // this should always follow
+            ];
+            assert_eq!(expected, actual);
+        }
 
-        // #[test]
-        // fn cjump_follow_by_true_label_is_negated() {
-        //     todo!()
-        // }
+        #[test]
+        fn cjump_follow_by_true_label_is_negated() {
+            let l1 = test_helpers::new_label(100);
+            let lt = test_helpers::new_label(201);
+            let lf = test_helpers::new_label(202);
+            let done_label = test_helpers::new_label(300);
+            let mut gen: GenTemporaryImpl = GenTemporary::new();
+            let blocks = vec![
+                Block {
+                    marked: false,
+                    stmts: vec![Label(l1), Cjump(Ge, Const(0), Const(0), lt, lf)],
+                },
+                Block {
+                    marked: false,
+                    stmts: vec![Label(lt), Jump(Name(done_label), vec![done_label])],
+                },
+            ];
+            let actual = trace_schedule(blocks, done_label, &mut gen);
+            let expected: Vec<IrStm> = vec![
+                Label(l1),
+                Cjump(Lt, Const(0), Const(0), lf, lt),
+                Label(lt),
+                Jump(Name(done_label), vec![done_label]),
+                Label(done_label), // this should always follow
+            ];
+            assert_eq!(expected, actual);
+        }
 
-        // #[test]
-        // fn cjump_not_follow_by_true_or_false_has_empty_block_inserted() {
-        //     todo!()
-        // }
+        #[test]
+        fn cjump_not_follow_by_true_or_false_has_empty_block_inserted() {
+            let l1 = test_helpers::new_label(100);
+            let l2 = test_helpers::new_label(101);
+            let lt = test_helpers::new_label(201);
+            let lf = test_helpers::new_label(202);
+            let done_label = test_helpers::new_label(300);
+            let mut gen = GenTemporaryForTest::empty(vec![1]);
+            let ff = test_helpers::new_label(1);
+            let blocks = vec![
+                Block {
+                    marked: false,
+                    stmts: vec![Label(l1), Cjump(Ge, Const(0), Const(0), lt, lf)],
+                },
+                Block {
+                    marked: false,
+                    stmts: vec![Label(l2), Jump(Name(done_label), vec![done_label])],
+                },
+            ];
+            let actual = trace_schedule(blocks, done_label, &mut gen);
+            let expected: Vec<IrStm> = vec![
+                Label(l1),
+                Cjump(Ge, Const(0), Const(0), lt, ff),
+                Label(ff),
+                Jump(Name(lf), vec![lf]),
+                Label(l2),
+                Jump(Name(done_label), vec![done_label]),
+                Label(done_label), // this should always follow
+            ];
+            assert_eq!(expected, actual);
+        }
     }
 }
