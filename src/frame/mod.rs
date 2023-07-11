@@ -1,7 +1,7 @@
 pub mod x86_64;
 
 use crate::{
-    temp::{self, GenTemporary},
+    temp::{self, Uuids},
     temp::{Temp, Label},
     ir::{IrStm, IrExp}
 };
@@ -29,7 +29,7 @@ pub trait Frame : Debug {
     // Self:Sized seems a bit more flexible as it allows default impl if the
     // associated func is not actually called in an impl.
     // https://stackoverflow.com/questions/44096235/understanding-traits-and-object-safety#:~:text=There%20is%20no%20inheritance%20in%20Rust.%20In%20both,types%20that%20implement%20Sized%20can%20implement%20this%20method.
-    fn new(name: Label, formals: Vec<Escapes>) -> Self where Self:Sized;
+    fn new(name: Label, formals: Vec<Escapes>, gen: &mut dyn Uuids) -> Self where Self:Sized;
     fn name(&self) -> Label;
     fn formals(&self) -> &[Access];
     fn alloc_local(&mut self, escapes: Escapes) -> Access;
@@ -50,7 +50,7 @@ pub trait Frame : Debug {
     // which will be used to retrieve the temp object.
     //
     // in retrospect, might have been easier to respect tradition and just do these as global states.
-    fn frame_pointer(gen: &mut dyn GenTemporary) -> temp::Temp where Self:Sized;
+    fn frame_pointer(gen: &mut dyn Uuids) -> temp::Temp where Self:Sized;
 }
 
 pub enum Frag {

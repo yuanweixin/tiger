@@ -9,7 +9,7 @@ use crate::{
         IrStm::Label,
     },
     temp,
-    temp::GenTemporary,
+    temp::Uuids,
 };
 
 use std::collections::{HashMap, LinkedList, VecDeque};
@@ -29,7 +29,7 @@ impl std::ops::Rem for IrStm {
 
 fn reorder(
     mut ev: VecDeque<IrExp>,
-    gen: &mut dyn GenTemporary,
+    gen: &mut dyn Uuids,
     nop_marker_label: temp::Label,
 ) -> (IrStm, VecDeque<IrExp>) {
     if ev.is_empty() {
@@ -72,7 +72,7 @@ fn reorder(
 fn reorder_exp<F>(
     ev: VecDeque<IrExp>,
     make: F,
-    gen: &mut dyn GenTemporary,
+    gen: &mut dyn Uuids,
     nop_marker_label: temp::Label,
 ) -> (IrStm, IrExp)
 where
@@ -85,7 +85,7 @@ where
 fn reorder_stm<F>(
     ev: VecDeque<IrExp>,
     make: F,
-    gen: &mut dyn GenTemporary,
+    gen: &mut dyn Uuids,
     nop_marker_label: temp::Label,
 ) -> IrStm
 where
@@ -106,7 +106,7 @@ fn commutes(s: &IrStm, e: &IrExp) -> bool {
     }
 }
 
-fn lift_stm(s: IrStm, gen: &mut dyn GenTemporary, nop_marker_label: temp::Label) -> IrStm {
+fn lift_stm(s: IrStm, gen: &mut dyn Uuids, nop_marker_label: temp::Label) -> IrStm {
     match s {
         IrStm::Seq(a, b) => {
             lift_stm(*a, gen, nop_marker_label) % lift_stm(*b, gen, nop_marker_label)
@@ -191,7 +191,7 @@ fn lift_stm(s: IrStm, gen: &mut dyn GenTemporary, nop_marker_label: temp::Label)
     }
 }
 
-fn lift_exp(e: IrExp, gen: &mut dyn GenTemporary, nop_marker_label: temp::Label) -> (IrStm, IrExp) {
+fn lift_exp(e: IrExp, gen: &mut dyn Uuids, nop_marker_label: temp::Label) -> (IrStm, IrExp) {
     match e {
         IrExp::Binop(p, a, b) => reorder_exp(
             VecDeque::from(vec![*a, *b]),
@@ -224,7 +224,7 @@ fn lift_exp(e: IrExp, gen: &mut dyn GenTemporary, nop_marker_label: temp::Label)
     }
 }
 
-pub fn linearize(i: IrStm, gen: &mut dyn GenTemporary) -> Vec<IrStm> {
+pub fn linearize(i: IrStm, gen: &mut dyn Uuids) -> Vec<IrStm> {
     // From an arbitrary Tree statement, produce a list of cleaned trees
     //    satisfying the following properties:
     //       1.  No SEQ's or ESEQ's
@@ -305,7 +305,7 @@ fn validate_block(this_block: &Block) {
 
 pub fn basic_blocks(
     stmts: Vec<IrStm>,
-    gen: &mut dyn GenTemporary,
+    gen: &mut dyn Uuids,
 ) -> (HashMap<temp::Label, Block>, temp::Label) {
     // according to Appel (p180), this basic blocks function is applied to each function body in turn.
     // the "epilogue" will not be part of this body, but will eventually follow the last statement.
@@ -463,11 +463,11 @@ impl BlockList for Vec<Block> {
 pub fn trace_schedule(
     mut blist: impl BlockList,
     done_label: temp::Label,
-    gen: &mut dyn GenTemporary,
+    gen: &mut dyn Uuids,
 ) -> Vec<IrStm> {
     let mut res = Vec::new();
 
-    fn collapse_trace(trace: Vec<Block>, res: &mut Vec<IrStm>, gen: &mut dyn GenTemporary) {
+    fn collapse_trace(trace: Vec<Block>, res: &mut Vec<IrStm>, gen: &mut dyn Uuids) {
         debug_assert!(!trace.is_empty());
         let mut blk_iter = trace.into_iter().peekable();
         let mut cur_blk = blk_iter.next().map(|b| b.stmts.into_iter().peekable());
@@ -552,7 +552,7 @@ mod tests {
         ir::{IrBinop::*, IrExp, IrRelop::*, IrStm},
         symbol::Interner,
         symbol::Symbol,
-        temp::{self, test_helpers, GenTemporary, Label},
+        temp::{self, test_helpers, Uuids, Label},
     };
     use itertools;
     use std::num::NonZeroUsize;
@@ -577,8 +577,12 @@ mod tests {
         }
     }
 
-    impl GenTemporary for GenTemporaryForTest {
+    impl Uuids for GenTemporaryForTest {
         fn new() -> Self {
+            panic!();
+        }
+
+        fn named_temp(&mut self, _: &str) -> temp::Temp {
             panic!();
         }
 
@@ -627,13 +631,13 @@ mod tests {
     }
 
     mod linearize {
-        use crate::temp::GenTemporaryImpl;
+        use crate::temp::UuidsImpl;
 
         use super::*;
 
         #[test]
         fn const_is_identity() {
-            let mut gen: GenTemporaryImpl = GenTemporary::new();
+            let mut gen: UuidsImpl = Uuids::new();
             let expected = vec![Exp(Const(42))];
             let actual = linearize(Exp(Const(42)), &mut gen);
             assert_eq!(expected, actual);
@@ -641,7 +645,7 @@ mod tests {
 
         #[test]
         fn name_is_identity() {
-            let mut gen: GenTemporaryImpl = GenTemporary::new();
+            let mut gen: UuidsImpl = Uuids::new();
             let l = gen.new_label();
             let expected = vec![Exp(Name(l))];
             let actual = linearize(Exp(Name(l)), &mut gen);
@@ -650,7 +654,7 @@ mod tests {
 
         #[test]
         fn temp_is_identity() {
-            let mut gen: GenTemporaryImpl = GenTemporary::new();
+            let mut gen: UuidsImpl = Uuids::new();
             let t = gen.new_temp();
             let expected = vec![Exp(Temp(t))];
             let actual = linearize(Exp(Temp(t)), &mut gen);
@@ -659,7 +663,7 @@ mod tests {
 
         #[test]
         fn exp_eseq() {
-            let mut gen: GenTemporaryImpl = GenTemporary::new();
+            let mut gen: UuidsImpl = Uuids::new();
             let l = gen.new_label();
             let t = gen.new_temp();
 
@@ -670,7 +674,7 @@ mod tests {
 
         #[test]
         fn eseq_eseq() {
-            let mut gen: GenTemporaryImpl = GenTemporary::new();
+            let mut gen: UuidsImpl = Uuids::new();
             let l = gen.new_label();
             let l2 = gen.new_label();
             let t = gen.new_temp();
@@ -682,7 +686,7 @@ mod tests {
 
         #[test]
         fn binop_eseq_left() {
-            let mut gen: GenTemporaryImpl = GenTemporary::new();
+            let mut gen: UuidsImpl = Uuids::new();
             let l = gen.new_label();
             let l2 = gen.new_label();
             let t = gen.new_temp();
@@ -701,7 +705,7 @@ mod tests {
 
         #[test]
         fn mem_eseq() {
-            let mut gen: GenTemporaryImpl = GenTemporary::new();
+            let mut gen: UuidsImpl = Uuids::new();
             let l = gen.new_label();
             let l2 = gen.new_label();
             let t = gen.new_temp();
@@ -713,7 +717,7 @@ mod tests {
 
         #[test]
         fn jump_eseq() {
-            let mut gen: GenTemporaryImpl = GenTemporary::new();
+            let mut gen: UuidsImpl = Uuids::new();
             let l = gen.new_label();
             let l2 = gen.new_label();
             let t = gen.new_temp();
@@ -728,7 +732,7 @@ mod tests {
 
         #[test]
         fn cjump_eseq_left() {
-            let mut gen: GenTemporaryImpl = GenTemporary::new();
+            let mut gen: UuidsImpl = Uuids::new();
 
             let l = gen.new_label();
             let l2 = gen.new_label();
@@ -751,7 +755,7 @@ mod tests {
 
         #[test]
         fn binop_right_eseq_commutes() {
-            let mut gen: GenTemporaryImpl = GenTemporary::new();
+            let mut gen: UuidsImpl = Uuids::new();
             let l = gen.new_label();
             let l2 = gen.new_label();
             let t = gen.new_temp();
@@ -825,7 +829,7 @@ mod tests {
 
         #[test]
         fn cjump_right_eseq_commutes() {
-            let mut gen: GenTemporaryImpl = GenTemporary::new();
+            let mut gen: UuidsImpl = Uuids::new();
 
             let l = gen.new_label();
             let l2 = gen.new_label();
@@ -847,7 +851,7 @@ mod tests {
 
         #[test]
         fn move_temp_eseq() {
-            let mut gen: GenTemporaryImpl = GenTemporary::new();
+            let mut gen: UuidsImpl = Uuids::new();
             let l = gen.new_label();
             let l2 = gen.new_label();
             let t = gen.new_temp();
@@ -863,7 +867,7 @@ mod tests {
 
         #[test]
         fn move_mem_eseq_left() {
-            let mut gen: GenTemporaryImpl = GenTemporary::new();
+            let mut gen: UuidsImpl = Uuids::new();
             let l = gen.new_label();
             let l2 = gen.new_label();
             let t = gen.new_temp();
@@ -879,7 +883,7 @@ mod tests {
 
         #[test]
         fn move_mem_eseq_right() {
-            let mut gen: GenTemporaryImpl = GenTemporary::new();
+            let mut gen: UuidsImpl = Uuids::new();
             let t = gen.new_temp();
 
             let expected = vec![Move(Temp(t), Const(42)), Move(Temp(t), Mem(Temp(t)))];
@@ -942,7 +946,7 @@ mod tests {
 
         #[test]
         fn move_temp_call_eseq() {
-            let mut gen: GenTemporaryImpl = GenTemporary::new();
+            let mut gen: UuidsImpl = Uuids::new();
             let t = gen.new_temp();
 
             let expected = vec![
@@ -961,7 +965,7 @@ mod tests {
 
         #[test]
         fn seq_is_eliminated() {
-            let mut gen: GenTemporaryImpl = GenTemporary::new();
+            let mut gen: UuidsImpl = Uuids::new();
             let t = gen.new_temp();
             let expected = vec![Exp(Const(1)), Exp(Const(2))];
             let actual = linearize(Seq(Exp(Const(1)), Exp(Const(2))), &mut gen);
@@ -973,7 +977,7 @@ mod tests {
         use super::*;
         use crate::{
             canon::basic_blocks,
-            temp::{test_helpers, GenTemporary, GenTemporaryImpl},
+            temp::{test_helpers, Uuids, UuidsImpl},
         };
 
         #[test]
@@ -984,7 +988,7 @@ mod tests {
             // 3. insertion of jump at end of block if not present.
             let t = test_helpers::new_temp(1);
             let stmts = vec![Move(Temp(t), Const(1))];
-            let mut gen: GenTemporaryImpl = GenTemporary::new();
+            let mut gen: UuidsImpl = Uuids::new();
             let (blk_map, end_lbl) = basic_blocks(stmts, &mut gen);
             assert_eq!(1, blk_map.len());
             let (lbl, blk) = blk_map.into_iter().next().unwrap();
@@ -1002,7 +1006,7 @@ mod tests {
         fn jumps_only() {
             let lbl = test_helpers::new_label(1);
             let stmts = vec![Jump(Name(lbl), vec![lbl]), Jump(Name(lbl), vec![lbl])];
-            let mut gen: GenTemporaryImpl = GenTemporary::new();
+            let mut gen: UuidsImpl = Uuids::new();
             let (blk_map, _) = basic_blocks(stmts, &mut gen);
             assert_eq!(2, blk_map.len());
             for (blk_lbl, blk) in blk_map {
@@ -1018,7 +1022,7 @@ mod tests {
                 Cjump(Ge, Const(1), Const(1), l1, l2),
                 Cjump(Ge, Const(1), Const(1), l1, l2),
             ];
-            let mut gen: GenTemporaryImpl = GenTemporary::new();
+            let mut gen: UuidsImpl = Uuids::new();
             let (blk_map, _) = basic_blocks(stmts, &mut gen);
             assert_eq!(2, blk_map.len());
             for (blk_lbl, blk) in blk_map {
@@ -1032,7 +1036,7 @@ mod tests {
         #[test]
         #[should_panic]
         fn craps_out_on_seq() {
-            let mut gen: GenTemporaryImpl = GenTemporary::new();
+            let mut gen: UuidsImpl = Uuids::new();
             let l = test_helpers::new_label(200);
             let input = vec![Seq(Label(l), Label(l))];
 
@@ -1105,7 +1109,7 @@ mod tests {
     }
 
     mod trace {
-        use crate::temp::GenTemporaryImpl;
+        use crate::temp::UuidsImpl;
 
         use super::*;
 
@@ -1152,7 +1156,7 @@ mod tests {
             let l2 = test_helpers::new_label(101);
             let l3 = test_helpers::new_label(102);
             let done_label = test_helpers::new_label(200);
-            let mut gen: GenTemporaryImpl = GenTemporary::new();
+            let mut gen: UuidsImpl = Uuids::new();
             let blocks = vec![
                 Block {
                     marked: false,
@@ -1183,7 +1187,7 @@ mod tests {
         fn jump_to_end_lbl_follow_by_end_lbl() {
             let l1 = test_helpers::new_label(100);
             let done_label = test_helpers::new_label(200);
-            let mut gen: GenTemporaryImpl = GenTemporary::new();
+            let mut gen: UuidsImpl = Uuids::new();
             let blocks = vec![Block {
                 marked: false,
                 stmts: vec![Label(l1), Jump(Name(done_label), vec![done_label])],
@@ -1206,7 +1210,7 @@ mod tests {
             let lt = test_helpers::new_label(201);
             let lf = test_helpers::new_label(202);
             let done_label = test_helpers::new_label(300);
-            let mut gen: GenTemporaryImpl = GenTemporary::new();
+            let mut gen: UuidsImpl = Uuids::new();
             let blocks = vec![
                 Block {
                     marked: false,
@@ -1234,7 +1238,7 @@ mod tests {
             let lt = test_helpers::new_label(201);
             let lf = test_helpers::new_label(202);
             let done_label = test_helpers::new_label(300);
-            let mut gen: GenTemporaryImpl = GenTemporary::new();
+            let mut gen: UuidsImpl = Uuids::new();
             let blocks = vec![
                 Block {
                     marked: false,

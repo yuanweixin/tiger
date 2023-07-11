@@ -1,8 +1,9 @@
 use crate::{
     frame::{Access, Frame, Register, Escapes},
+    ir,
     ir::{IrExp, IrStm},
     temp,
-    temp::{GenTemporary, Label},
+    temp::{Uuids, Label},
     symbol::Interner,
 };
 use std::num::NonZeroUsize;
@@ -11,10 +12,13 @@ use std::num::NonZeroUsize;
 pub struct x86_64_Frame {
     name: Label,
     formals: Vec<Access>,
+    next_local_offset : i32
 }
 
+const RBP : &str = "rbp";
+
 impl Frame for x86_64_Frame {
-    fn external_call(name: &str, exps: Vec<crate::ir::IrExp>) -> crate::ir::IrExp
+    fn external_call(name: &str, exps: Vec<ir::IrExp>) -> ir::IrExp
     where
         Self: Sized,
     {
@@ -35,18 +39,18 @@ impl Frame for x86_64_Frame {
         &[]
     }
 
-    fn string(label: crate::temp::Label, val: &str) -> String
+    fn string(label: temp::Label, val: &str) -> String
     where
         Self: Sized,
     {
         todo!()
     }
 
-    fn frame_pointer(gen: &mut dyn GenTemporary) -> crate::temp::Temp
+    fn frame_pointer(gen: &mut dyn Uuids) -> temp::Temp
     where
         Self: Sized,
     {
-        temp::test_helpers::new_temp(1)
+        gen.named_temp(RBP)
     }
 
     fn proc_entry_exit1(&self, body: IrStm) -> IrStm {
@@ -67,24 +71,22 @@ impl Frame for x86_64_Frame {
         todo!()
     }
 
-    fn new(name: Label, formals: Vec<Escapes>) -> Self {
-        todo!();
-        // let mut gen = GenTemporary::new();
-        // let mut pool = Interner::new();
-
-        // let mut frame_formals = Vec::with_capacity(1 + formals.len());
-        // // dummy values.
-        // // this first one is for the static link.
-        // frame_formals.push(Access::InFrame(42));
-
-        // for _ in formals {
-        //     frame_formals.push(Access::InFrame(42));
-        // }
-        // x86_64_Frame {
-        //     name: gen.new_label(),
-        //     formals: frame_formals,
-        // }
+    fn new(name: Label, formals_escapes: Vec<Escapes>, gen: &mut dyn Uuids) -> Self {
+        let mut formals = Vec::with_capacity(formals_escapes.len());
+        for (i, escape) in formals_escapes.iter().enumerate() {
+            if i > 5 || *escape {
+                formals.push(Access::InFrame(42));
+            } else {
+                formals.push(Access::InReg(gen.new_temp()));
+            }
+        }
+        Self {
+            name,
+            formals,
+            next_local_offset: -8
+        }
     }
+
     fn name(&self) -> Label {
         self.name
     }
@@ -93,6 +95,8 @@ impl Frame for x86_64_Frame {
         &self.formals[1..]
     }
     fn alloc_local(&mut self, escapes: Escapes) -> Access {
-        Access::InFrame(42)
+        let res = Access::InFrame(self.next_local_offset);
+        self.next_local_offset.checked_add(-8).unwrap();
+        res
     }
 }

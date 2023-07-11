@@ -9,7 +9,7 @@ use crate::{
     frame::Frame,
     symbol::Symbol,
     symtab::SymbolTable,
-    temp::{GenTemporary, GenTemporaryImpl, Label},
+    temp::{Uuids, UuidsImpl, Label},
     translate,
     translate::{Level, TrExp},
 };
@@ -51,13 +51,13 @@ pub struct TypeCheckingContext<'a> {
     varfun_env: SymbolTable<EnvEntry>,
     has_err: bool,
     input: &'a str,
-    gen: Box<dyn GenTemporary>,
+    gen: Box<dyn Uuids>,
     frags: Vec<frame::Frag>,
 }
 
 impl<'a> TypeCheckingContext<'a> {
     fn new(input: &'a str) -> Self {
-        let mut gen : GenTemporaryImpl = GenTemporary::new();
+        let mut gen : UuidsImpl = Uuids::new();
         let type_env = Self::base_env_type_env(&mut gen);
         let varfun_env = Self::base_varfun_env(&mut gen);
         Self {
@@ -80,7 +80,7 @@ impl<'a> TypeCheckingContext<'a> {
         ret
     }
 
-    fn base_env_type_env(gen: &mut dyn GenTemporary) -> SymbolTable<Type> {
+    fn base_env_type_env(gen: &mut dyn Uuids) -> SymbolTable<Type> {
         let mut res = SymbolTable::empty();
         res.begin_scope();
         res.enter(gen.intern("int"), Type::Int);
@@ -88,7 +88,7 @@ impl<'a> TypeCheckingContext<'a> {
         res
     }
 
-    fn base_varfun_env(gen: &mut dyn GenTemporary) -> SymbolTable<EnvEntry> {
+    fn base_varfun_env(gen: &mut dyn Uuids) -> SymbolTable<EnvEntry> {
         let mut res = SymbolTable::empty();
         res.begin_scope();
         res.enter(
@@ -1444,7 +1444,7 @@ mod tests {
         frame,
         frame::{Escapes, Frame},
         ir::{IrExp, IrStm},
-        temp::{self, GenTemporary, Label},
+        temp::{self, Uuids, Label},
     };
 
     use lrlex::lrlex_mod;
@@ -1490,7 +1490,7 @@ mod tests {
             todo!()
         }
 
-        fn frame_pointer(_: &mut dyn GenTemporary) -> temp::Temp
+        fn frame_pointer(_: &mut dyn Uuids) -> temp::Temp
         where
             Self: Sized,
         {
@@ -1516,8 +1516,8 @@ mod tests {
             todo!()
         }
 
-        fn new(_: Label, formals: Vec<Escapes>) -> Self {
-            let mut gen : GenTemporaryImpl = GenTemporary::new();
+        fn new(_: Label, formals: Vec<Escapes>, gen: &mut dyn Uuids) -> Self {
+            let mut gen : UuidsImpl = Uuids::new();
 
             let mut frame_formals = Vec::with_capacity(1 + formals.len());
             // dummy values.
