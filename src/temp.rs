@@ -14,6 +14,11 @@ impl PartialEq<Label> for &Label {
     }
 }
 
+impl PartialEq<&Label> for Label {
+    fn eq(&self, rhs: &&Label) -> bool {
+        return self.0 == rhs.0;
+    }
+}
 
 pub trait GenTemporary {
     fn new() -> Self where Self : Sized;
