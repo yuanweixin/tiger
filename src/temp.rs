@@ -47,10 +47,7 @@ pub trait Uuids {
 
     fn new_label(&mut self) -> Label;
 
-    // TODO what's this used for?
-    fn named_label(s: &str, pool: &mut Interner) -> Label
-    where
-        Self: Sized;
+    fn named_label(&mut self, s: &str) -> Label;
 }
 
 // Approximates the ml modules given by Appel in flavor.
@@ -113,8 +110,8 @@ impl Uuids for UuidsImpl {
         let sym = self.pool.intern(&format!("L{}", id));
         Label(sym)
     }
-    fn named_label(s: &str, pool: &mut Interner) -> Label {
-        let sym = pool.intern(s);
+    fn named_label(&mut self, s: &str) -> Label {
+        let sym = self.pool.intern(s);
         Label(sym)
     }
 }

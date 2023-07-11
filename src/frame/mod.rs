@@ -33,7 +33,7 @@ pub trait Frame : Debug {
     fn name(&self) -> Label;
     fn formals(&self) -> &[Access];
     fn alloc_local(&mut self, escapes: Escapes) -> Access;
-    fn external_call(name: &str, exps: Vec<IrExp>) -> IrExp where Self:Sized;
+    fn external_call(fn_name: Label, exps: Vec<IrExp>) -> IrExp where Self:Sized;
     fn word_size() -> usize where Self:Sized;
     fn registers<'a>() -> &'a [Register<'a>] where Self:Sized;
     // TODO not sure what kind of table this is

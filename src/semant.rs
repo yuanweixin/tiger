@@ -1462,7 +1462,7 @@ mod tests {
     }
 
     impl Frame for TestFrame {
-        fn external_call(_: &str, _: Vec<crate::ir::IrExp>) -> crate::ir::IrExp
+        fn external_call(_: Label, _: Vec<crate::ir::IrExp>) -> crate::ir::IrExp
         where
             Self: Sized,
         {

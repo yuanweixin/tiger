@@ -557,11 +557,11 @@ mod tests {
     use itertools;
     use std::num::NonZeroUsize;
 
-    struct GenTemporaryForTest {
+    struct UuidForTest {
         syms: Box<dyn Iterator<Item = usize>>,
     }
 
-    impl GenTemporaryForTest {
+    impl UuidForTest {
         fn new_for_linearize(syms: Vec<usize>) -> Self {
             Self {
                 // very shitty, includes 1 to account for use in linearize
@@ -577,7 +577,7 @@ mod tests {
         }
     }
 
-    impl Uuids for GenTemporaryForTest {
+    impl Uuids for UuidForTest {
         fn new() -> Self {
             panic!();
         }
@@ -625,7 +625,7 @@ mod tests {
             }
         }
 
-        fn named_label(_: &str, _: &mut Interner) -> Label {
+        fn named_label(&mut self, _: &str) -> Label {
             panic!();
         }
     }
@@ -774,7 +774,7 @@ mod tests {
 
         #[test]
         fn binop_right_eseq_no_commute() {
-            let mut gen = GenTemporaryForTest::new_for_linearize(vec![2]);
+            let mut gen = UuidForTest::new_for_linearize(vec![2]);
             let l = test_helpers::new_label(999);
             let l2 = test_helpers::new_label(1000);
             let t = test_helpers::new_temp(1001);
@@ -799,7 +799,7 @@ mod tests {
 
         #[test]
         fn cjump_right_eseq_no_commute() {
-            let mut gen = GenTemporaryForTest::new_for_linearize(vec![1]);
+            let mut gen = UuidForTest::new_for_linearize(vec![1]);
 
             let l = test_helpers::new_label(999);
             let l2 = test_helpers::new_label(1000);
@@ -896,7 +896,7 @@ mod tests {
 
         #[test]
         fn exp_call_eseq() {
-            let mut gen = GenTemporaryForTest::new_for_linearize(vec![2]);
+            let mut gen = UuidForTest::new_for_linearize(vec![2]);
             let t = test_helpers::new_temp(100);
             let l = test_helpers::new_label(101);
             let l2 = test_helpers::new_label(102);
@@ -922,7 +922,7 @@ mod tests {
 
         #[test]
         fn exp_call_eseq_no_commute() {
-            let mut gen = GenTemporaryForTest::new_for_linearize(vec![2, 3]);
+            let mut gen = UuidForTest::new_for_linearize(vec![2, 3]);
             let t = test_helpers::new_temp(100);
             let t2 = test_helpers::new_temp(2);
             let t3 = test_helpers::new_temp(3);
@@ -1045,7 +1045,7 @@ mod tests {
 
         #[test]
         fn potpourri() {
-            let mut gen = GenTemporaryForTest::empty(vec![1, 2, 3, 4]);
+            let mut gen = UuidForTest::empty(vec![1, 2, 3, 4]);
             let l1 = test_helpers::new_label(200);
             let l2 = test_helpers::new_label(201);
             let t = test_helpers::new_label(101);
@@ -1267,7 +1267,7 @@ mod tests {
             let lt = test_helpers::new_label(201);
             let lf = test_helpers::new_label(202);
             let done_label = test_helpers::new_label(300);
-            let mut gen = GenTemporaryForTest::empty(vec![1]);
+            let mut gen = UuidForTest::empty(vec![1]);
             let ff = test_helpers::new_label(1);
             let blocks = vec![
                 Block {

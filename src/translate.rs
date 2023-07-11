@@ -134,7 +134,11 @@ impl Level {
         (
             Rc::new(RefCell::new(Level::Nested {
                 parent: parent.clone(),
-                frame: Rc::new(RefCell::new(T::new(function_label, escapes, gen_temp_label))),
+                frame: Rc::new(RefCell::new(T::new(
+                    function_label,
+                    escapes,
+                    gen_temp_label,
+                ))),
             })),
             function_label,
         )
@@ -250,7 +254,7 @@ pub fn string_cmp<T: Frame>(
 ) -> TrExp {
     if is_equality {
         Ex(T::external_call(
-            "stringEqual",
+            gen.named_label("stringEqual"),
             vec![un_ex(lhs, gen), un_ex(rhs, gen)],
         ))
     } else {
@@ -258,7 +262,7 @@ pub fn string_cmp<T: Frame>(
         Ex(Eseq(
             Move(
                 Temp(r),
-                T::external_call("stringEqual", vec![un_ex(lhs, gen), un_ex(rhs, gen)]),
+                T::external_call(gen.named_label("stringEqual"), vec![un_ex(lhs, gen), un_ex(rhs, gen)]),
             ),
             Binop(Xor, Temp(r), Const(1)),
         ))
@@ -295,11 +299,12 @@ pub fn call_exp<T: Frame>(
         if fn_name.is_none() {
             panic!("impl bug, call_exp has unknown fn_name; did you type check this first?");
         }
-
+        let s = String::from(fn_name.unwrap());
+        let label = gen.named_label(s.as_str());
         return if is_unit_return_type {
-            Nx(Exp(T::external_call(fn_name.unwrap(), augmented_args)))
+            Nx(Exp(T::external_call(label, augmented_args)))
         } else {
-            Ex(T::external_call(fn_name.unwrap(), augmented_args))
+            Ex(T::external_call(label, augmented_args))
         };
     }
 
@@ -376,7 +381,7 @@ pub fn record_exp<T: Frame>(site_irs: Vec<TrExp>, gen: &mut dyn Uuids) -> TrExp 
     instrs.push(Move(
         Temp(r),
         T::external_call(
-            "malloc",
+            gen.named_label("malloc"),
             vec![Const(
                 T::word_size().checked_mul(site_irs.len()).unwrap() as i32
             )],
@@ -428,7 +433,7 @@ pub fn assignment(dst_ir: TrExp, src_ir: TrExp, gen: &mut dyn Uuids) -> TrExp {
 
 pub fn array_exp<T: Frame>(size_ir: TrExp, init_val_ir: TrExp, gen: &mut dyn Uuids) -> TrExp {
     Ex(T::external_call(
-        "initArray",
+        gen.named_label("initArray"),
         vec![un_ex(size_ir, gen), un_ex(init_val_ir, gen)],
     ))
 }
@@ -489,12 +494,7 @@ pub fn for_loop(
     ]))
 }
 
-pub fn while_loop(
-    cond_ir: TrExp,
-    body_ir: TrExp,
-    done: temp::Label,
-    gen: &mut dyn Uuids,
-) -> TrExp {
+pub fn while_loop(cond_ir: TrExp, body_ir: TrExp, done: temp::Label, gen: &mut dyn Uuids) -> TrExp {
     let test = gen.new_label();
     let body = gen.new_label();
 
@@ -509,12 +509,7 @@ pub fn while_loop(
 }
 
 #[inline]
-fn full_conditional(
-    cond_ir: TrExp,
-    then_ir: TrExp,
-    else_ir: TrExp,
-    gen: &mut dyn Uuids,
-) -> TrExp {
+fn full_conditional(cond_ir: TrExp, then_ir: TrExp, else_ir: TrExp, gen: &mut dyn Uuids) -> TrExp {
     fn helper(
         branch_ir: TrExp,
         true_cx: temp::Label,
@@ -692,11 +687,7 @@ pub fn simple_var<T: Frame>(
     }
 }
 
-pub fn record_field<T: Frame>(
-    lhs_var_ir: TrExp,
-    field_pos: usize,
-    gen: &mut dyn Uuids,
-) -> TrExp {
+pub fn record_field<T: Frame>(lhs_var_ir: TrExp, field_pos: usize, gen: &mut dyn Uuids) -> TrExp {
     Ex(Mem(Binop(
         Plus,
         un_ex(lhs_var_ir, gen),
@@ -706,11 +697,7 @@ pub fn record_field<T: Frame>(
 }
 
 const INVALID_ARRAY_ACCESS_EXIT_CODE: i32 = -1;
-pub fn subscript_var<T: Frame>(
-    lhs_ir: TrExp,
-    idx_ir: TrExp,
-    gen: &mut dyn Uuids,
-) -> TrExp {
+pub fn subscript_var<T: Frame>(lhs_ir: TrExp, idx_ir: TrExp, gen: &mut dyn Uuids) -> TrExp {
     // byte offset of idx+1 basically.
     let idx = Binop(
         Plus,
@@ -728,7 +715,7 @@ pub fn subscript_var<T: Frame>(
             Cjump(Lt, idx.clone(), lhs_unexed.clone(), access, bad),
             Label(bad),
             Exp(T::external_call(
-                "exit",
+                gen.named_label("exit"),
                 vec![Const(INVALID_ARRAY_ACCESS_EXIT_CODE)],
             )),
             Label(access),

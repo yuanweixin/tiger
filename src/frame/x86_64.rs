@@ -1,7 +1,7 @@
 use crate::{
     frame::{Access, Frame, Register, Escapes},
     ir,
-    ir::{IrExp, IrStm},
+    ir::{IrExp, IrStm, helpers::*},
     temp,
     temp::{Uuids, Label},
     symbol::Interner,
@@ -18,11 +18,11 @@ pub struct x86_64_Frame {
 const RBP : &str = "rbp";
 
 impl Frame for x86_64_Frame {
-    fn external_call(name: &str, exps: Vec<ir::IrExp>) -> ir::IrExp
+    fn external_call(name: Label, exps: Vec<ir::IrExp>) -> ir::IrExp
     where
         Self: Sized,
     {
-        IrExp::Const(42)
+        Call(IrExp::Name(name), exps)
     }
 
     fn word_size() -> usize
