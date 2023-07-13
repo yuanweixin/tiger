@@ -21,18 +21,6 @@ impl Src {
     }
 }
 
-/// The mapping of abstract registers to a string.
-/// It can be used to represent the output of register allocation (TODO check comment)
-pub trait TempMap {
-    fn to_register_string(&self, t: temp::Temp) -> String;
-}
-
-/// target codegen should implement this to map an instr to actual assembly, given
-/// a TempMap.
-pub trait ToAssembly {
-    fn to_asm<T>(&self, temp_map: &dyn TempMap, instr: Instr<T>) -> String;
-}
-
 pub enum Instr<T> {
     Oper {
         // template for the final assembly generation.

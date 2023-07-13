@@ -3,7 +3,7 @@ pub mod x86_64;
 use crate::{
     ir::{IrExp, IrStm},
     temp::{self, Uuids},
-    temp::{Label, Temp},
+    temp::{Label, Temp}, symtab::SymbolTable,
 };
 
 use std::{cell::RefCell, fmt::Debug, rc::Rc};
@@ -63,7 +63,13 @@ pub trait Frame: Debug {
     fn frame_pointer(gen: &mut dyn Uuids) -> temp::Temp
     where
         Self: Sized;
+
+    fn temp_map(gen: &mut dyn Uuids) -> TempMap where Self: Sized;
 }
+
+
+/// The mapping of "precolored" registers.
+pub type TempMap = SymbolTable<&'static str>;
 
 pub enum Frag {
     Proc {

@@ -57,6 +57,10 @@ pub fn argument_passing_registers(gen: &mut dyn Uuids) -> Vec<temp::Temp> {
 }
 
 impl Frame for x86_64_Frame {
+    fn temp_map(gen: &mut dyn Uuids) -> super::TempMap where Self: Sized {
+        todo!()
+    }
+
     fn external_call(name: Label, exps: Vec<ir::IrExp>) -> ir::IrExp
     where
         Self: Sized,
@@ -93,6 +97,12 @@ impl Frame for x86_64_Frame {
     }
 
     fn proc_entry_exit1(&self, body: IrStm) -> IrStm {
+        // assuming register allocator can spill,
+        // we just need to insert a bunch of Move(t, c) for each of the callee-save
+        // registers c, and t is a fresh temporary. this lets the register allocator
+        // spill if necessary (as pre-colored temporaries are never spilled.
+        // on procedure exit, we will do the reverse and restore (i.e. Move(c, t) where
+        // t is the same t not a fresh register).
         IrStm::Exp(Box::new(IrExp::Const(42)))
     }
 

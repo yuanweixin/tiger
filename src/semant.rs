@@ -1462,6 +1462,10 @@ mod tests {
     }
 
     impl Frame for TestFrame {
+        fn temp_map(gen: &mut dyn Uuids) -> frame::TempMap where Self: Sized {
+            SymbolTable::empty()
+        }
+
         fn external_call(_: Label, _: Vec<crate::ir::IrExp>) -> crate::ir::IrExp
         where
             Self: Sized,
