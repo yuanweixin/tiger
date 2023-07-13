@@ -15,7 +15,44 @@ pub struct x86_64_Frame {
     next_local_offset: i32,
 }
 
-const RBP: &str = "rbp";
+pub const RBP: &str = "rbp";
+
+// this isn't directly accessible as a register but various instructions read/write
+// parts of it. e.g. cmp updates CF, OF, SF, ZF, AF, and PF flags. a subset of jump
+// instructions will act based on this register. Ideally, could track more fine grained
+// bits of the flag, but just tracking the entire register seems more KISS.
+pub const FLAGS: &str = "flags";
+
+// pub const
+pub const RDI: &str = "rdi";
+pub const RSI: &str = "rsi";
+pub const RDX: &str = "rdx";
+pub const RCX: &str = "rcx";
+pub const R8: &str = "r8";
+pub const R9: &str = "r9";
+
+#[inline]
+pub fn flags_register(gen: &mut dyn Uuids) -> temp::Temp {
+    gen.named_temp(FLAGS)
+}
+
+#[inline]
+pub fn named_register(gen: &mut dyn Uuids, name: &'static str) -> temp::Temp
+{
+    gen.named_temp(name)
+}
+
+#[inline]
+pub fn argument_passing_registers(gen: &mut dyn Uuids) -> Vec<temp::Temp> {
+    vec![
+        gen.named_temp(RDI),
+        gen.named_temp(RSI),
+        gen.named_temp(RDX),
+        gen.named_temp(RCX),
+        gen.named_temp(R8),
+        gen.named_temp(R9),
+    ]
+}
 
 impl Frame for x86_64_Frame {
     fn external_call(name: Label, exps: Vec<ir::IrExp>) -> ir::IrExp

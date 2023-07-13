@@ -17,6 +17,7 @@ mod frame;
 mod semant;
 mod escape;
 mod canon;
+mod assem;
 
 use crate::frame::x86_64::x86_64_Frame;
 
