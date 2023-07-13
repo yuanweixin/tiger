@@ -9,16 +9,37 @@ use crate::{
 pub struct Src(Vec<temp::Temp>);
 pub struct Dst(Vec<temp::Temp>);
 
-pub trait TempToString {
-    fn to_string(&self, t: temp::Temp) -> String;
+impl Dst {
+    fn empty() -> Self {
+        Dst(vec![])
+    }
 }
 
+impl Src {
+    fn empty() -> Self {
+        Src(vec![])
+    }
+}
+
+/// The mapping of abstract registers to a string.
+/// It can be used to represent the output of register allocation (TODO check comment)
+pub trait TempMap {
+    fn to_register_string(&self, t: temp::Temp) -> String;
+}
+
+/// target codegen should implement this to map an instr to actual assembly, given
+/// a TempMap.
 pub trait ToAssembly {
-    fn to_asm<T>(&self, temp_map: &dyn TempToString, instr: Instr<T>) -> String;
+    fn to_asm<T>(&self, temp_map: &dyn TempMap, instr: Instr<T>) -> String;
 }
 
 pub enum Instr<T> {
     Oper {
+        // template for the final assembly generation.
+        // target specific implementations are expected to have some custom placeholders
+        // in the template, for the src, dst registers, relevant jump labels. other placeholders
+        // referring to other data can be used in tandem with the aux data.
+        assem: &'static str,
         // basically all the registers that gets "trashed" by the assembly.
         // for example, mul on x86 would affect EAX,EDX, so those need to be listed.
         dst: Dst,
@@ -32,12 +53,14 @@ pub enum Instr<T> {
         // that can become input for generation of the final asm strings. this basically
         // puts the logic of mapping in-memory representation to string into the
         // ToAssembly trait implementation, instead of making it a sort of format
-        aux: T,
+        aux: Option<T>,
     },
     Label {
+        assem: &'static str,
         lab: temp::Label,
     },
     Move {
+        assem: &'static str,
         dst: temp::Temp,
         src: temp::Temp,
     },

@@ -30,6 +30,8 @@ pub const RDX: &str = "rdx";
 pub const RCX: &str = "rcx";
 pub const R8: &str = "r8";
 pub const R9: &str = "r9";
+pub const RSP: &str = "rsp";
+pub const RAX: &str = "rax";
 
 #[inline]
 pub fn flags_register(gen: &mut dyn Uuids) -> temp::Temp {

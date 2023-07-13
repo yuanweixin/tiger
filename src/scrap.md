@@ -221,3 +221,6 @@ explanation of the various abbreviations used in the intel doc
 
 https://inst.eecs.berkeley.edu/~cs164/fa21/resources/Assembly-Reference.html#orgfef68e8
 talks about using lea to load label into a register.
+
+https://stackoverflow.com/questions/8997044/x86-64-linux-3-0-invalid-memory-addresses#:~:text=If%20you%20try%20to%20read%20or%20write%20memory,from%20a%20user%20mode%20application%2C%20you%27ll%20get%20%23PF.
+explains what non-canonical memory address means in x86 context.
