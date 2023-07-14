@@ -16,7 +16,6 @@ struct X86Asm;
 enum AuxData {
     Imm32(i32),
     Label(temp::Label),
-    None,
 }
 
 impl Codegen<AuxData> for X86Asm {
@@ -37,9 +36,9 @@ impl Codegen<AuxData> for X86Asm {
             Jump(e, target_labels) => {
                 let t = Self::munch_exp(*e, result, gen);
                 result.push(Instr::Oper {
-                    assem: "jmp ['J0]",
+                    assem: "jmp ['S0]",
                     dst: Dst::empty(),
-                    src: Src::empty(),
+                    src: Src(vec![t]),
                     jump: target_labels,
                     aux: None,
                 });
@@ -239,10 +238,11 @@ impl Codegen<AuxData> for X86Asm {
 
     /// The entry point for translating into
     fn code_gen(
-        f: Box<dyn Frame>,
+        _: Box<dyn Frame>,
         stm: IrStm,
         instrs: &mut Vec<Instr<AuxData>>,
         gen: &mut dyn Uuids,
     ) {
+        Self::munch_stm(stm, instrs, gen);
     }
 }
