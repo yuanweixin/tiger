@@ -8,7 +8,7 @@ use crate::{
 
 use std::{cell::RefCell, fmt::Debug, rc::Rc};
 
-#[derive(Clone, Debug)]
+#[derive(Eq, PartialEq, Clone, Debug)]
 pub enum Access {
     // FP + offset
     InFrame(i32),

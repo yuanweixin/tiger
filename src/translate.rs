@@ -18,6 +18,12 @@ use crate::{
 };
 use std::{cell::RefCell, rc::Rc};
 
+macro_rules! new_frame {
+    ($x: expr) => {
+        Rc::new(RefCell::new($x))
+    };
+}
+
 #[derive(Debug)]
 pub enum Level {
     Top,
@@ -48,7 +54,7 @@ impl PartialEq for Level {
 #[derive(Clone, Debug)]
 pub struct Access(pub Rc<RefCell<Level>>, pub frame::Access);
 
-#[derive(Debug, Clone)]
+#[derive(Eq, PartialEq, Debug, Clone)]
 pub enum Conditional {
     Truthy,
     Falsy,
@@ -65,7 +71,7 @@ impl Conditional {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Eq, PartialEq, Debug, Clone)]
 pub enum TrExp {
     Ex(Box<IrExp>),
     Nx(Box<IrStm>),
@@ -84,34 +90,30 @@ fn Nx(is: IrStm) -> TrExp {
 }
 
 impl Level {
-    fn static_link(&self, existing_access_expr: IrExp) -> IrExp {
-        // note in our scheme, the static link is the first formal parameter and always escapes
-        //
-        //  general form of translation is below: (Appel p156)
-        // MEM(+Const(x_offset), Mem(+Const(k_n-1), ..., Mem(+Const(k_1), Temp(FP)))
-        //
-        // where
-        //
-        // x_offset = the offset of x in its own frame
-        // k_i = the offset of the static link in the frame.
+    fn current_frame<T: Frame>(gen: &mut dyn Uuids) -> IrExp {
+        Temp(T::frame_pointer(gen))
+    }
+
+    fn parent_frame(&self, base: IrExp) -> IrExp {
         match self {
             Level::Top => {
                 panic!("impl bug: Top level has no static link");
             }
-            Level::Nested { frame, .. } => match frame.borrow().formals()[0] {
-                frame::Access::InReg(..) => {
-                    panic!("impl bug, static link should always be InFrame")
-                }
-                // static link offset 0 in the scheme presented in Appel?
-                // if so, then this would be pointless to add 0 to it.
-                frame::Access::InFrame(static_link_offset) => {
-                    if static_link_offset == 0 {
-                        Mem(existing_access_expr)
-                    } else {
-                        Mem(Binop(Plus, Const(static_link_offset), existing_access_expr))
+            Level::Nested { frame, .. } => {
+                let static_link_param_access = frame.borrow().formals()[0].clone();
+                match static_link_param_access {
+                    frame::Access::InReg(..) => {
+                        panic!("impl bug, static link should always have Access of InFrame")
+                    }
+                    frame::Access::InFrame(static_link_offset) => {
+                        if static_link_offset == 0 {
+                            Mem(base)
+                        } else {
+                            Mem(Binop(Plus, Const(static_link_offset), base))
+                        }
                     }
                 }
-            },
+            }
         }
     }
 
@@ -132,19 +134,15 @@ impl Level {
     pub fn new_level<T: Frame + 'static>(
         parent: Rc<RefCell<Level>>,
         mut escapes: Vec<bool>,
-        gen_temp_label: &mut dyn Uuids,
+        gen: &mut dyn Uuids,
     ) -> (Rc<RefCell<Level>>, temp::Label) {
         // prepend true for the static link
         escapes.insert(0, true);
-        let function_label = gen_temp_label.new_label();
+        let function_label = gen.new_label();
         (
             Level::Nested {
                 parent: parent.clone(),
-                frame: Rc::new(RefCell::new(T::new(
-                    function_label,
-                    escapes,
-                    gen_temp_label,
-                ))),
+                frame: new_frame!(T::new(function_label, escapes, gen,)),
             }
             .into(),
             function_label,
@@ -338,11 +336,10 @@ pub fn call_exp<T: Frame>(
     // parent is equal to the callee's parent.
     let mut p = caller_level;
     // start at the current frame's FP.
-    let mut expr = Temp(T::frame_pointer(gen));
+    let mut expr = Level::current_frame::<T>(gen);
     // keep moving up the call stack lexically until we hit the callee's parent.
     while *p.borrow() != Level::Top && *p.borrow() != *callee_level.borrow().get_parent().borrow() {
-        // get the expression to access the static link
-        expr = p.borrow().static_link(expr);
+        expr = p.borrow().parent_frame(expr);
         let tmp = p.borrow().get_parent();
         p = tmp;
     }
@@ -666,30 +663,30 @@ pub fn conditional(
 }
 
 pub fn simple_var<T: Frame>(
-    access: Access,
-    current_level: Rc<RefCell<Level>>,
+    definition_level_access: Access, // contains the level at which var is defined, as well as the variable's access in the frame
+    use_level: Rc<RefCell<Level>>,   // where the var is being used
     gen: &mut dyn Uuids,
 ) -> TrExp {
     // given the level the var is declared in, our job is to come up with
     // an expression to "travel up" the stack until we get to the nearest
     // stack record of that level.
 
-    let var_declaration_level = access.0;
-    let mut cur_level = current_level.clone();
+    let var_declaration_level = definition_level_access.0;
+    let mut cur_level = use_level.clone();
 
     // start at the static link which is what the frame pointer points to.
-    let mut access_expr = Temp(T::frame_pointer(gen));
+    let mut access_expr = Level::current_frame::<T>(gen);
 
     while *var_declaration_level.borrow() != *cur_level.borrow() {
-        access_expr = cur_level.borrow().static_link(access_expr);
+        access_expr = cur_level.borrow().parent_frame(access_expr);
         let p = cur_level.borrow().get_parent();
         cur_level = p;
     }
 
-    let frame_access = access.1;
+    let frame_access = definition_level_access.1;
     match frame_access {
         frame::Access::InReg(reg) => {
-            if *var_declaration_level.borrow() != *current_level.borrow() {
+            if *var_declaration_level.borrow() != *use_level.borrow() {
                 // note we are comparing the original input current level against
                 // the level where the var being accessed is declared, NOT the one
                 // we have been bashing above.
@@ -760,12 +757,6 @@ pub fn proc_entry_exit(
     }
 }
 
-macro_rules! new_frame {
-    ($x: expr) => {
-        Rc::new(RefCell::new($x))
-    };
-}
-
 impl From<Level> for Rc<RefCell<Level>> {
     fn from(value: Level) -> Self {
         Rc::new(RefCell::new(value))
@@ -776,9 +767,8 @@ impl From<Level> for Rc<RefCell<Level>> {
 mod tests {
     use super::*;
     use crate::{
-        frame::{Escapes, TempMap},
-        ir,
-        symtab::SymbolTable,
+        frame::Escapes,
+        ir::helpers::*,
         temp::{test_helpers, Uuids, UuidsImpl},
     };
 
@@ -792,7 +782,7 @@ mod tests {
     const FP: &str = "fp";
 
     impl Frame for TestFrame {
-        fn temp_map(gen: &mut dyn Uuids) -> frame::TempMap
+        fn temp_map(_: &mut dyn Uuids) -> frame::TempMap
         where
             Self: Sized,
         {
@@ -803,7 +793,7 @@ mod tests {
         where
             Self: Sized,
         {
-            IrExp::Const(42)
+            Const(42)
         }
 
         fn word_size() -> usize
@@ -836,7 +826,6 @@ mod tests {
 
         fn proc_entry_exit1(&self, _: IrStm) -> IrStm {
             todo!()
-            // IrStm::Exp(Box::new(IrExp::Const(42)))
         }
 
         fn proc_entry_exit2()
@@ -854,18 +843,19 @@ mod tests {
         }
 
         fn new(name: temp::Label, formals: Vec<Escapes>, g: &mut dyn Uuids) -> Self {
+            let mut formals_accesses = Vec::with_capacity(formals.len());
+            let mut offset = 0;
+            for esc in formals {
+                if esc {
+                    formals_accesses.push(frame::Access::InFrame(offset));
+                    offset += 4;
+                } else {
+                    formals_accesses.push(frame::Access::InReg(g.new_temp()));
+                }
+            }
             TestFrame {
                 name,
-                formals: formals
-                    .iter()
-                    .map(|esc| {
-                        if *esc {
-                            frame::Access::InReg(g.new_temp())
-                        } else {
-                            todo!()
-                        }
-                    })
-                    .collect(),
+                formals: formals_accesses,
                 local_offset: -4,
             }
         }
@@ -877,7 +867,9 @@ mod tests {
             &self.formals[..]
         }
         fn alloc_local(&mut self, _: frame::Escapes, _: &mut dyn Uuids) -> frame::Access {
-            frame::Access::InFrame(42)
+            let offset = self.local_offset;
+            self.local_offset -= 4;
+            frame::Access::InFrame(offset)
         }
     }
 
@@ -897,8 +889,8 @@ mod tests {
         assert_eq!(level1, level1too);
 
         let level2 = Level::Nested {
-            parent: Rc::new(RefCell::new(Level::Top)),
-            frame: Rc::new(RefCell::new(TestFrame::new(name2, vec![], &mut gen))),
+            parent: Level::Top.into(),
+            frame: new_frame!(TestFrame::new(name2, vec![], &mut gen)),
         };
         assert!(level1 != level2);
         assert!(level1too != level2);
@@ -906,40 +898,106 @@ mod tests {
 
     #[test]
     #[should_panic]
-    fn static_link_on_top_level_craps_out() {
-        Level::Top.static_link(IrExp::Temp(test_helpers::new_temp(0)));
+    fn parent_frame_on_top_level_craps_out() {
+        Level::Top.parent_frame(Temp(test_helpers::new_temp(0)));
     }
 
     #[test]
-    #[should_panic]
-    fn static_link_craps_out_if_in_reg() {
-        let name2 = temp::test_helpers::new_label(200);
-        let escapes = false;
+    fn parent_frame_nested_level_0_offset() {
         let mut gen = UuidsImpl::new();
-        let frame = new_frame!(TestFrame::new(name2, vec![escapes], &mut gen));
-        let l = Level::Nested {
-            parent: Level::Top.into(),
-            frame,
-        };
-        l.static_link(IrExp::Temp(test_helpers::new_temp(1)));
-    }
-
-    #[test] // TODO
-    fn static_link_nested_level_0_offset() {
-        let name2 = temp::test_helpers::new_label(200);
-        let escapes = true;
-        let mut gen = UuidsImpl::new();
-        let frame = new_frame!(TestFrame::new(name2, vec![escapes], &mut gen));
-        let l = Level::Nested {
-            parent: Level::Top.into(),
-            frame,
-        };
+        let (lvl, _) = Level::new_level::<TestFrame>(Level::Top.into(), vec![], &mut gen);
+        let actual = lvl
+            .borrow()
+            .parent_frame(Temp(TestFrame::frame_pointer(&mut gen)));
+        let expected = Mem(Temp(TestFrame::frame_pointer(&mut gen)));
+        assert_eq!(expected, actual);
     }
 
     #[test]
-    fn static_link_nested_level_nonzero_offset() {}
+    fn static_link_nested_level_nonzero_offset() {
+        let name1 = temp::test_helpers::new_label(100);
+        let mut gen = UuidsImpl::new();
+        let mut frame = TestFrame::new(name1, vec![true], &mut gen);
+        frame.formals = vec![frame::Access::InFrame(8)];
+        let lvl = Level::Nested {
+            parent: Level::Top.into(),
+            frame: new_frame!(frame),
+        };
+        let actual = lvl.parent_frame(Temp(TestFrame::frame_pointer(&mut gen)));
+        let expected = Mem(Binop(
+            Plus,
+            Const(8),
+            Temp(TestFrame::frame_pointer(&mut gen)),
+        ));
+        assert_eq!(expected, actual);
+    }
 
-    fn simple_var() {}
+    #[test]
+    fn simple_var_current_level() {
+        let mut gen: UuidsImpl = Uuids::new();
+        let name1 = temp::test_helpers::new_label(100);
+
+        let var_escapes = true;
+        let frame = TestFrame::new(name1, vec![true, var_escapes], &mut gen);
+        let var_access = frame.formals()[1].clone();
+        let def_level: Rc<RefCell<Level>> = Level::Nested {
+            parent: Level::Top.into(),
+            frame: new_frame!(frame),
+        }
+        .into();
+
+        assert_eq!(frame::Access::InFrame(4), var_access);
+
+        let actual = simple_var::<TestFrame>(
+            Access(def_level.clone(), var_access),
+            def_level.clone(),
+            &mut gen,
+        );
+
+        // FP = this frame
+        // at offset 4, so it is [4 + FP]
+        let expected = Ex(Mem(Binop(
+            Plus,
+            Const(4),
+            Temp(TestFrame::frame_pointer(&mut gen)),
+        )));
+        assert_eq!(expected, actual);
+    }
+
+    #[test]
+    fn simple_var_in_parent_level() {
+        let mut gen: UuidsImpl = Uuids::new();
+        let name1 = temp::test_helpers::new_label(100);
+
+        let var_escapes = true;
+        let frame = TestFrame::new(name1, vec![true, var_escapes], &mut gen);
+        let var_access = frame.formals()[1].clone();
+        // rust is fucking verbose and type inference sucks
+        let def_level: Rc<RefCell<Level>> = Level::Nested {
+            parent: Level::Top.into(),
+            frame: new_frame!(frame),
+        }
+        .into();
+
+        let (parent_one, _) = Level::new_level::<TestFrame>(def_level.clone(), vec![], &mut gen);
+        let (use_level, _) = Level::new_level::<TestFrame>(parent_one.clone(), vec![], &mut gen);
+
+        assert_eq!(frame::Access::InFrame(4), var_access);
+
+        let actual =
+            simple_var::<TestFrame>(Access(def_level.clone(), var_access), use_level, &mut gen);
+
+        // FP = this frame
+        // [FP] = parent
+        // [[FP]] = parent parent (what we want)
+        // at offset 4, so it is [4 + [[FP]]]
+        let expected = Ex(Mem(Binop(
+            Plus,
+            Const(4),
+            Mem(Mem(Temp(TestFrame::frame_pointer(&mut gen)))),
+        )));
+        assert_eq!(expected, actual);
+    }
 
     fn call_exp() {}
 }
