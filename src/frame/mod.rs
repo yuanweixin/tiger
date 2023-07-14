@@ -71,6 +71,7 @@ pub trait Frame: Debug {
 /// The mapping of "precolored" registers.
 pub type TempMap = SymbolTable<&'static str>;
 
+#[derive(Debug)]
 pub enum Frag {
     Proc {
         // the output of proc_entry_exit1

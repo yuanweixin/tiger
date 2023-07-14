@@ -19,7 +19,7 @@ mod temp;
 mod translate;
 mod util;
 
-use crate::frame::x86_64::x86_64_Frame;
+use crate::{frame::x86_64::x86_64_Frame, temp::{UuidsImpl, Uuids}};
 
 lrlex_mod!("tiger.l");
 lrpar_mod!("tiger.y");
@@ -60,13 +60,15 @@ fn main() {
         util::exit(util::ReturnCode::SyntaxError);
     }
 
-    let ir =
-        semant::translate::<x86_64_Frame>(input.as_ref().unwrap(), &mut ast_opt.unwrap().unwrap());
+    let mut gen: UuidsImpl = Uuids::new();
 
-    if ir.is_err() {
+    let frags =
+        semant::translate::<x86_64_Frame>(input.as_ref().unwrap(), &mut ast_opt.unwrap().unwrap(), &mut gen);
+
+    if frags.is_err() {
         println!("type checking failed");
         util::exit(util::ReturnCode::TypeError);
     }
 
-    println!("{:#?}", ir.unwrap());
+    println!("frags:\n {:#?}", frags.unwrap());
 }
