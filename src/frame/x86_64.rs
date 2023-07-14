@@ -122,6 +122,7 @@ impl Frame for x86_64_Frame {
 
     fn new(name: Label, formals_escapes: Vec<Escapes>, gen: &mut dyn Uuids) -> Self {
         let mut formals = Vec::with_capacity(formals_escapes.len());
+
         for (i, escape) in formals_escapes.iter().enumerate() {
             if i > 5 || *escape {
                 formals.push(Access::InFrame(42));
@@ -141,7 +142,7 @@ impl Frame for x86_64_Frame {
     }
 
     fn formals(&self) -> &[Access] {
-        &self.formals[1..]
+        &self.formals
     }
 
     fn alloc_local(&mut self, escapes: Escapes, gen: &mut dyn Uuids) -> Access {
