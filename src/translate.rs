@@ -113,7 +113,7 @@ impl Level {
         Rc::new(RefCell::new(Level::Top))
     }
 
-    pub fn alloc_local(myself: Rc<RefCell<Level>>, escape: bool,  gen: &mut dyn Uuids) -> Access {
+    pub fn alloc_local(myself: Rc<RefCell<Level>>, escape: bool, gen: &mut dyn Uuids) -> Access {
         let frame_access = match *myself.borrow_mut() {
             Level::Top => {
                 panic!("impl bug, cannot allocate local in top level");
@@ -262,7 +262,10 @@ pub fn string_cmp<T: Frame>(
         Ex(Eseq(
             Move(
                 Temp(r),
-                T::external_call(gen.named_label("stringEqual"), vec![un_ex(lhs, gen), un_ex(rhs, gen)]),
+                T::external_call(
+                    gen.named_label("stringEqual"),
+                    vec![un_ex(lhs, gen), un_ex(rhs, gen)],
+                ),
             ),
             Binop(Xor, Temp(r), Const(1)),
         ))
@@ -660,18 +663,26 @@ pub fn simple_var<T: Frame>(
     current_level: Rc<RefCell<Level>>,
     gen: &mut dyn Uuids,
 ) -> TrExp {
-    let final_level = access.0;
+    // given the level the var is declared in, our job is to come up with
+    // an expression to "travel up" the stack until we get to the nearest
+    // stack record of that level.
+
+    let var_declaration_level = access.0;
     let cur_level = current_level.clone();
+
+    // start at the static link which is what the frame pointer points to.
     let mut access_expr = Temp(T::frame_pointer(gen));
 
-    while *final_level.borrow() != *cur_level.borrow() {
+
+
+    while *var_declaration_level.borrow() != *cur_level.borrow() {
         access_expr = cur_level.borrow().static_link(access_expr);
     }
 
     let frame_access = access.1;
     match frame_access {
         frame::Access::InReg(reg) => {
-            if *final_level.borrow() != *current_level.borrow() {
+            if *var_declaration_level.borrow() != *current_level.borrow() {
                 // note we are comparing the original input current level against
                 // the level where the var being accessed is declared, NOT the one
                 // we have been bashing above.
@@ -739,5 +750,119 @@ pub fn proc_entry_exit(
                 frame: frame.clone(),
             });
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{frame::{Escapes, TempMap}, ir, symtab::SymbolTable, temp::{Uuids, UuidsImpl}};
+
+    #[derive(Debug)]
+    struct TestFrame {
+        name: temp::Label,
+        formals: Vec<frame::Access>,
+    }
+
+    impl Frame for TestFrame {
+        fn temp_map(gen: &mut dyn Uuids) -> frame::TempMap
+        where
+            Self: Sized,
+        {
+            SymbolTable::empty()
+        }
+
+        fn external_call(_: temp::Label, _: Vec<crate::ir::IrExp>) -> crate::ir::IrExp
+        where
+            Self: Sized,
+        {
+            IrExp::Const(42)
+        }
+
+        fn word_size() -> usize
+        where
+            Self: Sized,
+        {
+            4
+        }
+
+        fn registers<'a>() -> &'a [frame::Register<'a>]
+        where
+            Self: Sized,
+        {
+            &[]
+        }
+
+        fn string(_: temp::Label, _: &str) -> String
+        where
+            Self: Sized,
+        {
+            todo!()
+        }
+
+        fn frame_pointer(_: &mut dyn Uuids) -> temp::Temp
+        where
+            Self: Sized,
+        {
+            temp::test_helpers::new_temp(1)
+        }
+
+        fn proc_entry_exit1(&self, _: IrStm) -> IrStm {
+            IrStm::Exp(Box::new(IrExp::Const(42)))
+        }
+
+        fn proc_entry_exit2()
+        where
+            Self: Sized,
+        {
+            todo!()
+        }
+
+        fn proc_entry_exit3()
+        where
+            Self: Sized,
+        {
+            todo!()
+        }
+
+        fn new(name: temp::Label, formals: Vec<Escapes>, _: &mut dyn Uuids) -> Self {
+            TestFrame {
+                name,
+                formals: formals.iter().map(|_| frame::Access::InFrame(42)).collect()
+            }
+        }
+        fn name(&self) -> temp::Label {
+            self.name
+        }
+
+        fn formals(&self) -> &[frame::Access] {
+            &self.formals[1..]
+        }
+        fn alloc_local(&mut self, _: frame::Escapes, _: &mut dyn Uuids) -> frame::Access {
+            frame::Access::InFrame(42)
+        }
+    }
+
+    #[test]
+    fn test_level_equality() {
+        let name1 = temp::test_helpers::new_label(100);
+        let name2 = temp::test_helpers::new_label(200);
+        let mut gen = UuidsImpl::new();
+        let level1 = Level::Nested {
+            parent: Rc::new(RefCell::new(Level::Top)),
+            frame: Rc::new(RefCell::new(TestFrame::new(name1, vec![], &mut gen)))
+        };
+        let level1too =  Level::Nested {
+            parent: Rc::new(RefCell::new(Level::Top)),
+            frame: Rc::new(RefCell::new(TestFrame::new(name1, vec![], &mut gen)))
+        };
+        assert_eq!(level1, level1too);
+
+        let level2 = Level::Nested {
+            parent: Rc::new(RefCell::new(Level::Top)),
+            frame: Rc::new(RefCell::new(TestFrame::new(name2, vec![], &mut gen)))
+        };
+        assert!(level1 != level2);
+        assert!(level1too != level2);
     }
 }
