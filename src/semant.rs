@@ -1063,11 +1063,11 @@ fn trans_dec<T: Frame + 'static>(
 
             // first pass: add the fun entry
             for fundec in fundecs {
-                let name = &ctx.input[fundec.name.start()..fundec.name.end()];
-                if seen.contains_key(name) {
-                    ctx.flag_error_with_msg (&fundec.pos, &format!("{} is declared more than once in a sequence of mutually recursive functions", name));
+                let fun_name = &ctx.input[fundec.name.start()..fundec.name.end()];
+                if seen.contains_key(fun_name) {
+                    ctx.flag_error_with_msg (&fundec.pos, &format!("{} is declared more than once in a sequence of mutually recursive functions", fun_name));
                 } else {
-                    seen.insert(name, ());
+                    seen.insert(fun_name, ());
                 }
 
                 let ret_ty = if fundec.result.is_none() {
@@ -1107,7 +1107,7 @@ fn trans_dec<T: Frame + 'static>(
                     escapes.push(field.escape);
                 }
                 let (new_level, new_level_label) =
-                    Level::new_level::<T>(level.clone(), escapes, ctx.gen);
+                    Level::new_level::<T>(level.clone(), escapes, ctx.gen, fun_name);
                 let funentry = EnvEntry::FunEntry {
                     level: new_level,
                     label: new_level_label,
@@ -1408,7 +1408,7 @@ pub fn translate<T: Frame + 'static>(
 
     escape::find_escapes(&mut ctx, ast);
 
-    let (main_level, _) = Level::new_level::<T>(Level::outermost(), Vec::new(), ctx.gen);
+    let (main_level, _) = Level::new_level::<T>(Level::outermost(), Vec::new(), ctx.gen, "tiger_main");
     let (_, _) = trans_exp::<T>(&mut ctx, main_level, ast, None);
 
     if ctx.has_error() {
