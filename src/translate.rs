@@ -102,15 +102,21 @@ impl Level {
                 frame::Access::InReg(..) => {
                     panic!("impl bug, static link should always be InFrame")
                 }
+                // static link offset 0 in the scheme presented in Appel?
+                // if so, then this would be pointless to add 0 to it.
                 frame::Access::InFrame(static_link_offset) => {
-                    Mem(Binop(Plus, Const(static_link_offset), existing_access_expr))
+                    if static_link_offset == 0 {
+                        Mem(existing_access_expr)
+                    } else {
+                        Mem(Binop(Plus, Const(static_link_offset), existing_access_expr))
+                    }
                 }
             },
         }
     }
 
     pub fn outermost() -> Rc<RefCell<Self>> {
-        Rc::new(RefCell::new(Level::Top))
+        Level::Top.into()
     }
 
     pub fn alloc_local(myself: Rc<RefCell<Level>>, escape: bool, gen: &mut dyn Uuids) -> Access {
@@ -132,14 +138,15 @@ impl Level {
         escapes.insert(0, true);
         let function_label = gen_temp_label.new_label();
         (
-            Rc::new(RefCell::new(Level::Nested {
+            Level::Nested {
                 parent: parent.clone(),
                 frame: Rc::new(RefCell::new(T::new(
                     function_label,
                     escapes,
                     gen_temp_label,
                 ))),
-            })),
+            }
+            .into(),
             function_label,
         )
     }
@@ -673,8 +680,7 @@ pub fn simple_var<T: Frame>(
     // start at the static link which is what the frame pointer points to.
     let mut access_expr = Temp(T::frame_pointer(gen));
 
-
-
+    // TODO fix me
     while *var_declaration_level.borrow() != *cur_level.borrow() {
         access_expr = cur_level.borrow().static_link(access_expr);
     }
@@ -753,23 +759,43 @@ pub fn proc_entry_exit(
     }
 }
 
+macro_rules! new_frame {
+    ($x: expr) => {
+        Rc::new(RefCell::new($x))
+    };
+}
+
+impl From<Level> for Rc<RefCell<Level>> {
+    fn from(value: Level) -> Self {
+        Rc::new(RefCell::new(value))
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{frame::{Escapes, TempMap}, ir, symtab::SymbolTable, temp::{Uuids, UuidsImpl}};
+    use crate::{
+        frame::{Escapes, TempMap},
+        ir,
+        symtab::SymbolTable,
+        temp::{test_helpers, Uuids, UuidsImpl},
+    };
 
     #[derive(Debug)]
     struct TestFrame {
         name: temp::Label,
         formals: Vec<frame::Access>,
+        local_offset: i32,
     }
+
+    const FP: &str = "fp";
 
     impl Frame for TestFrame {
         fn temp_map(gen: &mut dyn Uuids) -> frame::TempMap
         where
             Self: Sized,
         {
-            SymbolTable::empty()
+            todo!()
         }
 
         fn external_call(_: temp::Label, _: Vec<crate::ir::IrExp>) -> crate::ir::IrExp
@@ -790,7 +816,7 @@ mod tests {
         where
             Self: Sized,
         {
-            &[]
+            &[FP]
         }
 
         fn string(_: temp::Label, _: &str) -> String
@@ -800,15 +826,16 @@ mod tests {
             todo!()
         }
 
-        fn frame_pointer(_: &mut dyn Uuids) -> temp::Temp
+        fn frame_pointer(g: &mut dyn Uuids) -> temp::Temp
         where
             Self: Sized,
         {
-            temp::test_helpers::new_temp(1)
+            g.named_temp(FP)
         }
 
         fn proc_entry_exit1(&self, _: IrStm) -> IrStm {
-            IrStm::Exp(Box::new(IrExp::Const(42)))
+            todo!()
+            // IrStm::Exp(Box::new(IrExp::Const(42)))
         }
 
         fn proc_entry_exit2()
@@ -825,10 +852,20 @@ mod tests {
             todo!()
         }
 
-        fn new(name: temp::Label, formals: Vec<Escapes>, _: &mut dyn Uuids) -> Self {
+        fn new(name: temp::Label, formals: Vec<Escapes>, g: &mut dyn Uuids) -> Self {
             TestFrame {
                 name,
-                formals: formals.iter().map(|_| frame::Access::InFrame(42)).collect()
+                formals: formals
+                    .iter()
+                    .map(|esc| {
+                        if *esc {
+                            frame::Access::InReg(g.new_temp())
+                        } else {
+                            todo!()
+                        }
+                    })
+                    .collect(),
+                local_offset: -4,
             }
         }
         fn name(&self) -> temp::Label {
@@ -836,7 +873,7 @@ mod tests {
         }
 
         fn formals(&self) -> &[frame::Access] {
-            &self.formals[1..]
+            &self.formals[..]
         }
         fn alloc_local(&mut self, _: frame::Escapes, _: &mut dyn Uuids) -> frame::Access {
             frame::Access::InFrame(42)
@@ -849,20 +886,59 @@ mod tests {
         let name2 = temp::test_helpers::new_label(200);
         let mut gen = UuidsImpl::new();
         let level1 = Level::Nested {
-            parent: Rc::new(RefCell::new(Level::Top)),
-            frame: Rc::new(RefCell::new(TestFrame::new(name1, vec![], &mut gen)))
+            parent: Level::Top.into(),
+            frame: new_frame!(TestFrame::new(name1, vec![], &mut gen)),
         };
-        let level1too =  Level::Nested {
-            parent: Rc::new(RefCell::new(Level::Top)),
-            frame: Rc::new(RefCell::new(TestFrame::new(name1, vec![], &mut gen)))
+        let level1too = Level::Nested {
+            parent: Level::Top.into(),
+            frame: new_frame!(TestFrame::new(name1, vec![], &mut gen)),
         };
         assert_eq!(level1, level1too);
 
         let level2 = Level::Nested {
             parent: Rc::new(RefCell::new(Level::Top)),
-            frame: Rc::new(RefCell::new(TestFrame::new(name2, vec![], &mut gen)))
+            frame: Rc::new(RefCell::new(TestFrame::new(name2, vec![], &mut gen))),
         };
         assert!(level1 != level2);
         assert!(level1too != level2);
     }
+
+    #[test]
+    #[should_panic]
+    fn static_link_on_top_level_craps_out() {
+        Level::Top.static_link(IrExp::Temp(test_helpers::new_temp(0)));
+    }
+
+    #[test]
+    #[should_panic]
+    fn static_link_craps_out_if_in_reg() {
+        let name2 = temp::test_helpers::new_label(200);
+        let escapes = false;
+        let mut gen = UuidsImpl::new();
+        let frame = new_frame!(TestFrame::new(name2, vec![escapes], &mut gen));
+        let l = Level::Nested {
+            parent: Level::Top.into(),
+            frame,
+        };
+        l.static_link(IrExp::Temp(test_helpers::new_temp(1)));
+    }
+
+    #[test] // TODO
+    fn static_link_nested_level_0_offset() {
+        let name2 = temp::test_helpers::new_label(200);
+        let escapes = true;
+        let mut gen = UuidsImpl::new();
+        let frame = new_frame!(TestFrame::new(name2, vec![escapes], &mut gen));
+        let l = Level::Nested {
+            parent: Level::Top.into(),
+            frame,
+        };
+    }
+
+    #[test]
+    fn static_link_nested_level_nonzero_offset() {}
+
+    fn simple_var() {}
+
+    fn call_exp() {}
 }
