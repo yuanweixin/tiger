@@ -675,14 +675,15 @@ pub fn simple_var<T: Frame>(
     // stack record of that level.
 
     let var_declaration_level = access.0;
-    let cur_level = current_level.clone();
+    let mut cur_level = current_level.clone();
 
     // start at the static link which is what the frame pointer points to.
     let mut access_expr = Temp(T::frame_pointer(gen));
 
-    // TODO fix me
     while *var_declaration_level.borrow() != *cur_level.borrow() {
         access_expr = cur_level.borrow().static_link(access_expr);
+        let p = cur_level.borrow().get_parent();
+        cur_level = p;
     }
 
     let frame_access = access.1;

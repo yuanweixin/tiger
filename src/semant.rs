@@ -9,7 +9,7 @@ use crate::{
     frame::Frame,
     symbol::Symbol,
     symtab::SymbolTable,
-    temp::{Uuids, UuidsImpl, Label},
+    temp::{Label, Uuids, UuidsImpl},
     translate,
     translate::{Level, TrExp},
 };
@@ -279,10 +279,9 @@ fn trans_exp<T: Frame + 'static>(
             match oper {
                 Oper::PlusOp | Oper::MinusOp | Oper::TimesOp | Oper::DivideOp => {
                     match (lhs_ty, rhs_ty) {
-                        (Type::Int, Type::Int) => (
-                            translate::binop(oper, lhs_ir, rhs_ir, ctx.gen),
-                            Type::Int,
-                        ),
+                        (Type::Int, Type::Int) => {
+                            (translate::binop(oper, lhs_ir, rhs_ir, ctx.gen), Type::Int)
+                        }
                         (Type::Error, _) | (_, Type::Error) => error_type_check_output(),
                         (Type::Int, _) => {
                             ctx.flag_error_with_msg(
@@ -311,10 +310,9 @@ fn trans_exp<T: Frame + 'static>(
                     }
                 }
                 Oper::LtOp | Oper::LeOp | Oper::GtOp | Oper::GeOp => match (lhs_ty, rhs_ty) {
-                    (Type::Int, Type::Int) => (
-                        translate::binop(oper, lhs_ir, rhs_ir, ctx.gen),
-                        Type::Int,
-                    ),
+                    (Type::Int, Type::Int) => {
+                        (translate::binop(oper, lhs_ir, rhs_ir, ctx.gen), Type::Int)
+                    }
                     (Type::Error, _) | (_, Type::Error) => error_type_check_output(),
                     (Type::Int, _) => {
                         ctx.flag_error_with_msg(
@@ -365,10 +363,7 @@ fn trans_exp<T: Frame + 'static>(
                                 Type::Int,
                             )
                         } else {
-                            (
-                                translate::binop(oper, lhs_ir, rhs_ir, ctx.gen),
-                                Type::Int,
-                            )
+                            (translate::binop(oper, lhs_ir, rhs_ir, ctx.gen), Type::Int)
                         }
                     }
                 }
@@ -623,18 +618,12 @@ fn trans_exp<T: Frame + 'static>(
                                 } else if matches!(ty, Type::Error) {
                                     error_type_check_output()
                                 } else {
-                                    (
-                                        translate::assignment(dst_ir, src_ir, ctx.gen),
-                                        Type::Unit,
-                                    )
+                                    (translate::assignment(dst_ir, src_ir, ctx.gen), Type::Unit)
                                 }
                             }
                         }
                     }
-                    _ => (
-                        translate::assignment(dst_ir, src_ir, ctx.gen),
-                        Type::Unit,
-                    ),
+                    _ => (translate::assignment(dst_ir, src_ir, ctx.gen), Type::Unit),
                 }
             }
         }
@@ -707,12 +696,7 @@ fn trans_exp<T: Frame + 'static>(
                 let (body_ir, body_ty) = trans_exp::<T>(ctx, level.clone(), body, while_done_label);
                 match body_ty {
                     Type::Unit => (
-                        translate::while_loop(
-                            cond_ir,
-                            body_ir,
-                            while_done_label.unwrap(),
-                            ctx.gen,
-                        ),
+                        translate::while_loop(cond_ir, body_ir, while_done_label.unwrap(), ctx.gen),
                         Type::Unit,
                     ),
                     Type::Error => error_type_check_output(),
@@ -858,11 +842,7 @@ fn trans_exp<T: Frame + 'static>(
                                     error_type_check_output()
                                 } else {
                                     (
-                                        translate::array_exp::<T>(
-                                            size_ir,
-                                            init_val_ir,
-                                            ctx.gen,
-                                        ),
+                                        translate::array_exp::<T>(size_ir, init_val_ir, ctx.gen),
                                         arr_ty_opt.unwrap().clone(),
                                     )
                                 }
@@ -955,11 +935,7 @@ fn trans_var<T: Frame + 'static>(
                             //  size, so we don't even have to do any
                             // extra work calculating the record size.
                             (
-                                translate::record_field::<T>(
-                                    lhs_var_ir,
-                                    field_offset,
-                                    ctx.gen,
-                                ),
+                                translate::record_field::<T>(lhs_var_ir, field_offset, ctx.gen),
                                 ctx.type_env.look(*s).unwrap().clone(),
                             )
                         }
@@ -987,11 +963,8 @@ fn trans_var<T: Frame + 'static>(
 
                     match idx_ty {
                         Type::Int => {
-                            let subscript_ir = translate::subscript_var::<T>(
-                                lhs_ir,
-                                idx_ir,
-                                ctx.gen,
-                            );
+                            let subscript_ir =
+                                translate::subscript_var::<T>(lhs_ir, idx_ir, ctx.gen);
                             (subscript_ir, ctx.type_env.look(ele_ty).unwrap().clone())
                         }
                         Type::Error => error_type_check_output(),
@@ -1195,7 +1168,12 @@ fn trans_dec<T: Frame + 'static>(
                                 ),
                             );
                         }
-                        translate::proc_entry_exit(level.clone(), fun_body_ir, &mut ctx.frags, ctx.gen);
+                        translate::proc_entry_exit(
+                            level.clone(),
+                            fun_body_ir,
+                            &mut ctx.frags,
+                            ctx.gen,
+                        );
                     }
                 }
                 ctx.varfun_env.end_scope();
@@ -1421,7 +1399,11 @@ fn trans_dec<T: Frame + 'static>(
     }
 }
 
-pub fn translate<T: Frame + 'static>(input: &str, ast: &mut Exp, gen: &mut dyn Uuids) -> Result<Vec<frame::Frag>, ()> {
+pub fn translate<T: Frame + 'static>(
+    input: &str,
+    ast: &mut Exp,
+    gen: &mut dyn Uuids,
+) -> Result<Vec<frame::Frag>, ()> {
     let mut ctx = TypeCheckingContext::new(input, gen);
 
     escape::find_escapes(&mut ctx, ast);
@@ -1443,7 +1425,7 @@ mod tests {
         frame,
         frame::{Escapes, Frame},
         ir::{IrExp, IrStm},
-        temp::{self, Uuids, Label},
+        temp::{self, Label, Uuids},
     };
 
     use lrlex::lrlex_mod;
@@ -1458,18 +1440,22 @@ mod tests {
     struct TestFrame {
         name: Label,
         formals: Vec<frame::Access>,
+        next_offset: i32,
     }
 
     impl Frame for TestFrame {
-        fn temp_map(gen: &mut dyn Uuids) -> frame::TempMap where Self: Sized {
-            SymbolTable::empty()
-        }
-
-        fn external_call(_: Label, _: Vec<crate::ir::IrExp>) -> crate::ir::IrExp
+        fn temp_map(gen: &mut dyn Uuids) -> frame::TempMap
         where
             Self: Sized,
         {
-            IrExp::Const(42)
+            todo!()
+        }
+
+        fn external_call(name: Label, exps: Vec<crate::ir::IrExp>) -> crate::ir::IrExp
+        where
+            Self: Sized,
+        {
+            IrExp::Call(Box::new(IrExp::Name(name)), exps)
         }
 
         fn word_size() -> usize
@@ -1483,7 +1469,7 @@ mod tests {
         where
             Self: Sized,
         {
-            &[]
+            todo!()
         }
 
         fn string(_: temp::Label, _: &str) -> String
@@ -1500,9 +1486,9 @@ mod tests {
             temp::test_helpers::new_temp(1)
         }
 
-        fn proc_entry_exit1(&self, _: IrStm) -> IrStm
-        {
-            IrStm::Exp(Box::new(IrExp::Const(42)))
+        fn proc_entry_exit1(&self, x: IrStm) -> IrStm {
+            // just don't add stuff to the body for test purpose.
+            x
         }
 
         fn proc_entry_exit2()
@@ -1520,19 +1506,11 @@ mod tests {
         }
 
         fn new(_: Label, formals: Vec<Escapes>, gen: &mut dyn Uuids) -> Self {
-            let mut gen : UuidsImpl = Uuids::new();
-
-            let mut frame_formals = Vec::with_capacity(1 + formals.len());
-            // dummy values.
-            // this first one is for the static link.
-            frame_formals.push(frame::Access::InFrame(42));
-
-            for _ in formals {
-                frame_formals.push(frame::Access::InFrame(42));
-            }
+            let frame_formals = formals.iter().map(|_| frame::Access::InFrame(42)).collect();
             TestFrame {
                 name: gen.new_label(),
                 formals: frame_formals,
+                next_offset: -4,
             }
         }
         fn name(&self) -> Label {
@@ -1540,10 +1518,12 @@ mod tests {
         }
 
         fn formals(&self) -> &[frame::Access] {
-            &self.formals[1..]
+            &self.formals
         }
         fn alloc_local(&mut self, _: Escapes, _: &mut dyn Uuids) -> frame::Access {
-            frame::Access::InFrame(42)
+            let n = self.next_offset;
+            self.next_offset -= TestFrame::word_size() as i32;
+            frame::Access::InFrame(n)
         }
     }
 
@@ -1557,9 +1537,9 @@ mod tests {
 
         let mut ast = res.unwrap().unwrap();
 
-        let mut gen : UuidsImpl = Uuids::new();
+        let mut gen: UuidsImpl = Uuids::new();
 
-        let result = panic::catch_unwind(move|| {
+        let result = panic::catch_unwind(move || {
             let res = super::translate::<TestFrame>(input, &mut ast, &mut gen);
             match (is_good, res) {
                 (false, Ok(..)) => {
@@ -1579,7 +1559,10 @@ mod tests {
             ast
         });
         if !result.is_ok() {
-            println!("`translate` panicked! error was {:#?}", result.as_ref().unwrap_err());
+            println!(
+                "`translate` panicked! error was {:#?}",
+                result.as_ref().unwrap_err()
+            );
             println!("`translate` panicked! input was {}", input);
             assert!(false);
         }
@@ -2155,4 +2138,3 @@ mod tests {
         }
     }
 }
-
