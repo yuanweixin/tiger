@@ -55,10 +55,26 @@ pub struct TypeCheckingContext<'a> {
     frags: Vec<frame::Frag>,
 }
 
+macro_rules! top_level_fn {
+    ($name:expr, $frame:ident, $res:expr, $formals:expr, $gen:expr, $result_type:expr) => {
+        let escapes = $formals.iter().map(|_| false ).collect();
+        let (level, label) = Level::new_level::<$frame>(Level::outermost(), escapes, $gen, $name);
+        $res.enter(
+            $gen.intern($name),
+            EnvEntry::FunEntry {
+                level,
+                formals: Rc::new($formals),
+                result: $result_type,
+                label
+            },
+        );
+    }
+}
+
 impl<'a> TypeCheckingContext<'a> {
-    fn new(input: &'a str, gen: &'a mut dyn Uuids) -> Self {
+    fn new<T: Frame + 'static>(input: &'a str, gen: &'a mut dyn Uuids) -> Self {
         let type_env = Self::base_env_type_env(gen);
-        let varfun_env = Self::base_varfun_env(gen);
+        let varfun_env = TypeCheckingContext::base_varfun_env::<T>(gen);
         Self {
             next_array_record_ord: NonZeroUsize::MIN,
             type_env,
@@ -87,99 +103,19 @@ impl<'a> TypeCheckingContext<'a> {
         res
     }
 
-    fn base_varfun_env(gen: &mut dyn Uuids) -> SymbolTable<EnvEntry> {
+    fn base_varfun_env<T: Frame + 'static>(gen: &mut dyn Uuids) -> SymbolTable<EnvEntry> {
         let mut res = SymbolTable::empty();
         res.begin_scope();
-        res.enter(
-            gen.intern("print"),
-            EnvEntry::FunEntry {
-                level: Level::outermost(),
-                formals: Rc::new(vec![Type::String]),
-                result: Type::Unit,
-                label: gen.new_label(),
-            },
-        );
-        res.enter(
-            gen.intern("flush"),
-            EnvEntry::FunEntry {
-                level: Level::outermost(),
-                formals: Rc::new(vec![]),
-                result: Type::Unit,
-                label: gen.new_label(),
-            },
-        );
-        res.enter(
-            gen.intern("getchar"),
-            EnvEntry::FunEntry {
-                level: Level::outermost(),
-                formals: Rc::new(vec![]),
-                result: Type::String,
-                label: gen.new_label(),
-            },
-        );
-        res.enter(
-            gen.intern("ord"),
-            EnvEntry::FunEntry {
-                level: Level::outermost(),
-                formals: Rc::new(vec![Type::String]),
-                result: Type::Int,
-                label: gen.new_label(),
-            },
-        );
-        res.enter(
-            gen.intern("chr"),
-            EnvEntry::FunEntry {
-                level: Level::outermost(),
-                formals: Rc::new(vec![Type::Int]),
-                result: Type::String,
-                label: gen.new_label(),
-            },
-        );
-        res.enter(
-            gen.intern("size"),
-            EnvEntry::FunEntry {
-                level: Level::outermost(),
-                formals: Rc::new(vec![Type::String]),
-                result: Type::Int,
-                label: gen.new_label(),
-            },
-        );
-        res.enter(
-            gen.intern("substring"),
-            EnvEntry::FunEntry {
-                level: Level::outermost(),
-                formals: Rc::new(vec![Type::String, Type::Int, Type::Int]),
-                result: Type::String,
-                label: gen.new_label(),
-            },
-        );
-        res.enter(
-            gen.intern("concat"),
-            EnvEntry::FunEntry {
-                level: Level::outermost(),
-                formals: Rc::new(vec![Type::String, Type::String]),
-                result: Type::String,
-                label: gen.new_label(),
-            },
-        );
-        res.enter(
-            gen.intern("not"),
-            EnvEntry::FunEntry {
-                level: Level::outermost(),
-                formals: Rc::new(vec![Type::Int]),
-                result: Type::Int,
-                label: gen.new_label(),
-            },
-        );
-        res.enter(
-            gen.intern("exit"),
-            EnvEntry::FunEntry {
-                level: Level::outermost(),
-                formals: Rc::new(vec![Type::Int]),
-                result: Type::Unit,
-                label: gen.new_label(),
-            },
-        );
+        top_level_fn!("print", T, res, vec![Type::String], gen, Type::Unit);
+        top_level_fn!("flush", T, res, Vec::<Type>::new(), gen, Type::Unit);
+        top_level_fn!("getchar", T, res, Vec::<Type>::new(), gen, Type::String);
+        top_level_fn!("ord", T, res, vec![Type::String], gen, Type::Int);
+        top_level_fn!("chr", T, res, vec![Type::Int], gen, Type::String);
+        top_level_fn!("size", T, res, vec![Type::String], gen, Type::Int);
+        top_level_fn!("substring", T, res, vec![Type::String, Type::Int, Type::Int], gen, Type::String);
+        top_level_fn!("concat", T, res, vec![Type::String, Type::String], gen, Type::String);
+        top_level_fn!("not", T, res, vec![Type::Int], gen, Type::Int);
+        top_level_fn!("exit", T, res, vec![Type::Int], gen, Type::Unit);
         res
     }
 
@@ -1404,7 +1340,7 @@ pub fn translate<T: Frame + 'static>(
     ast: &mut Exp,
     gen: &mut dyn Uuids,
 ) -> Result<Vec<frame::Frag>, ()> {
-    let mut ctx = TypeCheckingContext::new(input, gen);
+    let mut ctx = TypeCheckingContext::new::<T>(input, gen);
 
     escape::find_escapes(&mut ctx, ast);
 

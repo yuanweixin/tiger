@@ -24,14 +24,17 @@ macro_rules! new_frame {
     };
 }
 
+type LevelRef = Rc<RefCell<Level>>;
+type FrameRef = Rc<RefCell<dyn Frame>>;
+
 #[derive(Debug)]
 pub enum Level {
     Top,
     Nested {
         // use Rc because the Level objects form a dag where the child levels point back at the parent levels.
         // this whole mechanism just to be able to mutate some shit is fucking crazy.
-        parent: Rc<RefCell<Level>>,
-        frame: Rc<RefCell<dyn Frame>>,
+        parent: LevelRef,
+        frame: FrameRef,
     },
 }
 
@@ -52,7 +55,7 @@ impl PartialEq for Level {
 }
 
 #[derive(Clone, Debug)]
-pub struct Access(pub Rc<RefCell<Level>>, pub frame::Access);
+pub struct Access(pub LevelRef, pub frame::Access);
 
 #[derive(Eq, PartialEq, Debug, Clone)]
 pub enum Conditional {
@@ -121,7 +124,7 @@ impl Level {
         Level::Top.into()
     }
 
-    pub fn alloc_local(myself: Rc<RefCell<Level>>, escape: bool, gen: &mut dyn Uuids) -> Access {
+    pub fn alloc_local(myself: LevelRef, escape: bool, gen: &mut dyn Uuids) -> Access {
         let frame_access = match *myself.borrow_mut() {
             Level::Top => {
                 panic!("impl bug, cannot allocate local in top level");
@@ -132,11 +135,11 @@ impl Level {
     }
 
     pub fn new_level<T: Frame + 'static>(
-        parent: Rc<RefCell<Level>>,
+        parent: LevelRef,
         mut escapes: Vec<bool>,
         gen: &mut dyn Uuids,
         fun_name: &str,
-    ) -> (Rc<RefCell<Level>>, temp::Label) {
+    ) -> (LevelRef, temp::Label) {
         // prepend true for the static link
         escapes.insert(0, true);
         let function_label = gen.named_label(fun_name);
@@ -150,7 +153,7 @@ impl Level {
         )
     }
 
-    fn get_parent(&self) -> Rc<RefCell<Level>> {
+    fn get_parent(&self) -> LevelRef {
         match self {
             Level::Top => {
                 panic!("impl bug: unable to get the parent level of the Top level!");
@@ -280,9 +283,9 @@ pub fn string_cmp<T: Frame>(
 
 pub fn call_exp<T: Frame>(
     func: temp::Label,
-    caller_level: Rc<RefCell<Level>>,
+    caller_level: LevelRef,
     args: Vec<TrExp>,
-    callee_level: Rc<RefCell<Level>>,
+    callee_level: LevelRef,
     gen: &mut dyn Uuids,
     is_unit_return_type: bool,
 ) -> TrExp {
@@ -298,7 +301,7 @@ pub fn call_exp<T: Frame>(
     //    keep going up b until get to frame before a's ancestor, building up the static link expression.
 
     let mut augmented_args = Vec::new();
-    if *callee_level.borrow() == Level::Top {
+    if *callee_level.borrow().get_parent().borrow() == Level::Top {
         // happens iff calling one of the built-in procs.
         // no static link for them because they don't need them!
         for arg in args {
@@ -315,7 +318,11 @@ pub fn call_exp<T: Frame>(
     // call stack lexically until we hit the callee's parent.
     if *callee_level.borrow().get_parent().borrow() == *caller_level.borrow() {
         // use the parent's frame (value of frame pointer) as static link.
-        augmented_args.push(Temp(T::frame_pointer(gen)));
+        augmented_args.push(
+            callee_level
+                .borrow()
+                .parent_frame(Temp(T::frame_pointer(gen))),
+        );
         for arg in args {
             augmented_args.push(un_ex(arg, gen));
         }
@@ -333,7 +340,8 @@ pub fn call_exp<T: Frame>(
     // start at the current frame's FP.
     let mut expr = Level::current_frame::<T>(gen);
     // keep moving up the call stack lexically until we hit the callee's parent.
-    while *p.borrow() != Level::Top && *p.borrow() != *callee_level.borrow().get_parent().borrow() {
+    while *p.borrow() != Level::Top &&
+            *p.borrow() != *callee_level.borrow().get_parent().borrow() {
         expr = p.borrow().parent_frame(expr);
         let tmp = p.borrow().get_parent();
         p = tmp;
@@ -659,7 +667,7 @@ pub fn conditional(
 
 pub fn simple_var<T: Frame>(
     definition_level_access: Access, // contains the level at which var is defined, as well as the variable's access in the frame
-    use_level: Rc<RefCell<Level>>,   // where the var is being used
+    use_level: LevelRef,             // where the var is being used
     gen: &mut dyn Uuids,
 ) -> TrExp {
     // given the level the var is declared in, our job is to come up with
@@ -735,7 +743,7 @@ pub fn subscript_var<T: Frame>(lhs_ir: TrExp, idx_ir: TrExp, gen: &mut dyn Uuids
 }
 
 pub fn proc_entry_exit(
-    level: Rc<RefCell<Level>>,
+    level: LevelRef,
     body: TrExp,
     frags: &mut Vec<frame::Frag>,
     gen: &mut dyn Uuids,
@@ -752,7 +760,7 @@ pub fn proc_entry_exit(
     }
 }
 
-impl From<Level> for Rc<RefCell<Level>> {
+impl From<Level> for LevelRef {
     fn from(value: Level) -> Self {
         Rc::new(RefCell::new(value))
     }
@@ -784,11 +792,11 @@ mod tests {
             todo!()
         }
 
-        fn external_call(_: temp::Label, _: Vec<crate::ir::IrExp>) -> crate::ir::IrExp
+        fn external_call(func: temp::Label, args: Vec<crate::ir::IrExp>) -> crate::ir::IrExp
         where
             Self: Sized,
         {
-            Const(42)
+            Call(Name(func), args)
         }
 
         fn word_size() -> usize
@@ -889,6 +897,8 @@ mod tests {
         };
         assert!(level1 != level2);
         assert!(level1too != level2);
+
+        assert_eq!(Level::Top, Level::Top);
     }
 
     #[test]
@@ -900,7 +910,8 @@ mod tests {
     #[test]
     fn parent_frame_nested_level_0_offset() {
         let mut gen = UuidsImpl::new();
-        let (lvl, _) = Level::new_level::<TestFrame>(Level::Top.into(), vec![], &mut gen, "somefunc");
+        let (lvl, _) =
+            Level::new_level::<TestFrame>(Level::Top.into(), vec![], &mut gen, "somefunc");
         let actual = lvl
             .borrow()
             .parent_frame(Temp(TestFrame::frame_pointer(&mut gen)));
@@ -935,7 +946,7 @@ mod tests {
         let var_escapes = true;
         let frame = TestFrame::new(name1, vec![true, var_escapes], &mut gen);
         let var_access = frame.formals()[1].clone();
-        let def_level: Rc<RefCell<Level>> = Level::Nested {
+        let def_level: LevelRef = Level::Nested {
             parent: Level::Top.into(),
             frame: new_frame!(frame),
         }
@@ -968,14 +979,16 @@ mod tests {
         let frame = TestFrame::new(name1, vec![true, var_escapes], &mut gen);
         let var_access = frame.formals()[1].clone();
         // rust is fucking verbose and type inference sucks
-        let def_level: Rc<RefCell<Level>> = Level::Nested {
+        let def_level: LevelRef = Level::Nested {
             parent: Level::Top.into(),
             frame: new_frame!(frame),
         }
         .into();
 
-        let (parent_one, _) = Level::new_level::<TestFrame>(def_level.clone(), vec![], &mut gen, "somefunc2");
-        let (use_level, _) = Level::new_level::<TestFrame>(parent_one.clone(), vec![], &mut gen, "somefunc1");
+        let (parent_one, _) =
+            Level::new_level::<TestFrame>(def_level.clone(), vec![], &mut gen, "somefunc2");
+        let (use_level, _) =
+            Level::new_level::<TestFrame>(parent_one.clone(), vec![], &mut gen, "somefunc1");
 
         assert_eq!(frame::Access::InFrame(4), var_access);
 
@@ -998,11 +1011,176 @@ mod tests {
     fn call_exp_top_level() {
         let mut gen: UuidsImpl = Uuids::new();
         let is_unit_return_type = true;
-        let args = vec![Const(0), Const(1)];
-        // call_exp(func, caller_level, args, callee_level, &mut gen, is_unit_return_type);
+        let func = gen.named_label("somefun");
+        let args = vec![Ex(Const(0)), Ex(Const(1))];
+
+        let caller_level: LevelRef = Level::Top.into();
+        let (callee_level, _) = Level::new_level::<TestFrame>(
+            caller_level.clone(),
+            vec![false, false],
+            &mut gen,
+            "somefun",
+        );
+
+        let actual = call_exp::<TestFrame>(
+            func,
+            caller_level,
+            args,
+            callee_level,
+            &mut gen,
+            is_unit_return_type,
+        );
+        let expected = Nx(Exp(Call(Name(func), vec![Const(0), Const(1)])));
+        assert_eq!(expected, actual);
     }
-    fn call_exp_self_call() {}
-    fn call_exp_parent_calls_child() {}
-    fn call_exp_callee_is_own_ancestor() {}
-    fn call_exp_callee_caller_common_ancestor() {}
+    #[test]
+    fn call_exp_parent_calls_child() {
+        let mut gen: UuidsImpl = Uuids::new();
+        let is_unit_return_type = true;
+        let args = vec![Ex(Const(0)), Ex(Const(1))];
+
+        let (caller_level, _) =
+            Level::new_level::<TestFrame>(Level::Top.into(), vec![], &mut gen, "test_parent");
+        let (callee_level, func) = Level::new_level::<TestFrame>(
+            caller_level.clone(),
+            vec![false, false],
+            &mut gen,
+            "child",
+        );
+
+        let actual = call_exp::<TestFrame>(
+            func,
+            caller_level,
+            args,
+            callee_level,
+            &mut gen,
+            is_unit_return_type,
+        );
+        // being called by your parent, so the static link to your parent should be first argument.
+        let expected = Nx(Exp(Call(
+            Name(func),
+            vec![
+                Mem(Temp(TestFrame::frame_pointer(&mut gen))),
+                Const(0),
+                Const(1),
+            ],
+        )));
+        assert_eq!(expected, actual);
+    }
+
+    #[test]
+    fn call_exp_self_call() {
+        let mut gen: UuidsImpl = Uuids::new();
+        let is_unit_return_type = true;
+        let args = vec![Ex(Const(0)), Ex(Const(1))];
+
+        let (parent_level, _) =
+            Level::new_level::<TestFrame>(Level::Top.into(), vec![], &mut gen, "test_parent");
+        let (callee_level, func) = Level::new_level::<TestFrame>(
+            parent_level.clone(),
+            vec![false, false],
+            &mut gen,
+            "child",
+        );
+
+        let actual = call_exp::<TestFrame>(
+            func,
+            callee_level.clone(),
+            args,
+            callee_level,
+            &mut gen,
+            is_unit_return_type,
+        );
+        // being called by yourself, so the static link to parent should be first argument.
+        let expected = Nx(Exp(Call(
+            Name(func),
+            vec![
+                Mem(Temp(TestFrame::frame_pointer(&mut gen))),
+                Const(0),
+                Const(1),
+            ],
+        )));
+        assert_eq!(expected, actual);
+    }
+
+    #[test]
+    fn call_exp_callee_is_own_ancestor() {
+        let mut gen: UuidsImpl = Uuids::new();
+        let is_unit_return_type = true;
+        let args = vec![Ex(Const(0)), Ex(Const(1))];
+
+        let (parent_parent, _) =
+            Level::new_level::<TestFrame>(Level::Top.into(), vec![], &mut gen, "main");
+        let (parent_level, _) =
+            Level::new_level::<TestFrame>(parent_parent, vec![], &mut gen, "f");
+        let (callee_level, func) = Level::new_level::<TestFrame>(
+            parent_level.clone(),
+            vec![false, false],
+            &mut gen,
+            "g",
+        );
+
+        let actual = call_exp::<TestFrame>(
+            func,
+            callee_level,
+            args,
+            parent_level,
+            &mut gen,
+            is_unit_return_type,
+        );
+        let expected = Nx(Exp(Call(
+            Name(func),
+            vec![
+                // here, g calls f, but f is actually g's parent.
+                // so we actually use static link to f's parent, which in this case is 2 levels up.
+                Mem(Mem(Temp(TestFrame::frame_pointer(&mut gen)))),
+                Const(0),
+                Const(1),
+            ],
+        )));
+        assert_eq!(expected, actual);
+    }
+    #[test]
+    fn call_exp_callee_caller_common_ancestor() {
+        let mut gen: UuidsImpl = Uuids::new();
+        let is_unit_return_type = true;
+        let args = vec![Ex(Const(0)), Ex(Const(1))];
+
+        let (common_parent, _) =
+            Level::new_level::<TestFrame>(Level::Top.into(), vec![], &mut gen, "main");
+        let (peer_a, _) =
+            Level::new_level::<TestFrame>(common_parent.clone(), vec![], &mut gen, "a");
+        let (peer_b, func) = Level::new_level::<TestFrame>(
+            common_parent.clone(),
+            vec![false, false],
+            &mut gen,
+            "b",
+        );
+        // c will call a
+        let (c_inside_b, _) = Level::new_level::<TestFrame>(
+            peer_b.clone(),
+            vec![],
+            &mut gen,
+            "c",
+        );
+
+        let actual = call_exp::<TestFrame>(
+            func,
+            c_inside_b,
+            args,
+            peer_a,
+            &mut gen,
+            is_unit_return_type,
+        );
+        let expected = Nx(Exp(Call(
+            Name(func),
+            vec![
+                // c -> b -> main (2 levels)
+                Mem(Mem(Temp(TestFrame::frame_pointer(&mut gen)))),
+                Const(0),
+                Const(1),
+            ],
+        )));
+        assert_eq!(expected, actual);
+    }
 }
