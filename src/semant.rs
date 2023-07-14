@@ -2151,29 +2151,8 @@ mod tests {
             },
             _ => {
                 panic!("Unexpected AST structure for this program; ast={:#?}", ast);
-                // test "escape vaGood source
             }
         }
     }
 }
 
-// test "for lo, hi does not affect escape of for loop var":
-//     let source = """
-//     let
-//         var i:= 1
-//         function x() =
-//             for i := let function j() = i:= 1 in 1 end to let function j() = i:= 1 in 100 end
-//             do
-//                 ()
-//     in
-//     end
-//     """
-//     let astOpt = parseString(source)
-//     doAssert astOpt.isSome
-//     let ast = astOpt.get
-//     check ast.decs[0].escape == false # outer i
-//     check ast.decs[1].fundecs[0].body.escape == false # for loop i
-//     ast.findEscape
-//     check ast.decs[0].escape == true # outer i
-//     check ast.decs[1].fundecs[0].body.escape == false # for loop i
-//     testInputIsGood source
