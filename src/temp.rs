@@ -67,7 +67,7 @@ impl Display for Temp {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Temp::Named(sym) => write!(f, "nt_sym_{}", sym.to_usize()),
-            Temp::Unnamed(id) => write!(f, "ut_{}", id)
+            Temp::Unnamed(id) => write!(f, "{}", id)
         }
     }
 }

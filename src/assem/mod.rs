@@ -6,6 +6,7 @@ use crate::{
     temp::{self, Uuids},
 };
 
+use std::iter::Peekable;
 use std::str::FromStr;
 
 #[derive(Debug)]
@@ -77,7 +78,56 @@ pub trait Codegen {
 }
 
 impl Instr {
-    pub fn fmt(&self, tm: temp::TempMap, relaxed: bool, gen: &mut dyn Uuids) -> String {
+    pub fn format(&self, tm: temp::TempMap, relaxed: bool, gen: &mut dyn Uuids) -> String {
+        fn consume_control_char(
+            iter: &mut impl Iterator<Item = (usize, char)>,
+            assem: &str,
+        ) -> char {
+            let kind = iter.next();
+            if kind.is_none() {
+                panic!("impl bug: missing control character in {}", assem);
+            }
+            kind.unwrap().1
+        }
+
+        fn consume_index(
+            tmp: &mut String,
+            iter: &mut Peekable<impl Iterator<Item = (usize, char)>>,
+            assem: &str,
+        ) -> usize {
+            tmp.clear();
+            while let Some((_, d)) = iter.peek() {
+                if d.is_numeric() {
+                    tmp.push(*d);
+                    iter.next(); // consume
+                } else {
+                    break;
+                }
+            }
+
+            match usize::from_str(tmp.as_str()) {
+                Ok(template_arg_idx) => template_arg_idx,
+                Err(..) => {
+                    panic!("impl bug: invalid asm template string {}", assem)
+                }
+            }
+        }
+
+        fn add_temp_string(t: temp::Temp, tm: &temp::TempMap, relaxed: bool, res: &mut String) {
+            if let Some(s) = tm.get(&t) {
+                res.push_str(s)
+            } else {
+                if relaxed {
+                    res.push_str(t.to_string().as_str())
+                } else {
+                    panic!(
+                        "impl bug: unable to find a register assignment for temp {}",
+                        t.to_string()
+                    );
+                }
+            }
+        }
+
         let mut res = String::new();
 
         match self {
@@ -93,39 +143,18 @@ impl Instr {
                     match c {
                         '\'' => {
                             iter.next(); // consume the '
-                            let kind = iter.next();
-                            if kind.is_none() {
-                                panic!("impl bug: invalid asm template string {}", assem);
-                            }
-                            tmp.clear();
-                            while let Some((_, d)) = iter.peek() {
-                                tmp.push(*d);
-                                iter.next(); // consume
-                            }
+                                         // todo seek kind
+                            let kind_char = consume_control_char(&mut iter, assem);
+                            let template_arg_idx = consume_index(&mut tmp, &mut iter, assem);
 
-                            let template_arg_idx = match usize::from_str(tmp.as_str()) {
-                                Ok(template_arg_idx) => template_arg_idx,
-                                Err(..) => {
-                                    panic!("impl bug: invalid asm template string {}", assem)
-                                }
-                            };
-
-                            let (_, kind_char) = kind.unwrap();
                             match kind_char {
                                 'S' | 's' => {
                                     if template_arg_idx >= src.0.len() {
                                         panic!("impl bug: invalid index {} in asm template string referencing src'{}'", template_arg_idx, assem);
                                     }
                                     let t = src.0[template_arg_idx];
-                                    if let Some(s) = tm.get(&t) {
-                                        res.push_str(s);
-                                    } else {
-                                        if relaxed {
-                                            res.push_str(t.to_string().as_str());
-                                        } else {
-                                            panic!("impl bug: unable to find a register assignment for temp {}", t.to_string());
-                                        }
-                                    }
+
+                                    add_temp_string(t, &tm, relaxed, &mut res);
                                 }
                                 'J' | 'j' => {
                                     if template_arg_idx >= jump.len() {
@@ -134,7 +163,7 @@ impl Instr {
                                     let t = jump[template_arg_idx];
                                     match t {
                                         temp::Label::Unnamed(id) => {
-                                            res.push_str(format!(".L{}", id).as_str());
+                                            res.push_str(format!("{}", id).as_str());
                                         }
                                         temp::Label::Named(sym) => {
                                             if let Some(s) = gen.resolve(&sym) {
@@ -150,15 +179,7 @@ impl Instr {
                                         panic!("impl bug: invalid index {} in asm template string referencing dst'{}'", template_arg_idx, assem);
                                     }
                                     let t = dst.0[template_arg_idx];
-                                    if let Some(s) = tm.get(&t) {
-                                        res.push_str(s);
-                                    } else {
-                                        if relaxed {
-                                            res.push_str(t.to_string().as_str());
-                                        } else {
-                                            panic!("impl bug: unable to find a register assignment for temp {}", t.to_string());
-                                        }
-                                    }
+                                    add_temp_string(t, &tm, relaxed, &mut res);
                                 }
                                 x => panic!(
                                     "impl bug: invalid control char {} in asm template {}",
@@ -216,26 +237,10 @@ impl Instr {
                             let (_, kind_char) = kind.unwrap();
                             match kind_char {
                                 'S' | 's' => {
-                                    if let Some(s) = tm.get(src) {
-                                        res.push_str(s);
-                                    } else {
-                                        if relaxed {
-                                            res.push_str(src.to_string().as_str());
-                                        } else {
-                                            panic!("impl bug: unable to find a register assignment for temp {}", src.to_string());
-                                        }
-                                    }
+                                    add_temp_string(*src, &tm, relaxed, &mut res);
                                 }
                                 'D' | 'd' => {
-                                    if let Some(s) = tm.get(dst) {
-                                        res.push_str(s);
-                                    } else {
-                                        if relaxed {
-                                            res.push_str(dst.to_string().as_str());
-                                        } else {
-                                            panic!("impl bug: unable to find a register assignment for temp {}", dst.to_string());
-                                        }
-                                    }
+                                    add_temp_string(*dst, &tm, relaxed, &mut res);
                                 }
                                 x => panic!(
                                     "impl bug: invalid control char {} in asm template {}",
@@ -252,5 +257,261 @@ impl Instr {
             }
         }
         res
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::temp::UuidsImpl;
+
+    use super::*;
+
+    #[test]
+    fn format_move_relaxed() {
+        let dst = temp::test_helpers::new_unnamed_temp(1);
+        let src = temp::test_helpers::new_unnamed_temp(2);
+        let i = Instr::Move {
+            assem: "mov t'D, t'S",
+            dst,
+            src,
+        };
+        let tm = temp::TempMap::new();
+        let relaxed = true;
+        let mut gen: UuidsImpl = Uuids::new();
+        let actual = i.format(tm, relaxed, &mut gen);
+        let expected = "mov t1, t2";
+        assert_eq!(expected, actual);
+    }
+
+    #[test]
+    #[should_panic]
+    fn format_move_strict() {
+        let dst = temp::test_helpers::new_unnamed_temp(1);
+        let src = temp::test_helpers::new_unnamed_temp(2);
+        let i = Instr::Move {
+            assem: "mov t'D, t'S",
+            dst,
+            src,
+        };
+        let tm = temp::TempMap::new();
+        let relaxed = false;
+        let mut gen: UuidsImpl = Uuids::new();
+        i.format(tm, relaxed, &mut gen);
+    }
+
+    #[test]
+    fn format_move_uses_temp_map_entry() {
+        let dst = temp::test_helpers::new_unnamed_temp(1);
+        let src = temp::test_helpers::new_unnamed_temp(2);
+        let i = Instr::Move {
+            assem: "mov t'D, t'S",
+            dst,
+            src,
+        };
+        let mut tm = temp::TempMap::new();
+        tm.insert(dst, "d800");
+        tm.insert(src, "s800");
+        let relaxed = true;
+        let mut gen: UuidsImpl = Uuids::new();
+        let actual = i.format(tm, relaxed, &mut gen);
+        let expected = "mov td800, ts800";
+        assert_eq!(expected, actual);
+    }
+
+    #[test]
+    #[should_panic]
+    fn format_move_strict_missing_temp_map_mapping() {
+        let dst = temp::test_helpers::new_unnamed_temp(1);
+        let src = temp::test_helpers::new_unnamed_temp(2);
+        let i = Instr::Move {
+            assem: "mov t'D, t'S",
+            dst,
+            src,
+        };
+        let tm = temp::TempMap::new();
+        let relaxed = false;
+        let mut gen: UuidsImpl = Uuids::new();
+        i.format(tm, relaxed, &mut gen);
+    }
+
+    #[test]
+    #[should_panic]
+    fn format_move_invalid_control_char() {
+        let dst = temp::test_helpers::new_unnamed_temp(1);
+        let src = temp::test_helpers::new_unnamed_temp(2);
+        let i = Instr::Move {
+            assem: "mov t'T, t'S",
+            dst,
+            src,
+        };
+        let tm = temp::TempMap::new();
+        let relaxed = false;
+        let mut gen: UuidsImpl = Uuids::new();
+        i.format(tm, relaxed, &mut gen);
+    }
+
+    #[test]
+    #[should_panic]
+    fn format_move_missing_control_char() {
+        let dst = temp::test_helpers::new_unnamed_temp(1);
+        let src = temp::test_helpers::new_unnamed_temp(2);
+        let i = Instr::Move {
+            assem: "mov t', t'S",
+            dst,
+            src,
+        };
+        let tm = temp::TempMap::new();
+        let relaxed = false;
+        let mut gen: UuidsImpl = Uuids::new();
+        i.format(tm, relaxed, &mut gen);
+    }
+
+    // #[test]
+    // todo
+    // fn format_label() {}
+
+    #[test]
+    fn format_oper_relaxed() {
+        let dst = temp::test_helpers::new_unnamed_temp(1);
+        let src = temp::test_helpers::new_unnamed_temp(2);
+        let lbl = temp::test_helpers::new_unnamed_label(3);
+        let i = Instr::Oper {
+            assem: "mov t'D0, t'S0, .L'J0",
+            dst: Dst(vec![dst]),
+            src: Src(vec![src]),
+            jump: vec![lbl],
+        };
+        let tm = temp::TempMap::new();
+        let relaxed = true;
+        let mut gen: UuidsImpl = Uuids::new();
+        let actual = i.format(tm, relaxed, &mut gen);
+        let expected = "mov t1, t2, .L3";
+        assert_eq!(expected, actual);
+    }
+
+    #[test]
+    #[should_panic]
+    fn format_oper_strict() {
+        let dst = temp::test_helpers::new_unnamed_temp(1);
+        let src = temp::test_helpers::new_unnamed_temp(2);
+        let lbl = temp::test_helpers::new_unnamed_label(3);
+        let i = Instr::Oper {
+            assem: "mov t'D0, t'S0, .L'J0",
+            dst: Dst(vec![dst]),
+            src: Src(vec![src]),
+            jump: vec![lbl],
+        };
+        let tm = temp::TempMap::new();
+        let relaxed = false;
+        let mut gen: UuidsImpl = Uuids::new();
+        i.format(tm, relaxed, &mut gen);
+    }
+
+    #[test]
+    #[should_panic]
+    fn format_oper_invalid_src_idx() {
+        let dst = temp::test_helpers::new_unnamed_temp(1);
+        let src = temp::test_helpers::new_unnamed_temp(2);
+        let lbl = temp::test_helpers::new_unnamed_label(3);
+        let i = Instr::Oper {
+            assem: "mov t'D0, t'S1, .L'J0",
+            dst: Dst(vec![dst]),
+            src: Src(vec![src]),
+            jump: vec![lbl],
+        };
+        let tm = temp::TempMap::new();
+        let relaxed = true;
+        let mut gen: UuidsImpl = Uuids::new();
+        i.format(tm, relaxed, &mut gen);
+    }
+
+    #[test]
+    #[should_panic]
+    fn format_oper_invalid_dst_idx() {
+        let dst = temp::test_helpers::new_unnamed_temp(1);
+        let src = temp::test_helpers::new_unnamed_temp(2);
+        let lbl = temp::test_helpers::new_unnamed_label(3);
+        let i = Instr::Oper {
+            assem: "mov t'D1, t'S0, .L'J0",
+            dst: Dst(vec![dst]),
+            src: Src(vec![src]),
+            jump: vec![lbl],
+        };
+        let tm = temp::TempMap::new();
+        let relaxed = true;
+        let mut gen: UuidsImpl = Uuids::new();
+        i.format(tm, relaxed, &mut gen);
+    }
+
+    #[test]
+    #[should_panic]
+    fn format_oper_invalid_jump_idx() {
+        let dst = temp::test_helpers::new_unnamed_temp(1);
+        let src = temp::test_helpers::new_unnamed_temp(2);
+        let lbl = temp::test_helpers::new_unnamed_label(3);
+        let i = Instr::Oper {
+            assem: "mov t'D0, t'S0, .L'J1",
+            dst: Dst(vec![dst]),
+            src: Src(vec![src]),
+            jump: vec![lbl],
+        };
+        let tm = temp::TempMap::new();
+        let relaxed = true;
+        let mut gen: UuidsImpl = Uuids::new();
+        i.format(tm, relaxed, &mut gen);
+    }
+
+    #[test]
+    #[should_panic]
+    fn format_oper_invalid_control_char() {
+        let dst = temp::test_helpers::new_unnamed_temp(1);
+        let src = temp::test_helpers::new_unnamed_temp(2);
+        let lbl = temp::test_helpers::new_unnamed_label(3);
+        let i = Instr::Oper {
+            assem: "mov t'K0, t'S0, .L'J0",
+            dst: Dst(vec![dst]),
+            src: Src(vec![src]),
+            jump: vec![lbl],
+        };
+        let tm = temp::TempMap::new();
+        let relaxed = true;
+        let mut gen: UuidsImpl = Uuids::new();
+        i.format(tm, relaxed, &mut gen);
+    }
+
+    #[test]
+    #[should_panic]
+    fn format_oper_missing_control_char() {
+        let dst = temp::test_helpers::new_unnamed_temp(1);
+        let src = temp::test_helpers::new_unnamed_temp(2);
+        let lbl = temp::test_helpers::new_unnamed_label(3);
+        let i = Instr::Oper {
+            assem: "mov t'",
+            dst: Dst(vec![dst]),
+            src: Src(vec![src]),
+            jump: vec![lbl],
+        };
+        let tm = temp::TempMap::new();
+        let relaxed = true;
+        let mut gen: UuidsImpl = Uuids::new();
+        i.format(tm, relaxed, &mut gen);
+    }
+
+    #[test]
+    #[should_panic]
+    fn format_oper_bad_syntax_missing_idx() {
+        let dst = temp::test_helpers::new_unnamed_temp(1);
+        let src = temp::test_helpers::new_unnamed_temp(2);
+        let lbl = temp::test_helpers::new_unnamed_label(3);
+        let i = Instr::Oper {
+            assem: "mov t'D",
+            dst: Dst(vec![dst]),
+            src: Src(vec![src]),
+            jump: vec![lbl],
+        };
+        let tm = temp::TempMap::new();
+        let relaxed = true;
+        let mut gen: UuidsImpl = Uuids::new();
+        i.format(tm, relaxed, &mut gen);
     }
 }
