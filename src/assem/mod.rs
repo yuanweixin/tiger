@@ -200,7 +200,9 @@ impl Instr {
                     match c {
                         '\'' => {
                             iter.next(); // consume the '
-                                         // insert the label.
+
+                            consume_control_char(&mut iter, assem);
+
                             match lab {
                                 temp::Label::Unnamed(id) => {
                                     res.push_str(format!("{}", id).as_str());
@@ -366,9 +368,55 @@ mod tests {
         i.format(tm, relaxed, &mut gen);
     }
 
-    // #[test]
-    // todo
-    // fn format_label() {}
+    #[test]
+    fn format_unnamed_label() {
+        let lab = temp::test_helpers::new_unnamed_label(1);
+        let i = Instr::Label { assem: "'L", lab };
+        let tm = temp::TempMap::new();
+        let relaxed = false;
+        let mut gen: UuidsImpl = Uuids::new();
+        let actual = i.format(tm, relaxed, &mut gen);
+        let expected = "1";
+        assert_eq!(expected, actual);
+    }
+
+
+    #[test]
+    #[should_panic]
+    fn format_label_missing_control_character() {
+        let lab = temp::test_helpers::new_unnamed_label(1);
+        let i = Instr::Label { assem: "'", lab };
+        let tm = temp::TempMap::new();
+        let relaxed = false;
+        let mut gen: UuidsImpl = Uuids::new();
+        i.format(tm, relaxed, &mut gen);
+    }
+
+    #[test]
+    fn format_named_label() {
+        let mut gen: UuidsImpl = Uuids::new();
+        let sym = gen.intern("hello");
+        let lab = temp::Label::Named(sym);
+        let i = Instr::Label { assem: "'L", lab };
+        let tm = temp::TempMap::new();
+        let relaxed = false;
+        let actual = i.format(tm, relaxed, &mut gen);
+        let expected = "hello";
+        assert_eq!(expected, actual);
+    }
+
+     #[test]
+     #[should_panic]
+    fn format_named_label_missing_symbol() {
+        let mut gen: UuidsImpl = Uuids::new();
+        let sym = gen.intern("hello");
+        gen = Uuids::new(); // reset
+        let lab = temp::Label::Named(sym);
+        let i = Instr::Label { assem: "'L", lab };
+        let tm = temp::TempMap::new();
+        let relaxed = false;
+        i.format(tm, relaxed, &mut gen);
+    }
 
     #[test]
     fn format_oper_relaxed() {

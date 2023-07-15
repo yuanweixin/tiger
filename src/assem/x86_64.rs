@@ -9,7 +9,7 @@ use crate::{
         IrRelop::*,
         IrStm::*,
     },
-    temp::Uuids
+    temp::Uuids,
 };
 
 pub struct X86Asm;
@@ -76,10 +76,16 @@ impl Codegen for X86Asm {
                     jump: vec![],
                 });
             }
-            Label(lab) => result.push(Instr::Label {
-                assem: "_L'L0",
-                lab,
-            }),
+            Label(lab) => match lab {
+                temp::Label::Named(sym) => result.push(Instr::Label {
+                    assem: "'L", // function labels don't need the .L prefix
+                    lab,
+                }),
+                temp::Label::Unnamed(id) => result.push(Instr::Label {
+                    assem: ".L'L", // non-fn labels need a .L prefix
+                    lab,
+                }),
+            },
             Seq(..) => {
                 panic!("impl bug: Seq should have been eliminated");
             }
