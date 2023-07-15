@@ -95,5 +95,10 @@ fn main() {
         };
     }
 
-    println!("asm:\n{:#?}", asm);
+    let tm = temp::TempMap::new();
+    for i in asm.into_iter() {
+        println!("{}", i.format(&tm, true, &mut gen));
+    }
+
+    // println!("asm:\n{:#?}", asm);
 }

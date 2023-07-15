@@ -22,7 +22,7 @@ impl Codegen for X86Asm {
                 let src = Self::munch_exp(*src_exp, result, gen);
 
                 result.push(Instr::Oper {
-                    assem: "mov 'D0, 'S0",
+                    assem: "mov 'D0, 'S0".into(),
                     dst: Dst(vec![dst]),
                     src: Src(vec![src, dst]),
                     jump: vec![],
@@ -31,7 +31,7 @@ impl Codegen for X86Asm {
             Jump(e, target_labels) => {
                 let t = Self::munch_exp(*e, result, gen);
                 result.push(Instr::Oper {
-                    assem: "jmp ['S0]",
+                    assem: "jmp ['S0]".into(),
                     dst: Dst::empty(),
                     src: Src(vec![t]),
                     jump: target_labels,
@@ -41,7 +41,7 @@ impl Codegen for X86Asm {
                 let ta = Self::munch_exp(*a, result, gen);
                 let tb = Self::munch_exp(*b, result, gen);
                 result.push(Instr::Oper {
-                    assem: "cmp 'D0, 'S0",
+                    assem: "cmp 'D0, 'S0".into(),
                     dst: Dst(vec![ta]),
                     src: Src(vec![tb, ta]),
                     jump: vec![],
@@ -60,7 +60,7 @@ impl Codegen for X86Asm {
                     Uge => "jae ['J0]",
                 };
                 result.push(Instr::Oper {
-                    assem: assem,
+                    assem: assem.into(),
                     dst: Dst::empty(),
                     src: Src::empty(),
                     jump: vec![lt, lf],
@@ -70,7 +70,7 @@ impl Codegen for X86Asm {
                 let e_temp = Self::munch_exp(*e, result, gen);
                 let new_t = gen.new_temp();
                 result.push(Instr::Oper {
-                    assem: "mov 'D0, 'S0",
+                    assem: "mov 'D0, 'S0".into(),
                     dst: Dst(vec![new_t]),
                     src: Src(vec![e_temp]),
                     jump: vec![],
@@ -78,11 +78,11 @@ impl Codegen for X86Asm {
             }
             Label(lab) => match lab {
                 temp::Label::Named(sym) => result.push(Instr::Label {
-                    assem: "'L", // function labels don't need the .L prefix
+                    assem: "'L".into(), // function labels don't need the .L prefix
                     lab,
                 }),
                 temp::Label::Unnamed(id) => result.push(Instr::Label {
-                    assem: ".L'L", // non-fn labels need a .L prefix
+                    assem: ".L'L".into(), // non-fn labels need a .L prefix
                     lab,
                 }),
             },
@@ -113,7 +113,7 @@ impl Codegen for X86Asm {
                 let a_temp = Self::munch_exp(*a, result, gen);
                 let b_temp = Self::munch_exp(*b, result, gen);
                 result.push(Instr::Oper {
-                    assem: instr,
+                    assem: instr.into(),
                     dst: Dst(vec![a_temp]),
                     src: Src(vec![b_temp]),
                     jump: vec![],
@@ -132,7 +132,7 @@ impl Codegen for X86Asm {
                 // args after the 6th one go on stack.
                 while i > 5 {
                     result.push(Instr::Oper {
-                        assem: "push 'S0",
+                        assem: "push 'S0".into(),
                         dst: Dst(vec![]),
                         src: Src(vec![arg_regs[i]]),
                         jump: vec![],
@@ -151,7 +151,7 @@ impl Codegen for X86Asm {
                 while i + 1 > 0 {
                     let arg_passing_regs = x86_64::argument_passing_registers(gen);
                     result.push(Instr::Oper {
-                        assem: "mov 'D0, 'S0",
+                        assem: "mov 'D0, 'S0".into(),
                         dst: Dst(vec![arg_passing_regs[i]]),
                         src: Src(vec![arg_regs[i]]),
                         jump: vec![],
@@ -161,7 +161,7 @@ impl Codegen for X86Asm {
 
                 // do the call
                 result.push(Instr::Oper {
-                    assem: "call 'S0",
+                    assem: "call 'S0".into(),
                     dst: Dst(vec![x86_64::named_register(gen, x86_64::RAX)]),
                     src: Src(vec![f_temp]),
                     jump: vec![],
@@ -170,7 +170,7 @@ impl Codegen for X86Asm {
                 // persist the result register.
                 let dest = gen.new_temp();
                 result.push(Instr::Oper {
-                    assem: "mov 'D0, 'S0",
+                    assem: "mov 'D0, 'S0".into(),
                     dst: Dst(vec![dest]),
                     src: Src(vec![x86_64::named_register(gen, x86_64::RAX)]),
                     jump: vec![],
@@ -180,7 +180,7 @@ impl Codegen for X86Asm {
                 // passes enough arguments to overflow an i32.
                 if max(0, num_args as i32 - 6) > 0 {
                     result.push(Instr::Oper {
-                        assem: "add rsp, 8 * 'A",
+                        assem: format!("add rsp, 8 * {}", num_args - 6),
                         dst: Dst(vec![x86_64::named_register(gen, x86_64::RAX)]),
                         src: Src::empty(),
                         jump: vec![],
@@ -192,7 +192,8 @@ impl Codegen for X86Asm {
             Const(i) => {
                 let t = gen.new_temp();
                 result.push(Instr::Oper {
-                    assem: "mov 'D0, 'A",
+                    // TODO does this shit work for negative numbers?
+                    assem: format!("mov 'D0, {}", i),
                     dst: Dst(vec![t]),
                     src: Src::empty(),
                     jump: vec![],
@@ -203,17 +204,19 @@ impl Codegen for X86Asm {
             Name(label) => {
                 let t = gen.new_temp();
                 result.push(Instr::Oper {
-                    assem: "lea 'D0, ['A]",
+                    assem: "lea 'D0, ['J0]".into(),
                     dst: Dst(vec![t]),
                     src: Src::empty(),
-                    jump: vec![],
+                    // TODO is jump used for analysis?
+                    // if so we need to print out the label into the string
+                    jump: vec![label],
                 });
                 t
             }
             Mem(e) => {
                 let t = Self::munch_exp(*e, result, gen);
                 result.push(Instr::Oper {
-                    assem: "mov 'D0, 'S0",
+                    assem: "mov 'D0, 'S0".into(),
                     dst: Dst(vec![t]),
                     src: Src(vec![t]),
                     jump: vec![],
@@ -231,11 +234,11 @@ impl Codegen for X86Asm {
 
     fn code_gen_string(s: String, l: temp::Label, instrs: &mut Vec<Instr>) {
         instrs.push(Instr::Label {
-            assem: ".'L0",
+            assem: ".L'L".into(),
             lab: l,
         });
         instrs.push(Instr::Oper {
-            assem: "\t.string \"'S0\"",
+            assem: format!("\t.string {}", s),
             dst: Dst::empty(),
             src: Src::empty(),
             jump: vec![],

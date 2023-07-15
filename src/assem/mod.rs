@@ -33,7 +33,7 @@ pub enum Instr {
         // target specific implementations are expected to have some custom placeholders
         // in the template, for the src, dst registers, relevant jump labels. other placeholders
         // referring to other data can be used in tandem with the aux data.
-        assem: &'static str,
+        assem: String,
         // basically all the registers that gets "trashed" by the assembly.
         // for example, mul on x86 would affect EAX,EDX, so those need to be listed.
         dst: Dst,
@@ -78,7 +78,7 @@ pub trait Codegen {
 }
 
 impl Instr {
-    pub fn format(&self, tm: temp::TempMap, relaxed: bool, gen: &mut dyn Uuids) -> String {
+    pub fn format(&self, tm: &temp::TempMap, relaxed: bool, gen: &mut dyn Uuids) -> String {
         fn consume_control_char(
             iter: &mut impl Iterator<Item = (usize, char)>,
             assem: &str,
@@ -280,7 +280,7 @@ mod tests {
         let tm = temp::TempMap::new();
         let relaxed = true;
         let mut gen: UuidsImpl = Uuids::new();
-        let actual = i.format(tm, relaxed, &mut gen);
+        let actual = i.format(&tm, relaxed, &mut gen);
         let expected = "mov t1, t2";
         assert_eq!(expected, actual);
     }
@@ -298,7 +298,7 @@ mod tests {
         let tm = temp::TempMap::new();
         let relaxed = false;
         let mut gen: UuidsImpl = Uuids::new();
-        i.format(tm, relaxed, &mut gen);
+        i.format(&tm, relaxed, &mut gen);
     }
 
     #[test]
@@ -315,7 +315,7 @@ mod tests {
         tm.insert(src, "s800");
         let relaxed = true;
         let mut gen: UuidsImpl = Uuids::new();
-        let actual = i.format(tm, relaxed, &mut gen);
+        let actual = i.format(&tm, relaxed, &mut gen);
         let expected = "mov td800, ts800";
         assert_eq!(expected, actual);
     }
@@ -333,7 +333,7 @@ mod tests {
         let tm = temp::TempMap::new();
         let relaxed = false;
         let mut gen: UuidsImpl = Uuids::new();
-        i.format(tm, relaxed, &mut gen);
+        i.format(&tm, relaxed, &mut gen);
     }
 
     #[test]
@@ -349,7 +349,7 @@ mod tests {
         let tm = temp::TempMap::new();
         let relaxed = false;
         let mut gen: UuidsImpl = Uuids::new();
-        i.format(tm, relaxed, &mut gen);
+        i.format(&tm, relaxed, &mut gen);
     }
 
     #[test]
@@ -365,7 +365,7 @@ mod tests {
         let tm = temp::TempMap::new();
         let relaxed = false;
         let mut gen: UuidsImpl = Uuids::new();
-        i.format(tm, relaxed, &mut gen);
+        i.format(&tm, relaxed, &mut gen);
     }
 
     #[test]
@@ -375,7 +375,7 @@ mod tests {
         let tm = temp::TempMap::new();
         let relaxed = false;
         let mut gen: UuidsImpl = Uuids::new();
-        let actual = i.format(tm, relaxed, &mut gen);
+        let actual = i.format(&tm, relaxed, &mut gen);
         let expected = "1";
         assert_eq!(expected, actual);
     }
@@ -389,7 +389,7 @@ mod tests {
         let tm = temp::TempMap::new();
         let relaxed = false;
         let mut gen: UuidsImpl = Uuids::new();
-        i.format(tm, relaxed, &mut gen);
+        i.format(&tm, relaxed, &mut gen);
     }
 
     #[test]
@@ -400,7 +400,7 @@ mod tests {
         let i = Instr::Label { assem: "'L", lab };
         let tm = temp::TempMap::new();
         let relaxed = false;
-        let actual = i.format(tm, relaxed, &mut gen);
+        let actual = i.format(&tm, relaxed, &mut gen);
         let expected = "hello";
         assert_eq!(expected, actual);
     }
@@ -415,7 +415,7 @@ mod tests {
         let i = Instr::Label { assem: "'L", lab };
         let tm = temp::TempMap::new();
         let relaxed = false;
-        i.format(tm, relaxed, &mut gen);
+        i.format(&tm, relaxed, &mut gen);
     }
 
     #[test]
@@ -424,7 +424,7 @@ mod tests {
         let src = temp::test_helpers::new_unnamed_temp(2);
         let lbl = temp::test_helpers::new_unnamed_label(3);
         let i = Instr::Oper {
-            assem: "mov t'D0, t'S0, .L'J0",
+            assem: "mov t'D0, t'S0, .L'J0".into(),
             dst: Dst(vec![dst]),
             src: Src(vec![src]),
             jump: vec![lbl],
@@ -432,7 +432,7 @@ mod tests {
         let tm = temp::TempMap::new();
         let relaxed = true;
         let mut gen: UuidsImpl = Uuids::new();
-        let actual = i.format(tm, relaxed, &mut gen);
+        let actual = i.format(&tm, relaxed, &mut gen);
         let expected = "mov t1, t2, .L3";
         assert_eq!(expected, actual);
     }
@@ -444,7 +444,7 @@ mod tests {
         let src = temp::test_helpers::new_unnamed_temp(2);
         let lbl = temp::test_helpers::new_unnamed_label(3);
         let i = Instr::Oper {
-            assem: "mov t'D0, t'S0, .L'J0",
+            assem: "mov t'D0, t'S0, .L'J0".into(),
             dst: Dst(vec![dst]),
             src: Src(vec![src]),
             jump: vec![lbl],
@@ -452,7 +452,7 @@ mod tests {
         let tm = temp::TempMap::new();
         let relaxed = false;
         let mut gen: UuidsImpl = Uuids::new();
-        i.format(tm, relaxed, &mut gen);
+        i.format(&tm, relaxed, &mut gen);
     }
 
     #[test]
@@ -462,7 +462,7 @@ mod tests {
         let src = temp::test_helpers::new_unnamed_temp(2);
         let lbl = temp::test_helpers::new_unnamed_label(3);
         let i = Instr::Oper {
-            assem: "mov t'D0, t'S1, .L'J0",
+            assem: "mov t'D0, t'S1, .L'J0".into(),
             dst: Dst(vec![dst]),
             src: Src(vec![src]),
             jump: vec![lbl],
@@ -470,7 +470,7 @@ mod tests {
         let tm = temp::TempMap::new();
         let relaxed = true;
         let mut gen: UuidsImpl = Uuids::new();
-        i.format(tm, relaxed, &mut gen);
+        i.format(&tm, relaxed, &mut gen);
     }
 
     #[test]
@@ -480,7 +480,7 @@ mod tests {
         let src = temp::test_helpers::new_unnamed_temp(2);
         let lbl = temp::test_helpers::new_unnamed_label(3);
         let i = Instr::Oper {
-            assem: "mov t'D1, t'S0, .L'J0",
+            assem: "mov t'D1, t'S0, .L'J0".into(),
             dst: Dst(vec![dst]),
             src: Src(vec![src]),
             jump: vec![lbl],
@@ -488,7 +488,7 @@ mod tests {
         let tm = temp::TempMap::new();
         let relaxed = true;
         let mut gen: UuidsImpl = Uuids::new();
-        i.format(tm, relaxed, &mut gen);
+        i.format(&tm, relaxed, &mut gen);
     }
 
     #[test]
@@ -498,7 +498,7 @@ mod tests {
         let src = temp::test_helpers::new_unnamed_temp(2);
         let lbl = temp::test_helpers::new_unnamed_label(3);
         let i = Instr::Oper {
-            assem: "mov t'D0, t'S0, .L'J1",
+            assem: "mov t'D0, t'S0, .L'J1".into(),
             dst: Dst(vec![dst]),
             src: Src(vec![src]),
             jump: vec![lbl],
@@ -506,7 +506,7 @@ mod tests {
         let tm = temp::TempMap::new();
         let relaxed = true;
         let mut gen: UuidsImpl = Uuids::new();
-        i.format(tm, relaxed, &mut gen);
+        i.format(&tm, relaxed, &mut gen);
     }
 
     #[test]
@@ -516,7 +516,7 @@ mod tests {
         let src = temp::test_helpers::new_unnamed_temp(2);
         let lbl = temp::test_helpers::new_unnamed_label(3);
         let i = Instr::Oper {
-            assem: "mov t'K0, t'S0, .L'J0",
+            assem: "mov t'K0, t'S0, .L'J0".into(),
             dst: Dst(vec![dst]),
             src: Src(vec![src]),
             jump: vec![lbl],
@@ -524,7 +524,7 @@ mod tests {
         let tm = temp::TempMap::new();
         let relaxed = true;
         let mut gen: UuidsImpl = Uuids::new();
-        i.format(tm, relaxed, &mut gen);
+        i.format(&tm, relaxed, &mut gen);
     }
 
     #[test]
@@ -534,7 +534,7 @@ mod tests {
         let src = temp::test_helpers::new_unnamed_temp(2);
         let lbl = temp::test_helpers::new_unnamed_label(3);
         let i = Instr::Oper {
-            assem: "mov t'",
+            assem: "mov t'".into(),
             dst: Dst(vec![dst]),
             src: Src(vec![src]),
             jump: vec![lbl],
@@ -542,7 +542,7 @@ mod tests {
         let tm = temp::TempMap::new();
         let relaxed = true;
         let mut gen: UuidsImpl = Uuids::new();
-        i.format(tm, relaxed, &mut gen);
+        i.format(&tm, relaxed, &mut gen);
     }
 
     #[test]
@@ -552,7 +552,7 @@ mod tests {
         let src = temp::test_helpers::new_unnamed_temp(2);
         let lbl = temp::test_helpers::new_unnamed_label(3);
         let i = Instr::Oper {
-            assem: "mov t'D",
+            assem: "mov t'D".into(),
             dst: Dst(vec![dst]),
             src: Src(vec![src]),
             jump: vec![lbl],
@@ -560,6 +560,6 @@ mod tests {
         let tm = temp::TempMap::new();
         let relaxed = true;
         let mut gen: UuidsImpl = Uuids::new();
-        i.format(tm, relaxed, &mut gen);
+        i.format(&tm, relaxed, &mut gen);
     }
 }
