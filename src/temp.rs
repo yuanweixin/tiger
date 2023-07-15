@@ -4,24 +4,19 @@ use std::{collections::HashMap, fmt::Display, hash::Hash};
 use crate::symbol::{Interner, Symbol};
 use crate::symtab::SymbolTable;
 
+// most temp are unnamed, only the registers are named
+// the extra cost is an extra word. otoh this makes it
+// clearer what "kind" a temporary is.
 #[derive(Eq, PartialEq, Copy, Clone, Hash, Debug)]
 pub enum Temp {
     Named(Symbol),
     Unnamed(NonZeroUsize)
 }
+
 #[derive(Eq, PartialEq, Copy, Clone, Hash, Debug)]
-pub struct Label(Symbol);
-
-impl PartialEq<Label> for &Label {
-    fn eq(&self, rhs: &Label) -> bool {
-        return self.0 == rhs.0;
-    }
-}
-
-impl PartialEq<&Label> for Label {
-    fn eq(&self, rhs: &&Label) -> bool {
-        return self.0 == rhs.0;
-    }
+pub enum Label {
+    Named(Symbol),
+    Unnamed(NonZeroUsize)
 }
 
 /// The mapping of temporary to strings.
@@ -34,8 +29,6 @@ pub trait Uuids {
         Self: Sized;
 
     fn resolve(&self, s: &Symbol) -> Option<&str>;
-
-    fn resolve_label(&self, l: Label) -> Option<&str>;
 
     fn intern(&mut self, name: &str) -> Symbol;
 
@@ -56,7 +49,7 @@ pub trait Uuids {
     // in the implementation.
     fn to_temp_map(&self, names: Vec<&'static str>) -> TempMap;
 
-    fn new_label(&mut self) -> Label;
+    fn new_unnamed_label(&mut self) -> Label;
 
     fn named_label(&mut self, s: &str) -> Label;
 }
@@ -110,11 +103,6 @@ impl Uuids for UuidsImpl {
     }
 
     #[inline]
-    fn resolve_label(&self, l: Label) -> Option<&str> {
-        self.resolve(&l.0)
-    }
-
-    #[inline]
     fn intern(&mut self, name: &str) -> Symbol {
         self.pool.intern(name)
     }
@@ -125,32 +113,29 @@ impl Uuids for UuidsImpl {
         t
     }
 
-    fn new_label(&mut self) -> Label {
-        let id = self.next_id.get();
+    fn new_unnamed_label(&mut self) -> Label {
+        let id = self.next_id;
         self.next_id = NonZeroUsize::new(self.next_id.get().wrapping_add(1)).unwrap();
-        let sym = self.pool.intern(&format!("L{}", id));
-        Label(sym)
+        Label::Unnamed(id)
     }
     fn named_label(&mut self, s: &str) -> Label {
         let sym = self.pool.intern(s);
-        Label(sym)
+        Label::Named(sym)
     }
+
 }
 
 pub mod test_helpers {
     use super::*;
-    use crate::symbol;
 
     pub fn new_unnamed_temp(s: usize) -> Temp {
         Temp::Unnamed(NonZeroUsize::new(s).unwrap())
     }
 
-    // NOTE: the underlying library increments the passed in usize by 1,
-    // so in test code should expect the output to have a value s+1
-    pub fn new_label(s: usize) -> Label {
-        Label(symbol::test_helpers::new_symbol(
-            NonZeroUsize::new(s).unwrap(),
-        ))
+    pub fn new_unnamed_label(s: usize) -> Label {
+        Label::Unnamed(
+            NonZeroUsize::new(s).unwrap()
+        )
     }
 }
 

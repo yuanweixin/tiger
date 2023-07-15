@@ -240,7 +240,7 @@ pub fn linearize(i: IrStm, gen: &mut dyn Uuids) -> Vec<IrStm> {
             }
         }
     }
-    let nop_marker_label = gen.new_label();
+    let nop_marker_label = gen.new_unnamed_label();
     helper(
         lift_stm(i, gen, nop_marker_label),
         Vec::new(),
@@ -321,7 +321,7 @@ pub fn basic_blocks(
     //        upon exit.
     let mut blist = HashMap::new();
     let mut this_block = Block::new();
-    let done_label = gen.new_label();
+    let done_label = gen.new_unnamed_label();
 
     let mut iter = stmts.into_iter().peekable();
     while iter.len() > 0 {
@@ -332,7 +332,7 @@ pub fn basic_blocks(
                 this_block.push(iter.next().unwrap());
             }
             Some(_) => {
-                let l = gen.new_label();
+                let l = gen.new_unnamed_label();
                 this_block.push(Label(l));
             }
         }
@@ -499,9 +499,9 @@ pub fn trace_schedule(
                         if nxt_blk.is_some() {
                             match nxt_blk.as_mut().unwrap().peek().unwrap() {
                                 Label(nxt_lb) => {
-                                    if nxt_lb == lf {
+                                    if *nxt_lb == lf {
                                         res.push(IrStm::Cjump(p, a, b, lt, lf));
-                                    } else if nxt_lb == lt {
+                                    } else if *nxt_lb == lt {
                                         let inverted = invert_cjump(p, a, b, lt, lf);
                                         res.push(inverted);
                                     } else {
@@ -513,7 +513,7 @@ pub fn trace_schedule(
                                 }
                             }
                         } else {
-                            let lff = gen.new_label();
+                            let lff = gen.new_unnamed_label();
                             res.push(IrStm::Cjump(p, a, b, lt, lff));
                             res.push(Label(lff));
                             res.push(Jump(Name(lf), vec![lf]));
@@ -596,11 +596,6 @@ mod tests {
         }
 
         #[inline]
-        fn resolve_label(&self, l: Label) -> Option<&str> {
-            panic!();
-        }
-
-        #[inline]
         fn intern(&mut self, name: &str) -> Symbol {
             panic!();
         }
@@ -615,13 +610,13 @@ mod tests {
             }
         }
 
-        fn new_label(&mut self) -> temp::Label {
+        fn new_unnamed_label(&mut self) -> temp::Label {
             let nxt = self.syms.next();
             match nxt {
                 None => {
                     panic!("test impl bug or actual bug: ran out of symbols");
                 }
-                Some(s) => temp::test_helpers::new_label(s),
+                Some(s) => temp::test_helpers::new_unnamed_label(s),
             }
         }
 
@@ -646,7 +641,7 @@ mod tests {
         #[test]
         fn name_is_identity() {
             let mut gen: UuidsImpl = Uuids::new();
-            let l = gen.new_label();
+            let l = gen.new_unnamed_label();
             let expected = vec![Exp(Name(l))];
             let actual = linearize(Exp(Name(l)), &mut gen);
             assert_eq!(expected, actual);
@@ -664,7 +659,7 @@ mod tests {
         #[test]
         fn exp_eseq() {
             let mut gen: UuidsImpl = Uuids::new();
-            let l = gen.new_label();
+            let l = gen.new_unnamed_label();
             let t = gen.new_temp();
 
             let expected = vec![Label(l), Exp(Temp(t))];
@@ -675,8 +670,8 @@ mod tests {
         #[test]
         fn eseq_eseq() {
             let mut gen: UuidsImpl = Uuids::new();
-            let l = gen.new_label();
-            let l2 = gen.new_label();
+            let l = gen.new_unnamed_label();
+            let l2 = gen.new_unnamed_label();
             let t = gen.new_temp();
 
             let expected = vec![Label(l), Label(l2), Exp(Temp(t))];
@@ -687,8 +682,8 @@ mod tests {
         #[test]
         fn binop_eseq_left() {
             let mut gen: UuidsImpl = Uuids::new();
-            let l = gen.new_label();
-            let l2 = gen.new_label();
+            let l = gen.new_unnamed_label();
+            let l2 = gen.new_unnamed_label();
             let t = gen.new_temp();
 
             let expected = vec![Label(l), Label(l2), Exp(Binop(Plus, Temp(t), Const(2)))];
@@ -706,8 +701,8 @@ mod tests {
         #[test]
         fn mem_eseq() {
             let mut gen: UuidsImpl = Uuids::new();
-            let l = gen.new_label();
-            let l2 = gen.new_label();
+            let l = gen.new_unnamed_label();
+            let l2 = gen.new_unnamed_label();
             let t = gen.new_temp();
 
             let expected = vec![Label(l), Label(l2), Exp(Mem(Temp(t)))];
@@ -718,8 +713,8 @@ mod tests {
         #[test]
         fn jump_eseq() {
             let mut gen: UuidsImpl = Uuids::new();
-            let l = gen.new_label();
-            let l2 = gen.new_label();
+            let l = gen.new_unnamed_label();
+            let l2 = gen.new_unnamed_label();
             let t = gen.new_temp();
 
             let expected = vec![Label(l), Label(l2), Jump(Temp(t), vec![l])];
@@ -734,8 +729,8 @@ mod tests {
         fn cjump_eseq_left() {
             let mut gen: UuidsImpl = Uuids::new();
 
-            let l = gen.new_label();
-            let l2 = gen.new_label();
+            let l = gen.new_unnamed_label();
+            let l2 = gen.new_unnamed_label();
             let t = gen.new_temp();
             let t2 = gen.new_temp();
 
@@ -756,8 +751,8 @@ mod tests {
         #[test]
         fn binop_right_eseq_commutes() {
             let mut gen: UuidsImpl = Uuids::new();
-            let l = gen.new_label();
-            let l2 = gen.new_label();
+            let l = gen.new_unnamed_label();
+            let l2 = gen.new_unnamed_label();
             let t = gen.new_temp();
 
             let expected = vec![Label(l), Label(l2), Exp(Binop(Plus, Const(2), Temp(t)))];
@@ -775,8 +770,8 @@ mod tests {
         #[test]
         fn binop_right_eseq_no_commute() {
             let mut gen = UuidForTest::new_for_linearize(vec![2]);
-            let l = test_helpers::new_label(999);
-            let l2 = test_helpers::new_label(1000);
+            let l = test_helpers::new_unnamed_label(999);
+            let l2 = test_helpers::new_unnamed_label(1000);
             let t = test_helpers::new_unnamed_temp(1001);
             let t2 = test_helpers::new_unnamed_temp(2);
             let t3 = test_helpers::new_unnamed_temp(3);
@@ -801,8 +796,8 @@ mod tests {
         fn cjump_right_eseq_no_commute() {
             let mut gen = UuidForTest::new_for_linearize(vec![1]);
 
-            let l = test_helpers::new_label(999);
-            let l2 = test_helpers::new_label(1000);
+            let l = test_helpers::new_unnamed_label(999);
+            let l2 = test_helpers::new_unnamed_label(1000);
             let t = test_helpers::new_unnamed_temp(1001);
             let t2 = test_helpers::new_unnamed_temp(1002);
 
@@ -831,8 +826,8 @@ mod tests {
         fn cjump_right_eseq_commutes() {
             let mut gen: UuidsImpl = Uuids::new();
 
-            let l = gen.new_label();
-            let l2 = gen.new_label();
+            let l = gen.new_unnamed_label();
+            let l2 = gen.new_unnamed_label();
             let t = gen.new_temp();
 
             let expected = vec![Label(l), Label(l2), Cjump(Gt, Const(42), Temp(t), l, l2)];
@@ -852,8 +847,8 @@ mod tests {
         #[test]
         fn move_temp_eseq() {
             let mut gen: UuidsImpl = Uuids::new();
-            let l = gen.new_label();
-            let l2 = gen.new_label();
+            let l = gen.new_unnamed_label();
+            let l2 = gen.new_unnamed_label();
             let t = gen.new_temp();
             let t2 = gen.new_temp();
 
@@ -868,8 +863,8 @@ mod tests {
         #[test]
         fn move_mem_eseq_left() {
             let mut gen: UuidsImpl = Uuids::new();
-            let l = gen.new_label();
-            let l2 = gen.new_label();
+            let l = gen.new_unnamed_label();
+            let l2 = gen.new_unnamed_label();
             let t = gen.new_temp();
             let t2 = gen.new_temp();
 
@@ -898,8 +893,8 @@ mod tests {
         fn exp_call_eseq() {
             let mut gen = UuidForTest::new_for_linearize(vec![2]);
             let t = test_helpers::new_unnamed_temp(100);
-            let l = test_helpers::new_label(101);
-            let l2 = test_helpers::new_label(102);
+            let l = test_helpers::new_unnamed_label(101);
+            let l2 = test_helpers::new_unnamed_label(102);
             let t2 = test_helpers::new_unnamed_temp(2);
 
             let expected = vec![
@@ -1004,7 +999,7 @@ mod tests {
 
         #[test]
         fn jumps_only() {
-            let lbl = test_helpers::new_label(1);
+            let lbl = test_helpers::new_unnamed_label(1);
             let stmts = vec![Jump(Name(lbl), vec![lbl]), Jump(Name(lbl), vec![lbl])];
             let mut gen: UuidsImpl = Uuids::new();
             let (blk_map, _) = basic_blocks(stmts, &mut gen);
@@ -1016,8 +1011,8 @@ mod tests {
 
         #[test]
         fn cjumps_only() {
-            let l1 = test_helpers::new_label(1);
-            let l2 = test_helpers::new_label(1);
+            let l1 = test_helpers::new_unnamed_label(1);
+            let l2 = test_helpers::new_unnamed_label(1);
             let stmts = vec![
                 Cjump(Ge, Const(1), Const(1), l1, l2),
                 Cjump(Ge, Const(1), Const(1), l1, l2),
@@ -1037,7 +1032,7 @@ mod tests {
         #[should_panic]
         fn craps_out_on_seq() {
             let mut gen: UuidsImpl = Uuids::new();
-            let l = test_helpers::new_label(200);
+            let l = test_helpers::new_unnamed_label(200);
             let input = vec![Seq(Label(l), Label(l))];
 
             basic_blocks(input, &mut gen);
@@ -1046,10 +1041,10 @@ mod tests {
         #[test]
         fn potpourri() {
             let mut gen = UuidForTest::empty(vec![1, 2, 3, 4]);
-            let l1 = test_helpers::new_label(200);
-            let l2 = test_helpers::new_label(201);
-            let t = test_helpers::new_label(101);
-            let f = test_helpers::new_label(102);
+            let l1 = test_helpers::new_unnamed_label(200);
+            let l2 = test_helpers::new_unnamed_label(201);
+            let t = test_helpers::new_unnamed_label(101);
+            let f = test_helpers::new_unnamed_label(102);
             // Seq is not included here because irl never show up as the input would have been
             // already transformed by linearize to eliminate Seq's.
             let input = vec![
@@ -1079,7 +1074,7 @@ mod tests {
                 blk_map.get(&l2).unwrap().stmts
             );
 
-            let tmp_lbl = test_helpers::new_label(2);
+            let tmp_lbl = test_helpers::new_unnamed_label(2);
             assert_eq!(
                 vec![
                     Label(tmp_lbl),
@@ -1090,13 +1085,13 @@ mod tests {
                 blk_map.get(&tmp_lbl).unwrap().stmts
             );
 
-            let tmp_lbl = test_helpers::new_label(3);
+            let tmp_lbl = test_helpers::new_unnamed_label(3);
             assert_eq!(
                 vec![Label(tmp_lbl), Cjump(Ge, Const(1), Const(1), t, f)],
                 blk_map.get(&tmp_lbl).unwrap().stmts
             );
 
-            let tmp_lbl = test_helpers::new_label(4);
+            let tmp_lbl = test_helpers::new_unnamed_label(4);
             assert_eq!(
                 vec![
                     Label(tmp_lbl),
@@ -1115,10 +1110,10 @@ mod tests {
 
         #[test]
         fn blist_vec_test() {
-            let l1 = test_helpers::new_label(100);
-            let l2 = test_helpers::new_label(101);
-            let l3 = test_helpers::new_label(102);
-            let done_label = test_helpers::new_label(200);
+            let l1 = test_helpers::new_unnamed_label(100);
+            let l2 = test_helpers::new_unnamed_label(101);
+            let l3 = test_helpers::new_unnamed_label(102);
+            let done_label = test_helpers::new_unnamed_label(200);
             let mut blocks = vec![
                 Block {
                     marked: false,
@@ -1152,10 +1147,10 @@ mod tests {
         // TODO kinda pita with the elimination of jumps and rearranging of cjumps.
         #[test]
         fn jumps_follow_by_jump_dst() {
-            let l1 = test_helpers::new_label(100);
-            let l2 = test_helpers::new_label(101);
-            let l3 = test_helpers::new_label(102);
-            let done_label = test_helpers::new_label(200);
+            let l1 = test_helpers::new_unnamed_label(100);
+            let l2 = test_helpers::new_unnamed_label(101);
+            let l3 = test_helpers::new_unnamed_label(102);
+            let done_label = test_helpers::new_unnamed_label(200);
             let mut gen: UuidsImpl = Uuids::new();
             let blocks = vec![
                 Block {
@@ -1185,8 +1180,8 @@ mod tests {
 
         #[test]
         fn jump_to_end_lbl_follow_by_end_lbl() {
-            let l1 = test_helpers::new_label(100);
-            let done_label = test_helpers::new_label(200);
+            let l1 = test_helpers::new_unnamed_label(100);
+            let done_label = test_helpers::new_unnamed_label(200);
             let mut gen: UuidsImpl = Uuids::new();
             let blocks = vec![Block {
                 marked: false,
@@ -1206,10 +1201,10 @@ mod tests {
 
         #[test]
         fn cjump_follow_by_false_label_left_alone() {
-            let l1 = test_helpers::new_label(100);
-            let lt = test_helpers::new_label(201);
-            let lf = test_helpers::new_label(202);
-            let done_label = test_helpers::new_label(300);
+            let l1 = test_helpers::new_unnamed_label(100);
+            let lt = test_helpers::new_unnamed_label(201);
+            let lf = test_helpers::new_unnamed_label(202);
+            let done_label = test_helpers::new_unnamed_label(300);
             let mut gen: UuidsImpl = Uuids::new();
             let blocks = vec![
                 Block {
@@ -1234,10 +1229,10 @@ mod tests {
 
         #[test]
         fn cjump_follow_by_true_label_is_negated() {
-            let l1 = test_helpers::new_label(100);
-            let lt = test_helpers::new_label(201);
-            let lf = test_helpers::new_label(202);
-            let done_label = test_helpers::new_label(300);
+            let l1 = test_helpers::new_unnamed_label(100);
+            let lt = test_helpers::new_unnamed_label(201);
+            let lf = test_helpers::new_unnamed_label(202);
+            let done_label = test_helpers::new_unnamed_label(300);
             let mut gen: UuidsImpl = Uuids::new();
             let blocks = vec![
                 Block {
@@ -1262,13 +1257,13 @@ mod tests {
 
         #[test]
         fn cjump_not_follow_by_true_or_false_has_empty_block_inserted() {
-            let l1 = test_helpers::new_label(100);
-            let l2 = test_helpers::new_label(101);
-            let lt = test_helpers::new_label(201);
-            let lf = test_helpers::new_label(202);
-            let done_label = test_helpers::new_label(300);
+            let l1 = test_helpers::new_unnamed_label(100);
+            let l2 = test_helpers::new_unnamed_label(101);
+            let lt = test_helpers::new_unnamed_label(201);
+            let lf = test_helpers::new_unnamed_label(202);
+            let done_label = test_helpers::new_unnamed_label(300);
             let mut gen = UuidForTest::empty(vec![1]);
-            let ff = test_helpers::new_label(1);
+            let ff = test_helpers::new_unnamed_label(1);
             let blocks = vec![
                 Block {
                     marked: false,

@@ -194,8 +194,8 @@ fn un_ex(tr: TrExp, gen: &mut dyn Uuids) -> IrExp {
         TrExp::Ex(exp) => *exp,
         TrExp::Cx(cond) => {
             let r = gen.new_temp();
-            let t = gen.new_label();
-            let f = gen.new_label();
+            let t = gen.new_unnamed_label();
+            let f = gen.new_unnamed_label();
             Eseq(
                 make_seq(vec![
                     Move(Temp(r), Const(1)),
@@ -229,7 +229,7 @@ fn un_nx(tr: TrExp, gen: &mut dyn Uuids) -> IrStm {
     match tr {
         TrExp::Nx(stm) => *stm,
         TrExp::Cx(c) => {
-            let l = gen.new_label();
+            let l = gen.new_unnamed_label();
             let s = c.eval(l, l);
             make_seq(vec![s, Label(l)])
         }
@@ -377,7 +377,7 @@ pub fn string_exp(s: &str, gen: &mut dyn Uuids, frags: &mut Vec<frame::Frag>) ->
             _ => {}
         }
     }
-    let l = gen.new_label();
+    let l = gen.new_unnamed_label();
     let new_frag = frame::Frag::String(l, String::from(s));
     frags.push(new_frag);
     Ex(Name(l))
@@ -477,9 +477,9 @@ pub fn for_loop(
     // note the i < limit check is done BEFORE incrementing i to avoid the edge
     // case where limit == intmax, where if we increment i first we either get
     // overflow error or an infinite loop, depending on the platform.
-    let test_label = gen.new_label();
-    let body_label = gen.new_label();
-    let cont_label = gen.new_label();
+    let test_label = gen.new_unnamed_label();
+    let body_label = gen.new_unnamed_label();
+    let cont_label = gen.new_unnamed_label();
     let i = gen.new_temp();
     let limit = gen.new_temp();
     // the extra check after `body` avoids overflow where hi=maxint.
@@ -504,8 +504,8 @@ pub fn for_loop(
 }
 
 pub fn while_loop(cond_ir: TrExp, body_ir: TrExp, done: temp::Label, gen: &mut dyn Uuids) -> TrExp {
-    let test = gen.new_label();
-    let body = gen.new_label();
+    let test = gen.new_unnamed_label();
+    let body = gen.new_unnamed_label();
 
     Nx(make_seq(vec![
         Label(test),
@@ -537,11 +537,11 @@ fn full_conditional(cond_ir: TrExp, then_ir: TrExp, else_ir: TrExp, gen: &mut dy
         }
     }
 
-    let true_branch_label = gen.new_label();
-    let false_branch_label = gen.new_label();
-    let true_cx_branch_label = gen.new_label();
-    let false_cx_branch_label = gen.new_label();
-    let done = gen.new_label();
+    let true_branch_label = gen.new_unnamed_label();
+    let false_branch_label = gen.new_unnamed_label();
+    let true_cx_branch_label = gen.new_unnamed_label();
+    let false_cx_branch_label = gen.new_unnamed_label();
+    let done = gen.new_unnamed_label();
     let r = gen.new_temp();
 
     match (&then_ir, &else_ir) {
@@ -650,8 +650,8 @@ pub fn conditional(
     gen: &mut dyn Uuids,
 ) -> TrExp {
     if else_ir.is_none() {
-        let t = gen.new_label();
-        let f = gen.new_label();
+        let t = gen.new_unnamed_label();
+        let f = gen.new_unnamed_label();
         Nx(make_seq(vec![
             un_cx(cond_ir).eval(t, f),
             Label(t),
@@ -721,9 +721,9 @@ pub fn subscript_var<T: Frame>(lhs_ir: TrExp, idx_ir: TrExp, gen: &mut dyn Uuids
         Const(T::word_size() as i32),
         Binop(Mul, un_ex(idx_ir, gen), Const(T::word_size() as i32)),
     );
-    let bad = gen.new_label();
-    let upper_check = gen.new_label();
-    let access = gen.new_label();
+    let bad = gen.new_unnamed_label();
+    let upper_check = gen.new_unnamed_label();
+    let access = gen.new_unnamed_label();
     let lhs_unexed = un_ex(lhs_ir, gen);
     Ex(Eseq(
         make_seq(vec![
@@ -877,8 +877,8 @@ mod tests {
 
     #[test]
     fn test_level_equality() {
-        let name1 = temp::test_helpers::new_label(100);
-        let name2 = temp::test_helpers::new_label(200);
+        let name1 = temp::test_helpers::new_unnamed_label(100);
+        let name2 = temp::test_helpers::new_unnamed_label(200);
         let mut gen = UuidsImpl::new();
         let level1 = Level::Nested {
             parent: Level::Top.into(),
@@ -920,7 +920,7 @@ mod tests {
 
     #[test]
     fn static_link_nested_level_nonzero_offset() {
-        let name1 = temp::test_helpers::new_label(100);
+        let name1 = temp::test_helpers::new_unnamed_label(100);
         let mut gen = UuidsImpl::new();
         let mut frame = TestFrame::new(name1, vec![true], &mut gen);
         frame.formals = vec![frame::Access::InFrame(8)];
@@ -940,7 +940,7 @@ mod tests {
     #[test]
     fn simple_var_current_level() {
         let mut gen: UuidsImpl = Uuids::new();
-        let name1 = temp::test_helpers::new_label(100);
+        let name1 = temp::test_helpers::new_unnamed_label(100);
 
         let var_escapes = true;
         let frame = TestFrame::new(name1, vec![true, var_escapes], &mut gen);
@@ -972,7 +972,7 @@ mod tests {
     #[test]
     fn simple_var_in_parent_level() {
         let mut gen: UuidsImpl = Uuids::new();
-        let name1 = temp::test_helpers::new_label(100);
+        let name1 = temp::test_helpers::new_unnamed_label(100);
 
         let var_escapes = true;
         let frame = TestFrame::new(name1, vec![true, var_escapes], &mut gen);

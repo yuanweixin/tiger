@@ -615,7 +615,7 @@ fn trans_exp<T: Frame + 'static>(
             }
         }
         Exp::WhileExp { test, body, pos } => {
-            let while_done_label = Some(ctx.gen.new_label());
+            let while_done_label = Some(ctx.gen.new_unnamed_label());
             // break is legal in expressions. so if they try to break in the condition
             // of a while loop, it is interpreted as breaking to the end of this while loop,
             // since logically, the while condition is re-evaluated each iteration.
@@ -651,7 +651,7 @@ fn trans_exp<T: Frame + 'static>(
             body,
             pos,
         } => {
-            let for_done_label = Some(ctx.gen.new_label());
+            let for_done_label = Some(ctx.gen.new_unnamed_label());
             // if "break" happens in evaluating the for loop params, will just break the loop itself.
             let (lo_ir, lo_ty) = trans_exp::<T>(ctx, level.clone(), lo, for_done_label);
             let (hi_ir, hi_ty) = trans_exp::<T>(ctx, level.clone(), hi, for_done_label);
@@ -1444,7 +1444,7 @@ mod tests {
         fn new(_: Label, formals: Vec<Escapes>, gen: &mut dyn Uuids) -> Self {
             let frame_formals = formals.iter().map(|_| frame::Access::InFrame(42)).collect();
             TestFrame {
-                name: gen.new_label(),
+                name: gen.new_unnamed_label(),
                 formals: frame_formals,
                 next_offset: -4,
             }
