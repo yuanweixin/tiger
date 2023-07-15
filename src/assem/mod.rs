@@ -1,18 +1,12 @@
 pub mod x86_64;
 
 use crate::{
-    frame::{self, Frame, FrameRef},
+    frame::FrameRef,
     ir::{IrExp, IrStm},
-    symtab::SymbolTable,
     temp::{self, Uuids},
 };
 
-use std::{
-    char, fmt,
-    fmt::{Display, Error, Formatter},
-    ops::Index,
-    str::FromStr,
-};
+use std::str::FromStr;
 
 #[derive(Debug)]
 pub struct Src(Vec<temp::Temp>);
@@ -83,7 +77,7 @@ pub trait Codegen {
 }
 
 impl Instr {
-    pub fn fmt(&self, tm: temp::TempMap, relaxed: bool) -> String {
+    pub fn fmt(&self, tm: temp::TempMap, relaxed: bool, gen: &mut dyn Uuids) -> String {
         let mut res = String::new();
 
         match self {
@@ -134,9 +128,38 @@ impl Instr {
                                     }
                                 }
                                 'J' | 'j' => {
-                                    todo!()
+                                    if template_arg_idx >= jump.len() {
+                                        panic!("impl bug: invalid index {} in asm template string referencing jump'{}'", template_arg_idx, assem);
+                                    }
+                                    let t = jump[template_arg_idx];
+                                    match t {
+                                        temp::Label::Unnamed(id) => {
+                                            res.push_str(format!(".L{}", id).as_str());
+                                        }
+                                        temp::Label::Named(sym) => {
+                                            if let Some(s) = gen.resolve(&sym) {
+                                                res.push_str(s);
+                                            } else {
+                                                panic!("impl bug: named label cannot be resolved to a string");
+                                            }
+                                        }
+                                    }
                                 }
-                                'D' | 'd' => todo!(),
+                                'D' | 'd' => {
+                                    if template_arg_idx >= dst.0.len() {
+                                        panic!("impl bug: invalid index {} in asm template string referencing dst'{}'", template_arg_idx, assem);
+                                    }
+                                    let t = dst.0[template_arg_idx];
+                                    if let Some(s) = tm.get(&t) {
+                                        res.push_str(s);
+                                    } else {
+                                        if relaxed {
+                                            res.push_str(t.to_string().as_str());
+                                        } else {
+                                            panic!("impl bug: unable to find a register assignment for temp {}", t.to_string());
+                                        }
+                                    }
+                                }
                                 x => panic!(
                                     "impl bug: invalid control char {} in asm template {}",
                                     x, assem
@@ -150,8 +173,83 @@ impl Instr {
                     }
                 }
             }
-            Instr::Label { assem, lab } => todo!(),
-            Instr::Move { assem, dst, src } => todo!(),
+            Instr::Label { assem, lab } => {
+                let mut iter = assem.char_indices().peekable();
+                while let Some((_, c)) = iter.peek() {
+                    match c {
+                        '\'' => {
+                            iter.next(); // consume the '
+                                         // insert the label.
+                            match lab {
+                                temp::Label::Unnamed(id) => {
+                                    res.push_str(format!("{}", id).as_str());
+                                }
+                                temp::Label::Named(sym) => {
+                                    let s = gen.resolve(sym);
+                                    if s.is_none() {
+                                        panic!(
+                                            "impl bug: named label cannot be resolved to a string"
+                                        );
+                                    }
+                                    res.push_str(s.unwrap());
+                                }
+                            }
+                        }
+                        some_char => {
+                            res.push(*some_char);
+                            iter.next(); // consume
+                        }
+                    }
+                }
+            }
+            Instr::Move { assem, dst, src } => {
+                let mut iter = assem.char_indices().peekable();
+                while let Some((_, c)) = iter.peek() {
+                    match c {
+                        '\'' => {
+                            iter.next(); // consume the '
+                            let kind = iter.next();
+                            if kind.is_none() {
+                                panic!("impl bug: invalid asm template string {}", assem);
+                            }
+
+                            let (_, kind_char) = kind.unwrap();
+                            match kind_char {
+                                'S' | 's' => {
+                                    if let Some(s) = tm.get(src) {
+                                        res.push_str(s);
+                                    } else {
+                                        if relaxed {
+                                            res.push_str(src.to_string().as_str());
+                                        } else {
+                                            panic!("impl bug: unable to find a register assignment for temp {}", src.to_string());
+                                        }
+                                    }
+                                }
+                                'D' | 'd' => {
+                                    if let Some(s) = tm.get(dst) {
+                                        res.push_str(s);
+                                    } else {
+                                        if relaxed {
+                                            res.push_str(dst.to_string().as_str());
+                                        } else {
+                                            panic!("impl bug: unable to find a register assignment for temp {}", dst.to_string());
+                                        }
+                                    }
+                                }
+                                x => panic!(
+                                    "impl bug: invalid control char {} in asm template {}",
+                                    x, assem
+                                ),
+                            }
+                        }
+                        some_char => {
+                            res.push(*some_char);
+                            iter.next(); // consume
+                        }
+                    }
+                }
+            }
         }
         res
     }
