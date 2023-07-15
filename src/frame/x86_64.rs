@@ -2,11 +2,9 @@ use crate::{
     frame::{Access, Escapes, Frame, Register},
     ir,
     ir::{helpers::*, IrExp, IrStm},
-    symbol::Interner,
     temp,
     temp::{Label, Uuids},
 };
-use std::num::NonZeroUsize;
 
 #[derive(Debug)]
 pub struct x86_64_Frame {
@@ -57,7 +55,7 @@ pub fn argument_passing_registers(gen: &mut dyn Uuids) -> Vec<temp::Temp> {
 }
 
 impl Frame for x86_64_Frame {
-    fn temp_map(gen: &mut dyn Uuids) -> super::TempMap where Self: Sized {
+    fn temp_map(gen: &mut dyn Uuids) -> temp::TempMap where Self: Sized {
         todo!()
     }
 

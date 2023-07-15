@@ -66,12 +66,10 @@ pub trait Frame: Debug {
     where
         Self: Sized;
 
-    fn temp_map(gen: &mut dyn Uuids) -> TempMap where Self: Sized;
+    fn temp_map(gen: &mut dyn Uuids) -> temp::TempMap where Self: Sized;
 }
 
 
-/// The mapping of "precolored" registers.
-pub type TempMap = SymbolTable<&'static str>;
 
 #[derive(Debug)]
 pub enum Frag {

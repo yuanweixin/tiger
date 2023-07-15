@@ -784,7 +784,7 @@ mod tests {
     const FP: &str = "fp";
 
     impl Frame for TestFrame {
-        fn temp_map(_: &mut dyn Uuids) -> frame::TempMap
+        fn temp_map(_: &mut dyn Uuids) -> temp::TempMap
         where
             Self: Sized,
         {

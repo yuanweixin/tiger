@@ -578,6 +578,10 @@ mod tests {
     }
 
     impl Uuids for UuidForTest {
+        fn to_temp_map(&self, names: Vec<&'static str>) -> temp::TempMap {
+            todo!()
+        }
+
         fn new() -> Self {
             panic!();
         }
@@ -609,10 +613,6 @@ mod tests {
                 }
                 Some(s) => test_helpers::new_temp(s),
             }
-        }
-
-        fn make_string(_: temp::Temp) -> String {
-            panic!();
         }
 
         fn new_label(&mut self) -> temp::Label {

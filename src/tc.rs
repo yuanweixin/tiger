@@ -82,14 +82,14 @@ fn main() {
     for frag in frags.unwrap().into_iter() {
         match frag {
             frame::Frag::String(label, s) => {
-                assem::x86_64::X86Asm::gen_string(s, label, &mut asm);
+                assem::x86_64::X86Asm::code_gen_string(s, label, &mut asm);
             }
             frame::Frag::Proc { body, frame } => {
                 let linearized = canon::linearize(body, &mut gen);
                 let (blist, done_label) = canon::basic_blocks(linearized, &mut gen);
                 let trace = canon::trace_schedule(blist, done_label, &mut gen);
                 for stm in trace.into_iter() {
-                    assem::x86_64::X86Asm::code_gen(frame.clone(), stm, &mut asm, &mut gen);
+                    assem::x86_64::X86Asm::code_gen_frame(frame.clone(), stm, &mut asm, &mut gen);
                 }
             }
         };

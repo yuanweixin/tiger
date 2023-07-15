@@ -9,18 +9,13 @@ use crate::{
         IrRelop::*,
         IrStm::*,
     },
+    temp::Uuids
 };
 
 pub struct X86Asm;
 
-#[derive(Debug)]
-pub enum AuxData {
-    Imm32(i32),
-    Label(temp::Label),
-}
-
-impl Codegen<AuxData> for X86Asm {
-    fn munch_stm(stm: IrStm, result: &mut Vec<Instr<AuxData>>, gen: &mut dyn Uuids) {
+impl Codegen for X86Asm {
+    fn munch_stm(stm: IrStm, result: &mut Vec<Instr>, gen: &mut dyn Uuids) {
         match stm {
             Move(dst_exp, src_exp) => {
                 let dst = Self::munch_exp(*dst_exp, result, gen);
@@ -31,7 +26,6 @@ impl Codegen<AuxData> for X86Asm {
                     dst: Dst(vec![dst]),
                     src: Src(vec![src, dst]),
                     jump: vec![],
-                    aux: None,
                 });
             }
             Jump(e, target_labels) => {
@@ -41,7 +35,6 @@ impl Codegen<AuxData> for X86Asm {
                     dst: Dst::empty(),
                     src: Src(vec![t]),
                     jump: target_labels,
-                    aux: None,
                 });
             }
             Cjump(r, a, b, lt, lf) => {
@@ -52,7 +45,6 @@ impl Codegen<AuxData> for X86Asm {
                     dst: Dst(vec![ta]),
                     src: Src(vec![tb, ta]),
                     jump: vec![],
-                    aux: None,
                 });
 
                 let assem = match r {
@@ -72,7 +64,6 @@ impl Codegen<AuxData> for X86Asm {
                     dst: Dst::empty(),
                     src: Src::empty(),
                     jump: vec![lt, lf],
-                    aux: None,
                 });
             }
             Exp(e) => {
@@ -83,7 +74,6 @@ impl Codegen<AuxData> for X86Asm {
                     dst: Dst(vec![new_t]),
                     src: Src(vec![e_temp]),
                     jump: vec![],
-                    aux: None,
                 });
             }
             Label(lab) => result.push(Instr::Label {
@@ -97,7 +87,7 @@ impl Codegen<AuxData> for X86Asm {
     }
 
     /// Given the IrExp, outputs the abstract register that holds the value.
-    fn munch_exp(exp: IrExp, result: &mut Vec<Instr<AuxData>>, gen: &mut dyn Uuids) -> temp::Temp {
+    fn munch_exp(exp: IrExp, result: &mut Vec<Instr>, gen: &mut dyn Uuids) -> temp::Temp {
         match exp {
             Binop(op, a, b) => {
                 let instr = match op {
@@ -121,7 +111,6 @@ impl Codegen<AuxData> for X86Asm {
                     dst: Dst(vec![a_temp]),
                     src: Src(vec![b_temp]),
                     jump: vec![],
-                    aux: None,
                 });
                 a_temp
             }
@@ -141,7 +130,6 @@ impl Codegen<AuxData> for X86Asm {
                         dst: Dst(vec![]),
                         src: Src(vec![arg_regs[i]]),
                         jump: vec![],
-                        aux: None,
                     });
                     i -= 1;
                 }
@@ -161,7 +149,6 @@ impl Codegen<AuxData> for X86Asm {
                         dst: Dst(vec![arg_passing_regs[i]]),
                         src: Src(vec![arg_regs[i]]),
                         jump: vec![],
-                        aux: None,
                     });
                     i -= 1;
                 }
@@ -172,7 +159,6 @@ impl Codegen<AuxData> for X86Asm {
                     dst: Dst(vec![x86_64::named_register(gen, x86_64::RAX)]),
                     src: Src(vec![f_temp]),
                     jump: vec![],
-                    aux: None,
                 });
 
                 // persist the result register.
@@ -182,7 +168,6 @@ impl Codegen<AuxData> for X86Asm {
                     dst: Dst(vec![dest]),
                     src: Src(vec![x86_64::named_register(gen, x86_64::RAX)]),
                     jump: vec![],
-                    aux: None,
                 });
 
                 // don't think we'd ever get to a point where someone
@@ -193,7 +178,6 @@ impl Codegen<AuxData> for X86Asm {
                         dst: Dst(vec![x86_64::named_register(gen, x86_64::RAX)]),
                         src: Src::empty(),
                         jump: vec![],
-                        aux: Some(AuxData::Imm32(8 * (num_args as i32 - 6))),
                     });
                 }
 
@@ -206,7 +190,6 @@ impl Codegen<AuxData> for X86Asm {
                     dst: Dst(vec![t]),
                     src: Src::empty(),
                     jump: vec![],
-                    aux: Some(AuxData::Imm32(i)),
                 });
                 t
             }
@@ -218,7 +201,6 @@ impl Codegen<AuxData> for X86Asm {
                     dst: Dst(vec![t]),
                     src: Src::empty(),
                     jump: vec![],
-                    aux: Some(AuxData::Label(label)),
                 });
                 t
             }
@@ -229,7 +211,6 @@ impl Codegen<AuxData> for X86Asm {
                     dst: Dst(vec![t]),
                     src: Src(vec![t]),
                     jump: vec![],
-                    aux: None,
                 });
                 t
             }
@@ -238,11 +219,11 @@ impl Codegen<AuxData> for X86Asm {
     }
 
     /// The entry point for translating into
-    fn code_gen(_: FrameRef, stm: IrStm, instrs: &mut Vec<Instr<AuxData>>, gen: &mut dyn Uuids) {
+    fn code_gen_frame(_: FrameRef, stm: IrStm, instrs: &mut Vec<Instr>, gen: &mut dyn Uuids) {
         Self::munch_stm(stm, instrs, gen);
     }
 
-    fn gen_string(s: String, l: temp::Label, instrs: &mut Vec<Instr<AuxData>>) {
+    fn code_gen_string(s: String, l: temp::Label, instrs: &mut Vec<Instr>) {
         instrs.push(Instr::Label {
             assem: ".'L0",
             lab: l,
@@ -252,7 +233,6 @@ impl Codegen<AuxData> for X86Asm {
             dst: Dst::empty(),
             src: Src::empty(),
             jump: vec![],
-            aux: None,
         });
     }
 }

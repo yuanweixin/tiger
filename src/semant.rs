@@ -1380,7 +1380,7 @@ mod tests {
     }
 
     impl Frame for TestFrame {
-        fn temp_map(gen: &mut dyn Uuids) -> frame::TempMap
+        fn temp_map(gen: &mut dyn Uuids) -> temp::TempMap
         where
             Self: Sized,
         {
