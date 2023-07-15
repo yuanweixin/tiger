@@ -3,6 +3,13 @@ use string_interner::{DefaultBackend, DefaultSymbol, StringInterner};
 #[derive(Eq, PartialEq, Hash, Copy, Clone, Debug)]
 pub struct Symbol(DefaultSymbol);
 
+impl Symbol {
+    #[inline]
+    pub fn to_usize(&self) -> usize {
+        string_interner::Symbol::to_usize(self.0)
+    }
+}
+
 pub struct Interner(StringInterner<DefaultBackend<DefaultSymbol>>);
 
 impl Interner {

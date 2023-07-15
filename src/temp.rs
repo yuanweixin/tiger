@@ -2,9 +2,13 @@ use std::num::NonZeroUsize;
 use std::{collections::HashMap, fmt::Display, hash::Hash};
 
 use crate::symbol::{Interner, Symbol};
+use crate::symtab::SymbolTable;
 
 #[derive(Eq, PartialEq, Copy, Clone, Hash, Debug)]
-pub struct Temp(NonZeroUsize);
+pub enum Temp {
+    Named(Symbol),
+    Unnamed(NonZeroUsize)
+}
 #[derive(Eq, PartialEq, Copy, Clone, Hash, Debug)]
 pub struct Label(Symbol);
 
@@ -35,6 +39,7 @@ pub trait Uuids {
 
     fn intern(&mut self, name: &str) -> Symbol;
 
+    // TODO rename to new_unnamed_temp
     fn new_temp(&mut self) -> Temp;
 
     // Since the design went with not having temp generation at the global
@@ -62,12 +67,15 @@ pub trait Uuids {
 pub struct UuidsImpl {
     next_id: NonZeroUsize,
     pool: Interner,
-    name_temp: HashMap<&'static str, Temp>,
+    name_temp: SymbolTable<Temp>
 }
 
 impl Display for Temp {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "t{}", self.0)
+        match self {
+            Temp::Named(sym) => write!(f, "named_t_sym_{}", sym.to_usize()),
+            Temp::Unnamed(id) => write!(f, "unnamed_t_{}", id)
+        }
     }
 }
 
@@ -80,17 +88,20 @@ impl Uuids for UuidsImpl {
         Self {
             next_id: NonZeroUsize::MIN,
             pool: Interner::new(),
-            name_temp: HashMap::new(),
+            name_temp: SymbolTable::empty(),
         }
     }
 
     fn named_temp(&mut self, name: &'static str) -> Temp {
-        if let Some(t) = self.name_temp.get(name) {
-            return *t;
+        let sym = self.pool.intern(name);
+        match self.name_temp.look(sym) {
+            Some(t) => *t,
+            None => {
+                let t = Temp::Named(sym);
+                self.name_temp.enter(sym, t);
+                t
+            }
         }
-        let t = self.new_temp();
-        self.name_temp.insert(name, t);
-        t
     }
 
     #[inline]
@@ -109,7 +120,7 @@ impl Uuids for UuidsImpl {
     }
 
     fn new_temp(&mut self) -> Temp {
-        let t = Temp(self.next_id);
+        let t = Temp::Unnamed(self.next_id);
         self.next_id = NonZeroUsize::new(self.next_id.get().wrapping_add(1)).unwrap();
         t
     }
@@ -130,8 +141,8 @@ pub mod test_helpers {
     use super::*;
     use crate::symbol;
 
-    pub fn new_temp(s: usize) -> Temp {
-        Temp(NonZeroUsize::new(s).unwrap())
+    pub fn new_unnamed_temp(s: usize) -> Temp {
+        Temp::Unnamed(NonZeroUsize::new(s).unwrap())
     }
 
     // NOTE: the underlying library increments the passed in usize by 1,

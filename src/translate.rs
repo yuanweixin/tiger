@@ -903,7 +903,7 @@ mod tests {
     #[test]
     #[should_panic]
     fn parent_frame_on_top_level_craps_out() {
-        Level::Top.parent_frame(Temp(test_helpers::new_temp(0)));
+        Level::Top.parent_frame(Temp(test_helpers::new_unnamed_temp(0)));
     }
 
     #[test]

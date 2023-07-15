@@ -1419,7 +1419,7 @@ mod tests {
         where
             Self: Sized,
         {
-            temp::test_helpers::new_temp(1)
+            temp::test_helpers::new_unnamed_temp(1)
         }
 
         fn proc_entry_exit1(&self, x: IrStm) -> IrStm {

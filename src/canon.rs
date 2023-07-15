@@ -611,7 +611,7 @@ mod tests {
                 None => {
                     panic!("test impl bug or actual bug: ran out of symbols");
                 }
-                Some(s) => test_helpers::new_temp(s),
+                Some(s) => test_helpers::new_unnamed_temp(s),
             }
         }
 
@@ -777,9 +777,9 @@ mod tests {
             let mut gen = UuidForTest::new_for_linearize(vec![2]);
             let l = test_helpers::new_label(999);
             let l2 = test_helpers::new_label(1000);
-            let t = test_helpers::new_temp(1001);
-            let t2 = test_helpers::new_temp(2);
-            let t3 = test_helpers::new_temp(3);
+            let t = test_helpers::new_unnamed_temp(1001);
+            let t2 = test_helpers::new_unnamed_temp(2);
+            let t3 = test_helpers::new_unnamed_temp(3);
             let expected = vec![
                 Move(Temp(t2), Temp(t3)),
                 Label(l),
@@ -803,10 +803,10 @@ mod tests {
 
             let l = test_helpers::new_label(999);
             let l2 = test_helpers::new_label(1000);
-            let t = test_helpers::new_temp(1001);
-            let t2 = test_helpers::new_temp(1002);
+            let t = test_helpers::new_unnamed_temp(1001);
+            let t2 = test_helpers::new_unnamed_temp(1002);
 
-            let exp_generated_temp = test_helpers::new_temp(1);
+            let exp_generated_temp = test_helpers::new_unnamed_temp(1);
 
             let expected = vec![
                 Move(Temp(exp_generated_temp), Temp(t2)),
@@ -897,10 +897,10 @@ mod tests {
         #[test]
         fn exp_call_eseq() {
             let mut gen = UuidForTest::new_for_linearize(vec![2]);
-            let t = test_helpers::new_temp(100);
+            let t = test_helpers::new_unnamed_temp(100);
             let l = test_helpers::new_label(101);
             let l2 = test_helpers::new_label(102);
-            let t2 = test_helpers::new_temp(2);
+            let t2 = test_helpers::new_unnamed_temp(2);
 
             let expected = vec![
                 Label(l),
@@ -923,9 +923,9 @@ mod tests {
         #[test]
         fn exp_call_eseq_no_commute() {
             let mut gen = UuidForTest::new_for_linearize(vec![2, 3]);
-            let t = test_helpers::new_temp(100);
-            let t2 = test_helpers::new_temp(2);
-            let t3 = test_helpers::new_temp(3);
+            let t = test_helpers::new_unnamed_temp(100);
+            let t2 = test_helpers::new_unnamed_temp(2);
+            let t3 = test_helpers::new_unnamed_temp(3);
 
             let expected = vec![
                 Move(Temp(t), Const(42)),
@@ -986,7 +986,7 @@ mod tests {
             // 1. insertion of label if not present
             // 2. insertion of jump to end label if not present
             // 3. insertion of jump at end of block if not present.
-            let t = test_helpers::new_temp(1);
+            let t = test_helpers::new_unnamed_temp(1);
             let stmts = vec![Move(Temp(t), Const(1))];
             let mut gen: UuidsImpl = Uuids::new();
             let (blk_map, end_lbl) = basic_blocks(stmts, &mut gen);
