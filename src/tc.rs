@@ -19,7 +19,12 @@ mod temp;
 mod translate;
 mod util;
 
-use crate::{frame::x86_64::x86_64_Frame, temp::{UuidsImpl, Uuids}};
+use crate::{
+    assem::Codegen,
+    frame::x86_64::x86_64_Frame,
+    ir::IrStm,
+    temp::{Uuids, UuidsImpl},
+};
 
 lrlex_mod!("tiger.l");
 lrpar_mod!("tiger.y");
@@ -62,13 +67,33 @@ fn main() {
 
     let mut gen: UuidsImpl = Uuids::new();
 
-    let frags =
-        semant::translate::<x86_64_Frame>(input.as_ref().unwrap(), &mut ast_opt.unwrap().unwrap(), &mut gen);
+    let frags = semant::translate::<x86_64_Frame>(
+        input.as_ref().unwrap(),
+        &mut ast_opt.unwrap().unwrap(),
+        &mut gen,
+    );
 
     if frags.is_err() {
         println!("type checking failed");
         util::exit(util::ReturnCode::TypeError);
     }
 
-    println!("frags:\n {:#?}", frags.unwrap());
+    let mut asm = Vec::new();
+    for frag in frags.unwrap().into_iter() {
+        match frag {
+            frame::Frag::String(label, s) => {
+                assem::x86_64::X86Asm::gen_string(s, label, &mut asm);
+            }
+            frame::Frag::Proc { body, frame } => {
+                let linearized = canon::linearize(body, &mut gen);
+                let (blist, done_label) = canon::basic_blocks(linearized, &mut gen);
+                let trace = canon::trace_schedule(blist, done_label, &mut gen);
+                for stm in trace.into_iter() {
+                    assem::x86_64::X86Asm::code_gen(frame.clone(), stm, &mut asm, &mut gen);
+                }
+            }
+        };
+    }
+
+    println!("asm:\n{:#?}", asm);
 }

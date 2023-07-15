@@ -2,7 +2,7 @@ use crate::ir::helpers::*;
 use crate::{
     absyn::types::{Oper, Oper::*},
     frame,
-    frame::Frame,
+    frame::{Frame, FrameRef},
     int_types::TigerInt,
     ir::{
         IrBinop::*,
@@ -25,7 +25,6 @@ macro_rules! new_frame {
 }
 
 type LevelRef = Rc<RefCell<Level>>;
-type FrameRef = Rc<RefCell<dyn Frame>>;
 
 #[derive(Debug)]
 pub enum Level {

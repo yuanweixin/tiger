@@ -8,6 +8,8 @@ use crate::{
 
 use std::{cell::RefCell, fmt::Debug, rc::Rc};
 
+pub type FrameRef = Rc<RefCell<dyn Frame>>;
+
 #[derive(Eq, PartialEq, Clone, Debug)]
 pub enum Access {
     // FP + offset
@@ -77,7 +79,7 @@ pub enum Frag {
         // the output of proc_entry_exit1
         body: IrStm,
         // contains the machine specific info about local vars and params
-        frame: Rc<RefCell<dyn Frame>>,
+        frame: FrameRef,
     },
     // represents static strings
     String(Label, String),

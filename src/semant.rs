@@ -1344,7 +1344,7 @@ pub fn translate<T: Frame + 'static>(
 
     escape::find_escapes(&mut ctx, ast);
 
-    let (main_level, _) = Level::new_level::<T>(Level::outermost(), Vec::new(), ctx.gen, "tiger_main");
+    let (main_level, _) = Level::new_level::<T>(Level::outermost(), Vec::new(), ctx.gen, "tigermain");
     let (_, _) = trans_exp::<T>(&mut ctx, main_level, ast, None);
 
     if ctx.has_error() {

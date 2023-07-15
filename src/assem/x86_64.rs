@@ -2,7 +2,7 @@ use std::cmp::max;
 
 use crate::{
     assem::*,
-    frame::x86_64,
+    frame::{x86_64, FrameRef},
     ir::{
         IrBinop::{self, *},
         IrExp::*,
@@ -11,9 +11,10 @@ use crate::{
     },
 };
 
-struct X86Asm;
+pub struct X86Asm;
 
-enum AuxData {
+#[derive(Debug)]
+pub enum AuxData {
     Imm32(i32),
     Label(temp::Label),
 }
@@ -237,12 +238,21 @@ impl Codegen<AuxData> for X86Asm {
     }
 
     /// The entry point for translating into
-    fn code_gen(
-        _: Box<dyn Frame>,
-        stm: IrStm,
-        instrs: &mut Vec<Instr<AuxData>>,
-        gen: &mut dyn Uuids,
-    ) {
+    fn code_gen(_: FrameRef, stm: IrStm, instrs: &mut Vec<Instr<AuxData>>, gen: &mut dyn Uuids) {
         Self::munch_stm(stm, instrs, gen);
+    }
+
+    fn gen_string(s: String, l: temp::Label, instrs: &mut Vec<Instr<AuxData>>) {
+        instrs.push(Instr::Label {
+            assem: ".'L0",
+            lab: l,
+        });
+        instrs.push(Instr::Oper {
+            assem: "\t.string \"'S0\"",
+            dst: Dst::empty(),
+            src: Src::empty(),
+            jump: vec![],
+            aux: None,
+        });
     }
 }
