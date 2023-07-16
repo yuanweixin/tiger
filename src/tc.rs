@@ -20,8 +20,8 @@ mod translate;
 mod util;
 
 use crate::{
-    assem::Codegen,
-    frame::x86_64::x86_64_Frame,
+    assem::{Codegen, x86_64::X86Asm},
+    frame::{x86_64::x86_64_Frame, Frame},
     ir::IrStm,
     temp::{Uuids, UuidsImpl},
 };
@@ -82,7 +82,8 @@ fn main() {
     for frag in frags.unwrap().into_iter() {
         match frag {
             frame::Frag::String(label, s) => {
-                assem::x86_64::X86Asm::code_gen_string(s, label, &mut asm);
+                // TODO
+                println!("{}", x86_64_Frame::string(label, s.as_str()));
             }
             frame::Frag::Proc { body, frame } => {
                 let linearized = canon::linearize(body, &mut gen);
@@ -95,6 +96,7 @@ fn main() {
         };
     }
 
+    // todo fix up with the procEntryExit_x crap.
     let tm = temp::TempMap::new();
     for i in asm.iter() {
         println!("{}", i.format(&tm, true, &mut gen));

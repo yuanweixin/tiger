@@ -20,7 +20,7 @@ pub enum Access {
 
 pub type Escapes = bool;
 
-pub type Register<'a> = &'a str;
+pub type Register = &'static str;
 
 pub trait Frame: Debug {
     // We could also have put Sized on the trait.
@@ -39,7 +39,7 @@ pub trait Frame: Debug {
     fn word_size() -> usize
     where
         Self: Sized;
-    fn registers<'a>() -> &'a [Register<'a>]
+    fn registers() -> &'static [Register]
     where
         Self: Sized;
     // TODO not sure what kind of table this is

@@ -1401,7 +1401,7 @@ mod tests {
             4
         }
 
-        fn registers<'a>() -> &'a [frame::Register<'a>]
+        fn registers() -> &'static [frame::Register]
         where
             Self: Sized,
         {

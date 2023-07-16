@@ -578,7 +578,7 @@ mod tests {
     }
 
     impl Uuids for UuidForTest {
-        fn to_temp_map(&self, names: Vec<&'static str>) -> temp::TempMap {
+        fn to_temp_map(&mut self, names: &[&'static str]) -> temp::TempMap {
             todo!()
         }
 

@@ -3,6 +3,7 @@ use std::{collections::HashMap, fmt::Display, hash::Hash};
 
 use crate::symbol::{Interner, Symbol};
 use crate::symtab::SymbolTable;
+use crate::frame;
 
 // most temp are unnamed, only the registers are named
 // the extra cost is an extra word. otoh this makes it
@@ -47,7 +48,7 @@ pub trait Uuids {
     // association exist, it is reused. Otherwise a new one is generated and placed
     // into the TempMap, with the side effect of also remembering that association
     // in the implementation.
-    fn to_temp_map(&self, names: Vec<&'static str>) -> TempMap;
+    fn to_temp_map(&mut self, names: &[frame::Register]) -> TempMap;
 
     fn new_unnamed_label(&mut self) -> Label;
 
@@ -73,8 +74,13 @@ impl Display for Temp {
 }
 
 impl Uuids for UuidsImpl {
-    fn to_temp_map(&self, names: Vec<&'static str>) -> TempMap {
-        todo!()
+    fn to_temp_map(&mut self, names: &[frame::Register]) -> TempMap {
+        let mut tm = TempMap::new();
+        for name in names {
+            let t = self.named_temp(name);
+            tm.insert(t, name);
+        }
+        tm
     }
 
     fn new() -> Self {

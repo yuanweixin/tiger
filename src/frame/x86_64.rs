@@ -61,8 +61,14 @@ pub fn argument_passing_registers(gen: &mut dyn Uuids) -> Vec<temp::Temp> {
 }
 
 impl Frame for x86_64_Frame {
+    fn registers() -> &'static [Register]
+        where
+            Self: Sized {
+        &[RDI, RSI, RDX, RCX, RSP, RAX, RBX, R8, R9, R10, R11, R12, R13, R14, R15]
+    }
+
     fn temp_map(gen: &mut dyn Uuids) -> temp::TempMap where Self: Sized {
-        todo!()
+        gen.to_temp_map(Self::registers())
     }
 
     fn external_call(name: Label, exps: Vec<ir::IrExp>) -> ir::IrExp
@@ -79,18 +85,16 @@ impl Frame for x86_64_Frame {
         8
     }
 
-    fn registers<'a>() -> &'a [Register<'a>]
+    fn string(l: temp::Label, s: &str) -> String
     where
         Self: Sized,
     {
-        &[]
-    }
-
-    fn string(label: temp::Label, val: &str) -> String
-    where
-        Self: Sized,
-    {
-        todo!()
+        let id =
+        match l {
+            temp::Label::Named(_) => panic!("impl bug: string should not have named label"),
+            temp::Label::Unnamed(id) => id
+        };
+        format!(".L{}:\n\t.string {}", id, s)
     }
 
     fn frame_pointer(gen: &mut dyn Uuids) -> temp::Temp

@@ -231,17 +231,4 @@ impl Codegen for X86Asm {
     fn code_gen_frame(_: FrameRef, stm: IrStm, instrs: &mut Vec<Instr>, gen: &mut dyn Uuids) {
         Self::munch_stm(stm, instrs, gen);
     }
-
-    fn code_gen_string(s: String, l: temp::Label, instrs: &mut Vec<Instr>) {
-        instrs.push(Instr::Label {
-            assem: ".L'L".into(),
-            lab: l,
-        });
-        instrs.push(Instr::Oper {
-            assem: format!("\t.string {}", s),
-            dst: Dst::empty(),
-            src: Src::empty(),
-            jump: vec![],
-        });
-    }
 }
