@@ -40,14 +40,14 @@ pub const R15: &str = "r15";
 
 
 // used for passing arguments.
-pub const ARG_REGS: [&str] = [RDI, RSI, RDX, RCX, R8, R9];
+pub const ARG_REGS: &[&str] = &[RDI, RSI, RDX, RCX, R8, R9];
 
 // implement special registers such as FP, SP.
-pub const SPECIAL_REGS: [&str] = [RSP, RBP];
+pub const SPECIAL_REGS: &[&str] = &[RSP, RBP];
 
-pub const CALLEE_SAVES: [&str] = [RBP, RSP, RBX, R12, R13, R14, R15];
+pub const CALLEE_SAVES: &[&str] = &[RBP, RSP, RBX, R12, R13, R14, R15];
 
-pub const CALLER_SAVES: [&str] = [RAX, RCX, RDX, RSI, RDI, R8, R9, R10, R11];
+pub const CALLER_SAVES: &[&str] = &[RAX, RCX, RDX, RSI, RDI, R8, R9, R10, R11];
 
 
 #[inline]
@@ -56,12 +56,9 @@ pub fn named_register(gen: &mut dyn Uuids, name: &'static str) -> temp::Temp
     gen.named_temp(name)
 }
 
-
 pub fn argument_passing_registers(gen: &mut dyn Uuids) -> Vec<temp::Temp> {
-    ARG_REGS.iter().map(|reg| gen.named_temp(reg))
+    ARG_REGS.iter().map(|reg| gen.named_temp(reg)).collect()
 }
-
-pub fn special_registers(gen
 
 impl Frame for x86_64_Frame {
     fn temp_map(gen: &mut dyn Uuids) -> temp::TempMap where Self: Sized {
