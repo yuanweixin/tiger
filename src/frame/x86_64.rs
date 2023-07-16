@@ -38,7 +38,6 @@ pub const R13: &str = "r13";
 pub const R14: &str = "r14";
 pub const R15: &str = "r15";
 
-
 // used for passing arguments.
 pub const ARG_REGS: &[&str] = &[RDI, RSI, RDX, RCX, R8, R9];
 
@@ -49,10 +48,8 @@ pub const CALLEE_SAVES: &[&str] = &[RBP, RSP, RBX, R12, R13, R14, R15];
 
 pub const CALLER_SAVES: &[&str] = &[RAX, RCX, RDX, RSI, RDI, R8, R9, R10, R11];
 
-
 #[inline]
-pub fn named_register(gen: &mut dyn Uuids, name: &'static str) -> temp::Temp
-{
+pub fn named_register(gen: &mut dyn Uuids, name: &'static str) -> temp::Temp {
     gen.named_temp(name)
 }
 
@@ -62,12 +59,18 @@ pub fn argument_passing_registers(gen: &mut dyn Uuids) -> Vec<temp::Temp> {
 
 impl Frame for x86_64_Frame {
     fn registers() -> &'static [Register]
-        where
-            Self: Sized {
-        &[RDI, RSI, RDX, RCX, RSP, RAX, RBX, R8, R9, R10, R11, R12, R13, R14, R15]
+    where
+        Self: Sized,
+    {
+        &[
+            RDI, RSI, RDX, RCX, RSP, RAX, RBX, R8, R9, R10, R11, R12, R13, R14, R15,
+        ]
     }
 
-    fn temp_map(gen: &mut dyn Uuids) -> temp::TempMap where Self: Sized {
+    fn temp_map(gen: &mut dyn Uuids) -> temp::TempMap
+    where
+        Self: Sized,
+    {
         gen.to_temp_map(Self::registers())
     }
 
@@ -89,10 +92,9 @@ impl Frame for x86_64_Frame {
     where
         Self: Sized,
     {
-        let id =
-        match l {
+        let id = match l {
             temp::Label::Named(_) => panic!("impl bug: string should not have named label"),
-            temp::Label::Unnamed(id) => id
+            temp::Label::Unnamed(id) => id,
         };
         format!(".L{}:\n\t.string {}", id, s)
     }
@@ -114,17 +116,14 @@ impl Frame for x86_64_Frame {
         IrStm::Exp(Box::new(IrExp::Const(42)))
     }
 
-    fn proc_entry_exit2()
-    where
-        Self: Sized,
-    {
+    fn proc_entry_exit2(&self, instrs: &mut Vec<crate::assem::Instr>) {
         todo!()
     }
 
-    fn proc_entry_exit3()
-    where
-        Self: Sized,
-    {
+    fn proc_entry_exit3(
+        &self,
+        instrs: &Vec<crate::assem::Instr>,
+    ) -> (super::Prologue, super::Epilogue) {
         todo!()
     }
 

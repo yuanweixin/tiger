@@ -1427,17 +1427,11 @@ mod tests {
             x
         }
 
-        fn proc_entry_exit2()
-        where
-            Self: Sized,
-        {
+        fn proc_entry_exit2(&self, instrs: &mut Vec<crate::assem::Instr>) {
             todo!()
         }
 
-        fn proc_entry_exit3()
-        where
-            Self: Sized,
-        {
+        fn proc_entry_exit3(&self, instrs: &Vec<crate::assem::Instr>) -> (frame::Prologue, frame::Epilogue) {
             todo!()
         }
 

@@ -86,6 +86,7 @@ fn main() {
                 println!("{}", x86_64_Frame::string(label, s.as_str()));
             }
             frame::Frag::Proc { body, frame } => {
+                asm.clear();
                 let linearized = canon::linearize(body, &mut gen);
                 let (blist, done_label) = canon::basic_blocks(linearized, &mut gen);
                 let trace = canon::trace_schedule(blist, done_label, &mut gen);

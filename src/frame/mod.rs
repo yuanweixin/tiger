@@ -1,9 +1,10 @@
 pub mod x86_64;
 
 use crate::{
+    assem::Instr,
     ir::{IrExp, IrStm},
     temp::{self, Uuids},
-    temp::{Label, Temp}, symtab::SymbolTable,
+    temp::{Label, Temp},
 };
 
 use std::{cell::RefCell, fmt::Debug, rc::Rc};
@@ -21,6 +22,9 @@ pub enum Access {
 pub type Escapes = bool;
 
 pub type Register = &'static str;
+
+pub type Prologue = String;
+pub type Epilogue = String;
 
 pub trait Frame: Debug {
     // We could also have put Sized on the trait.
@@ -48,13 +52,21 @@ pub trait Frame: Debug {
     where
         Self: Sized; // TODO signature
 
+    /// Handle call arguments and callee saved registers.
+    /// 1. moving call arguments into the abstract registers or memory locations in the callee.
+    /// 2. callee saved registers: if register allocator implements spilling, should make up new
+    /// temporaries and move callee saved registers to these. If no spilling, then all callee-save
+    /// and return address registers should be written to the frame at start of proc body and
+    /// fetched back afterwards.
     fn proc_entry_exit1(&self, body: IrStm) -> IrStm;
-    fn proc_entry_exit2()
-    where
-        Self: Sized;
-    fn proc_entry_exit3()
-    where
-        Self: Sized;
+
+    /// this function appends a "sink" instruction at the end of the function body to tell register
+    /// allocator that certian registers are live at procedure exit. this typically means all the
+    /// special registers (e.g. stack pointer, return address), and callee save registers.
+    fn proc_entry_exit2(&self, instrs: &mut Vec<Instr>);
+
+    /// Creates the prologue and epilogue assembly language.
+    fn proc_entry_exit3(&self, instrs: &Vec<Instr>) -> (Prologue, Epilogue);
 
     // since we don't use global state to track the symbol table, temporaries, labels,
     // will need to pass this in and grab it each time. each frame implementation shall
@@ -66,10 +78,10 @@ pub trait Frame: Debug {
     where
         Self: Sized;
 
-    fn temp_map(gen: &mut dyn Uuids) -> temp::TempMap where Self: Sized;
+    fn temp_map(gen: &mut dyn Uuids) -> temp::TempMap
+    where
+        Self: Sized;
 }
-
-
 
 #[derive(Debug)]
 pub enum Frag {
