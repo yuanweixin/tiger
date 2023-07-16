@@ -63,7 +63,7 @@ pub trait Frame: Debug {
     /// this function appends a "sink" instruction at the end of the function body to tell register
     /// allocator that certian registers are live at procedure exit. this typically means all the
     /// special registers (e.g. stack pointer, return address), and callee save registers.
-    fn proc_entry_exit2(&self, instrs: &mut Vec<Instr>);
+    fn proc_entry_exit2(&self, instrs: &mut Vec<Instr>, gen: &mut dyn Uuids);
 
     /// Creates the prologue and epilogue assembly language.
     fn proc_entry_exit3(&self, instrs: &Vec<Instr>) -> (Prologue, Epilogue);

@@ -1427,7 +1427,7 @@ mod tests {
             x
         }
 
-        fn proc_entry_exit2(&self, instrs: &mut Vec<crate::assem::Instr>) {
+        fn proc_entry_exit2(&self, instrs: &mut Vec<crate::assem::Instr>, g: &mut dyn Uuids) {
             todo!()
         }
 

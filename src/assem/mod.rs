@@ -10,18 +10,18 @@ use std::iter::Peekable;
 use std::str::FromStr;
 
 #[derive(Debug)]
-pub struct Src(Vec<temp::Temp>);
+pub struct Src(pub Vec<temp::Temp>);
 #[derive(Debug)]
-pub struct Dst(Vec<temp::Temp>);
+pub struct Dst(pub Vec<temp::Temp>);
 
 impl Dst {
-    fn empty() -> Self {
+    pub fn empty() -> Self {
         Dst(vec![])
     }
 }
 
 impl Src {
-    fn empty() -> Self {
+    pub fn empty() -> Self {
         Src(vec![])
     }
 }

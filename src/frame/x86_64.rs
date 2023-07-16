@@ -1,4 +1,5 @@
 use crate::{
+    assem::{Dst, Src, Instr},
     frame::{Access, Escapes, Frame, Register},
     ir,
     ir::{helpers::*, IrExp, IrStm},
@@ -53,8 +54,23 @@ pub fn named_register(gen: &mut dyn Uuids, name: &'static str) -> temp::Temp {
     gen.named_temp(name)
 }
 
-pub fn argument_passing_registers(gen: &mut dyn Uuids) -> Vec<temp::Temp> {
+pub fn callee_saves(gen: &mut dyn Uuids) -> Vec<temp::Temp> {
+    CALLEE_SAVES
+        .iter()
+        .map(|name| gen.named_temp(name))
+        .collect()
+}
+
+pub fn caller_saves(gen: &mut dyn Uuids) -> Vec<temp::Temp> {
+    CALLER_SAVES.iter().map(|reg| gen.named_temp(reg)).collect()
+}
+
+pub fn arg_regs(gen: &mut dyn Uuids) -> Vec<temp::Temp> {
     ARG_REGS.iter().map(|reg| gen.named_temp(reg)).collect()
+}
+
+pub fn special_regs(gen: &mut dyn Uuids) -> Vec<temp::Temp> {
+    SPECIAL_REGS.iter().map(|reg| gen.named_temp(reg)).collect()
 }
 
 impl Frame for x86_64_Frame {
@@ -116,8 +132,16 @@ impl Frame for x86_64_Frame {
         IrStm::Exp(Box::new(IrExp::Const(42)))
     }
 
-    fn proc_entry_exit2(&self, instrs: &mut Vec<crate::assem::Instr>) {
-        todo!()
+    fn proc_entry_exit2(&self, instrs: &mut Vec<crate::assem::Instr>, gen: &mut dyn Uuids) {
+        let mut regs = callee_saves(gen);
+        regs.append(&mut special_regs(gen));
+        regs.dedup();
+        instrs.push(Instr::Oper {
+            assem: "".into(),
+            src: Src(regs),
+            dst: Dst::empty(),
+            jump: vec![],
+        });
     }
 
     fn proc_entry_exit3(

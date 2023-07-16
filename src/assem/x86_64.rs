@@ -149,7 +149,7 @@ impl Codegen for X86Asm {
                 // we allocated that space but before pushing arguments, which gives us 1 less register
                 // to pass arguments in (so 5 instead of 6).
                 while i + 1 > 0 {
-                    let arg_passing_regs = x86_64::argument_passing_registers(gen);
+                    let arg_passing_regs = x86_64::arg_regs(gen);
                     result.push(Instr::Oper {
                         assem: "mov 'D0, 'S0".into(),
                         dst: Dst(vec![arg_passing_regs[i]]),
