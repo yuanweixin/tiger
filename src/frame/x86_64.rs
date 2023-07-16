@@ -26,15 +26,29 @@ pub const RDI: &str = "rdi";
 pub const RSI: &str = "rsi";
 pub const RDX: &str = "rdx";
 pub const RCX: &str = "rcx";
-pub const R8: &str = "r8";
-pub const R9: &str = "r9";
 pub const RSP: &str = "rsp";
 pub const RAX: &str = "rax";
+pub const RBX: &str = "rbx";
+pub const R8: &str = "r8";
+pub const R9: &str = "r9";
+pub const R10: &str = "r10";
+pub const R11: &str = "r11";
+pub const R12: &str = "r12";
+pub const R13: &str = "r13";
+pub const R14: &str = "r14";
+pub const R15: &str = "r15";
 
-#[inline]
-pub fn flags_register(gen: &mut dyn Uuids) -> temp::Temp {
-    gen.named_temp(FLAGS)
-}
+
+// used for passing arguments.
+pub const ARG_REGS: [&str] = [RDI, RSI, RDX, RCX, R8, R9];
+
+// implement special registers such as FP, SP.
+pub const SPECIAL_REGS: [&str] = [RSP, RBP];
+
+pub const CALLEE_SAVES: [&str] = [RBP, RSP, RBX, R12, R13, R14, R15];
+
+pub const CALLER_SAVES: [&str] = [RAX, RCX, RDX, RSI, RDI, R8, R9, R10, R11];
+
 
 #[inline]
 pub fn named_register(gen: &mut dyn Uuids, name: &'static str) -> temp::Temp
@@ -42,17 +56,12 @@ pub fn named_register(gen: &mut dyn Uuids, name: &'static str) -> temp::Temp
     gen.named_temp(name)
 }
 
-#[inline]
+
 pub fn argument_passing_registers(gen: &mut dyn Uuids) -> Vec<temp::Temp> {
-    vec![
-        gen.named_temp(RDI),
-        gen.named_temp(RSI),
-        gen.named_temp(RDX),
-        gen.named_temp(RCX),
-        gen.named_temp(R8),
-        gen.named_temp(R9),
-    ]
+    ARG_REGS.iter().map(|reg| gen.named_temp(reg))
 }
+
+pub fn special_registers(gen
 
 impl Frame for x86_64_Frame {
     fn temp_map(gen: &mut dyn Uuids) -> temp::TempMap where Self: Sized {

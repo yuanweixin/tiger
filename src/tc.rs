@@ -96,9 +96,8 @@ fn main() {
     }
 
     let tm = temp::TempMap::new();
-    for i in asm.into_iter() {
+    for i in asm.iter() {
         println!("{}", i.format(&tm, true, &mut gen));
     }
-
-    // println!("asm:\n{:#?}", asm);
+    println!("asm:\n{:#?}", asm);
 }
