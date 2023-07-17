@@ -160,12 +160,9 @@ impl Instr {
                                         temp::Label::Unnamed(id) => {
                                             res.push_str(format!("{}", id).as_str());
                                         }
-                                        temp::Label::Named(sym) => {
-                                            if let Some(s) = gen.resolve(&sym) {
-                                                res.push_str(s);
-                                            } else {
-                                                panic!("impl bug: named label cannot be resolved to a string");
-                                            }
+                                        l@temp::Label::Named(..) => {
+                                            let s = l.resolve_named_label(gen);
+                                            res.push_str(s);
                                         }
                                     }
                                 }
@@ -196,20 +193,18 @@ impl Instr {
                         '\'' => {
                             iter.next(); // consume the '
 
-                            consume_control_char(&mut iter, assem);
+                            let cc = consume_control_char(&mut iter, assem);
+                            if 'L' != cc {
+                                panic!("impl bug: invalid control character {}", cc);
+                            }
 
                             match lab {
                                 temp::Label::Unnamed(id) => {
                                     res.push_str(format!("{}", id).as_str());
                                 }
-                                temp::Label::Named(sym) => {
-                                    let s = gen.resolve(sym);
-                                    if s.is_none() {
-                                        panic!(
-                                            "impl bug: named label cannot be resolved to a string"
-                                        );
-                                    }
-                                    res.push_str(s.unwrap());
+                                l@temp::Label::Named(..) => {
+                                    let s = l.resolve_named_label(gen);
+                                    res.push_str(s);
                                 }
                             }
                         }
@@ -381,6 +376,17 @@ mod tests {
     fn format_label_missing_control_character() {
         let lab = temp::test_helpers::new_unnamed_label(1);
         let i = Instr::Label { assem: "'", lab };
+        let tm = temp::TempMap::new();
+        let relaxed = false;
+        let mut gen: UuidsImpl = Uuids::new();
+        i.format(&tm, relaxed, &mut gen);
+    }
+
+    #[test]
+    #[should_panic]
+    fn format_label_invalid_control_character() {
+        let lab = temp::test_helpers::new_unnamed_label(1);
+        let i = Instr::Label { assem: "'X", lab };
         let tm = temp::TempMap::new();
         let relaxed = false;
         let mut gen: UuidsImpl = Uuids::new();

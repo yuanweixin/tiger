@@ -77,11 +77,11 @@ impl Codegen for X86Asm {
                 });
             }
             Label(lab) => match lab {
-                temp::Label::Named(sym) => result.push(Instr::Label {
+                temp::Label::Named(..) => result.push(Instr::Label {
                     assem: "'L".into(), // function labels don't need the .L prefix
                     lab,
                 }),
-                temp::Label::Unnamed(id) => result.push(Instr::Label {
+                temp::Label::Unnamed(..) => result.push(Instr::Label {
                     assem: ".L'L".into(), // non-fn labels need a .L prefix
                     lab,
                 }),

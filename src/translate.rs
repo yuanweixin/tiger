@@ -751,7 +751,7 @@ pub fn proc_entry_exit(
     match &*level.borrow() {
         Level::Top => panic!("impl bug, proc_entry_exit cannot be used on Top level"),
         Level::Nested { frame, .. } => {
-            let augmented = frame.borrow().proc_entry_exit1(un_nx(body, gen), can_spill);
+            let augmented = frame.borrow_mut().proc_entry_exit1(un_nx(body, gen), can_spill, gen);
             frags.push(frame::Frag::Proc {
                 body: augmented,
                 frame: frame.clone(),
@@ -827,15 +827,15 @@ mod tests {
             g.named_temp(FP)
         }
 
-        fn proc_entry_exit1(&self, _: IrStm, _: bool) -> IrStm {
+        fn proc_entry_exit1(&mut self, _: IrStm, _: bool, _: &mut dyn Uuids) -> IrStm {
             todo!()
         }
 
-        fn proc_entry_exit2(&self, instrs: &mut Vec<crate::assem::Instr>, g: &mut dyn Uuids) {
+        fn proc_entry_exit2(&self, _: &mut Vec<crate::assem::Instr>, _: &mut dyn Uuids) {
             todo!()
         }
 
-        fn proc_entry_exit3(&self, instrs: &Vec<crate::assem::Instr>) -> (frame::Prologue, frame::Epilogue) {
+        fn proc_entry_exit3(&self, _: &Vec<crate::assem::Instr>, _: &mut dyn Uuids) -> (frame::Prologue, frame::Epilogue) {
             todo!()
         }
 

@@ -1,9 +1,9 @@
 use std::num::NonZeroUsize;
 use std::{collections::HashMap, fmt::Display, hash::Hash};
 
+use crate::frame;
 use crate::symbol::{Interner, Symbol};
 use crate::symtab::SymbolTable;
-use crate::frame;
 
 // most temp are unnamed, only the registers are named
 // the extra cost is an extra word. otoh this makes it
@@ -11,13 +11,23 @@ use crate::frame;
 #[derive(Eq, PartialEq, Copy, Clone, Hash, Debug)]
 pub enum Temp {
     Named(Symbol),
-    Unnamed(NonZeroUsize)
+    Unnamed(NonZeroUsize),
 }
 
 #[derive(Eq, PartialEq, Copy, Clone, Hash, Debug)]
 pub enum Label {
     Named(Symbol),
-    Unnamed(NonZeroUsize)
+    Unnamed(NonZeroUsize),
+}
+
+impl Label {
+    pub fn resolve_named_label<'a>(&self, gen: &'a mut dyn Uuids) -> &'a str {
+        match self {
+            Label::Unnamed(..) => panic!("impl bug: expected named label"),
+            // TODO how the fuck does this work when put into interner?
+            Label::Named(sym) => gen.resolve(&sym).unwrap()
+        }
+    }
 }
 
 /// The mapping of temporary to strings.
@@ -61,14 +71,14 @@ pub trait Uuids {
 pub struct UuidsImpl {
     next_id: NonZeroUsize,
     pool: Interner,
-    name_temp: SymbolTable<Temp>
+    name_temp: SymbolTable<Temp>,
 }
 
 impl Display for Temp {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Temp::Named(sym) => write!(f, "nt_sym_{}", sym.to_usize()),
-            Temp::Unnamed(id) => write!(f, "{}", id)
+            Temp::Unnamed(id) => write!(f, "t{}", id),
         }
     }
 }
@@ -128,7 +138,6 @@ impl Uuids for UuidsImpl {
         let sym = self.pool.intern(s);
         Label::Named(sym)
     }
-
 }
 
 pub mod test_helpers {
@@ -139,9 +148,7 @@ pub mod test_helpers {
     }
 
     pub fn new_unnamed_label(s: usize) -> Label {
-        Label::Unnamed(
-            NonZeroUsize::new(s).unwrap()
-        )
+        Label::Unnamed(NonZeroUsize::new(s).unwrap())
     }
 }
 

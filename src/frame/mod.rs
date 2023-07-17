@@ -53,12 +53,13 @@ pub trait Frame: Debug {
         Self: Sized; // TODO signature
 
     /// Handle call arguments and callee saved registers.
+    /// This is part of the code of a function body.
     /// 1. moving call arguments into the abstract registers or memory locations in the callee.
     /// 2. callee saved registers: if register allocator implements spilling, should make up new
     /// temporaries and move callee saved registers to these. If no spilling, then all callee-save
     /// and return address registers should be written to the frame at start of proc body and
     /// fetched back afterwards.
-    fn proc_entry_exit1(&self, body: IrStm, can_spill: bool) -> IrStm;
+    fn proc_entry_exit1(&mut self, body: IrStm, can_spill: bool, gen: &mut dyn Uuids) -> IrStm;
 
     /// this function appends a "sink" instruction at the end of the function body to tell register
     /// allocator that certian registers are live at procedure exit. this typically means all the
@@ -66,7 +67,7 @@ pub trait Frame: Debug {
     fn proc_entry_exit2(&self, instrs: &mut Vec<Instr>, gen: &mut dyn Uuids);
 
     /// Creates the prologue and epilogue assembly language.
-    fn proc_entry_exit3(&self, instrs: &Vec<Instr>) -> (Prologue, Epilogue);
+    fn proc_entry_exit3(&self, instrs: &Vec<Instr>, gen: &mut dyn Uuids) -> (Prologue, Epilogue);
 
     // since we don't use global state to track the symbol table, temporaries, labels,
     // will need to pass this in and grab it each time. each frame implementation shall

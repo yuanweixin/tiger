@@ -58,7 +58,7 @@ pub struct TypeCheckingContext<'a> {
 
 macro_rules! top_level_fn {
     ($name:expr, $frame:ident, $res:expr, $formals:expr, $gen:expr, $result_type:expr) => {
-        let escapes = $formals.iter().map(|_| false ).collect();
+        let escapes = $formals.iter().map(|_| false).collect();
         let (level, label) = Level::new_level::<$frame>(Level::outermost(), escapes, $gen, $name);
         $res.enter(
             $gen.intern($name),
@@ -66,10 +66,10 @@ macro_rules! top_level_fn {
                 level,
                 formals: Rc::new($formals),
                 result: $result_type,
-                label
+                label,
             },
         );
-    }
+    };
 }
 
 impl<'a> TypeCheckingContext<'a> {
@@ -84,7 +84,7 @@ impl<'a> TypeCheckingContext<'a> {
             input,
             gen,
             frags: Vec::new(),
-            can_spill
+            can_spill,
         }
     }
 
@@ -114,8 +114,22 @@ impl<'a> TypeCheckingContext<'a> {
         top_level_fn!("ord", T, res, vec![Type::String], gen, Type::Int);
         top_level_fn!("chr", T, res, vec![Type::Int], gen, Type::String);
         top_level_fn!("size", T, res, vec![Type::String], gen, Type::Int);
-        top_level_fn!("substring", T, res, vec![Type::String, Type::Int, Type::Int], gen, Type::String);
-        top_level_fn!("concat", T, res, vec![Type::String, Type::String], gen, Type::String);
+        top_level_fn!(
+            "substring",
+            T,
+            res,
+            vec![Type::String, Type::Int, Type::Int],
+            gen,
+            Type::String
+        );
+        top_level_fn!(
+            "concat",
+            T,
+            res,
+            vec![Type::String, Type::String],
+            gen,
+            Type::String
+        );
         top_level_fn!("not", T, res, vec![Type::Int], gen, Type::Int);
         top_level_fn!("exit", T, res, vec![Type::Int], gen, Type::Unit);
         res
@@ -1111,7 +1125,7 @@ fn trans_dec<T: Frame + 'static>(
                             fun_body_ir,
                             &mut ctx.frags,
                             ctx.gen,
-                            ctx.can_spill
+                            ctx.can_spill,
                         );
                     }
                 }
@@ -1342,13 +1356,14 @@ pub fn translate<T: Frame + 'static>(
     input: &str,
     ast: &mut Exp,
     gen: &mut dyn Uuids,
-    can_spill: bool
+    can_spill: bool,
 ) -> Result<Vec<frame::Frag>, ()> {
     let mut ctx = TypeCheckingContext::new::<T>(input, gen, can_spill);
 
     escape::find_escapes(&mut ctx, ast);
 
-    let (main_level, _) = Level::new_level::<T>(Level::outermost(), Vec::new(), ctx.gen, "tigermain");
+    let (main_level, _) =
+        Level::new_level::<T>(Level::outermost(), Vec::new(), ctx.gen, "tigermain");
     let (_, _) = trans_exp::<T>(&mut ctx, main_level, ast, None);
 
     if ctx.has_error() {
@@ -1426,7 +1441,7 @@ mod tests {
             temp::test_helpers::new_unnamed_temp(1)
         }
 
-        fn proc_entry_exit1(&self, x: IrStm, _: bool) -> IrStm {
+        fn proc_entry_exit1(&mut self, x: IrStm, _: bool, _: &mut dyn Uuids) -> IrStm {
             // just don't add stuff to the body for test purpose.
             x
         }
@@ -1435,7 +1450,11 @@ mod tests {
             todo!()
         }
 
-        fn proc_entry_exit3(&self, instrs: &Vec<crate::assem::Instr>) -> (frame::Prologue, frame::Epilogue) {
+        fn proc_entry_exit3(
+            &self,
+            _: &Vec<crate::assem::Instr>,
+            _: &mut dyn Uuids
+        ) -> (frame::Prologue, frame::Epilogue) {
             todo!()
         }
 

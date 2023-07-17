@@ -1,11 +1,13 @@
+use itertools::Itertools;
+
 use crate::{
     assem::{Dst, Instr, Src},
     frame::{Access, Escapes, Frame, Register},
     ir,
-    ir::{helpers::*, IrExp, IrStm, IrBinop},
+    ir::{helpers::*, IrBinop, IrExp, IrStm},
     temp,
     temp::{Label, Uuids},
-    translate
+    translate,
 };
 
 #[derive(Debug)]
@@ -45,6 +47,8 @@ pub const R12: &str = "r12";
 pub const R13: &str = "r13";
 pub const R14: &str = "r14";
 pub const R15: &str = "r15";
+
+pub const WORD_SIZE: usize = 8;
 
 // used for passing arguments.
 pub const ARG_REGS: &[&str] = &[RDI, RSI, RDX, RCX, R8, R9];
@@ -108,7 +112,7 @@ impl Frame for x86_64_Frame {
     where
         Self: Sized,
     {
-        8
+        WORD_SIZE
     }
 
     fn string(l: temp::Label, s: &str) -> String
@@ -129,16 +133,34 @@ impl Frame for x86_64_Frame {
         gen.named_temp(RBP)
     }
 
-    fn proc_entry_exit1(&self, body: IrStm, can_spill: bool) -> IrStm {
-        // TODO insert self.formals_move
-        // TODO
+    fn proc_entry_exit1(&mut self, body: IrStm, can_spill: bool, gen: &mut dyn Uuids) -> IrStm {
+        let mut moves = Vec::new();
         if can_spill {
             todo!()
         } else {
-            //
+            // move callee save registers and the return address registers.
+            for name in CALLEE_SAVES.iter().chain([RAX].iter()) {
+                let acc = self.alloc_local(true, gen);
+                match acc {
+                    Access::InFrame(offset) => {
+                        moves.push(Move(
+                            Mem(Binop(
+                                IrBinop::Plus,
+                                IrExp::Const(offset),
+                                IrExp::Temp(Self::frame_pointer(gen)),
+                            )),
+                            IrExp::Temp(gen.named_temp(name)),
+                        ));
+                    }
+                    Access::InReg(..) => panic!("impl bug: expected InFrame"),
+                }
+            }
+            // will allow clone here, feels cleaner to just leave the frame's data
+            // as is instead of moving out the formals_move, although in practice
+            // we won't call proc_entry_exit1 more than once anyway.
+            moves.push(self.formals_move.clone());
+            return translate::make_seq(moves);
         }
-
-        IrStm::Exp(Box::new(IrExp::Const(42)))
     }
 
     fn proc_entry_exit2(&self, instrs: &mut Vec<crate::assem::Instr>, gen: &mut dyn Uuids) {
@@ -156,19 +178,39 @@ impl Frame for x86_64_Frame {
     fn proc_entry_exit3(
         &self,
         instrs: &Vec<crate::assem::Instr>,
+        gen: &mut dyn Uuids,
     ) -> (super::Prologue, super::Epilogue) {
-        todo!()
+        let offset_locals = -(self.next_local_offset + WORD_SIZE as i32);
+        let prologue = if offset_locals > 0 {
+            format!(
+                "{}:\n\tpush rbp\n\tmov rbp, rsp\n\tsub rsp, -{}",
+                self.name.resolve_named_label(gen),
+                offset_locals
+            )
+        } else {
+            format!(
+                "{}:\n\tpush rbp\n\tmov rbp, rsp",
+                self.name.resolve_named_label(gen)
+            )
+        };
+
+        let epilogue = if offset_locals > 0 {
+            format!("\tadd rsp, {}\n\tpop rbp\n\tret", offset_locals)
+        } else {
+            format!("\tpop rbp\n\tret")
+        };
+        return (prologue, epilogue);
     }
 
     fn new(name: Label, formals_escapes: Vec<Escapes>, gen: &mut dyn Uuids) -> Self {
         let mut formals = Vec::with_capacity(formals_escapes.len());
         let mut moves = Vec::new();
-        let mut next_local_offset: i32 = -8;
+        let mut next_local_offset: i32 = -(WORD_SIZE as i32);
         for (i, escape) in formals_escapes.iter().enumerate() {
             if i > 5 || *escape {
                 formals.push(Access::InFrame(next_local_offset));
                 next_local_offset = next_local_offset
-                    .checked_add(Self::word_size() as i32 * -1)
+                    .checked_add(WORD_SIZE as i32 * -1)
                     .unwrap();
                 if i < 6 {
                     let arg_reg = ARG_REGS[i];
@@ -192,7 +234,7 @@ impl Frame for x86_64_Frame {
             name,
             formals,
             formals_move: translate::make_seq(moves),
-            next_local_offset
+            next_local_offset,
         }
     }
 
@@ -207,7 +249,9 @@ impl Frame for x86_64_Frame {
     fn alloc_local(&mut self, escapes: Escapes, gen: &mut dyn Uuids) -> Access {
         if escapes {
             let res = Access::InFrame(self.next_local_offset);
-            self.next_local_offset.checked_add(-8).unwrap();
+            self.next_local_offset
+                .checked_add(-(WORD_SIZE as i32))
+                .unwrap();
             res
         } else {
             Access::InReg(gen.new_temp())

@@ -20,7 +20,7 @@ mod translate;
 mod util;
 
 use crate::{
-    assem::{Codegen, x86_64::X86Asm},
+    assem::{x86_64::X86Asm, Codegen},
     frame::{x86_64::x86_64_Frame, Frame},
     ir::IrStm,
     temp::{Uuids, UuidsImpl},
@@ -74,7 +74,7 @@ fn main() {
         input.as_ref().unwrap(),
         &mut ast_opt.unwrap().unwrap(),
         &mut gen,
-        can_spill
+        can_spill,
     );
 
     if frags.is_err() {
@@ -82,29 +82,38 @@ fn main() {
         util::exit(util::ReturnCode::TypeError);
     }
 
-    let mut asm = Vec::new();
+    let mut xxx = Vec::new();
     for frag in frags.unwrap().into_iter() {
         match frag {
             frame::Frag::String(label, s) => {
-                // TODO
                 println!("{}", x86_64_Frame::string(label, s.as_str()));
             }
             frame::Frag::Proc { body, frame } => {
-                asm.clear();
+                let mut asm = Vec::new();
                 let linearized = canon::linearize(body, &mut gen);
                 let (blist, done_label) = canon::basic_blocks(linearized, &mut gen);
                 let trace = canon::trace_schedule(blist, done_label, &mut gen);
+
                 for stm in trace.into_iter() {
                     assem::x86_64::X86Asm::code_gen_frame(frame.clone(), stm, &mut asm, &mut gen);
                 }
+                frame.borrow().proc_entry_exit2(&mut asm, &mut gen);
+                let (prologue, epilogue) = frame.borrow().proc_entry_exit3(&asm, &mut gen);
+                xxx.push((prologue, epilogue, asm));
             }
         };
     }
 
-    // todo fix up with the procEntryExit_x crap.
-    let tm = temp::TempMap::new();
-    for i in asm.iter() {
-        println!("{}", i.format(&tm, true, &mut gen));
+    let tm = gen.to_temp_map(x86_64_Frame::registers());
+    for (prologue, epilogue, asm) in xxx.iter() {
+        println!("{}", prologue);
+        for i in asm {
+            let s = i.format(&tm, true, &mut gen);
+            if s.len() > 0 {
+                // because proc_entry_exit2 added the dummy instruction, it will cause an empty line
+                println!("\t{}", i.format(&tm, true, &mut gen));
+            }
+        }
+        println!("{}", epilogue);
     }
-    println!("asm:\n{:#?}", asm);
 }
