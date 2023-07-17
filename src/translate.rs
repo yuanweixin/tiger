@@ -339,8 +339,7 @@ pub fn call_exp<T: Frame>(
     // start at the current frame's FP.
     let mut expr = Level::current_frame::<T>(gen);
     // keep moving up the call stack lexically until we hit the callee's parent.
-    while *p.borrow() != Level::Top &&
-            *p.borrow() != *callee_level.borrow().get_parent().borrow() {
+    while *p.borrow() != Level::Top && *p.borrow() != *callee_level.borrow().get_parent().borrow() {
         expr = p.borrow().parent_frame(expr);
         let tmp = p.borrow().get_parent();
         p = tmp;
@@ -349,11 +348,12 @@ pub fn call_exp<T: Frame>(
     for arg in args {
         augmented_args.push(un_ex(arg, gen));
     }
-    return if is_unit_return_type {
+    let ret = if is_unit_return_type {
         Nx(Exp(Call(Name(func), augmented_args)))
     } else {
         Ex(Call(Name(func), augmented_args))
     };
+    return ret;
 }
 
 pub fn nil_exp() -> TrExp {
@@ -746,12 +746,14 @@ pub fn proc_entry_exit(
     body: TrExp,
     frags: &mut Vec<frame::Frag>,
     gen: &mut dyn Uuids,
-    can_spill: bool
+    can_spill: bool,
 ) {
     match &*level.borrow() {
         Level::Top => panic!("impl bug, proc_entry_exit cannot be used on Top level"),
         Level::Nested { frame, .. } => {
-            let augmented = frame.borrow_mut().proc_entry_exit1(un_nx(body, gen), can_spill, gen);
+            let augmented = frame
+                .borrow_mut()
+                .proc_entry_exit1(un_nx(body, gen), can_spill, gen);
             frags.push(frame::Frag::Proc {
                 body: augmented,
                 frame: frame.clone(),
@@ -835,7 +837,11 @@ mod tests {
             todo!()
         }
 
-        fn proc_entry_exit3(&self, _: &Vec<crate::assem::Instr>, _: &mut dyn Uuids) -> (frame::Prologue, frame::Epilogue) {
+        fn proc_entry_exit3(
+            &self,
+            _: &Vec<crate::assem::Instr>,
+            _: &mut dyn Uuids,
+        ) -> (frame::Prologue, frame::Epilogue) {
             todo!()
         }
 
@@ -1105,14 +1111,9 @@ mod tests {
 
         let (parent_parent, _) =
             Level::new_level::<TestFrame>(Level::Top.into(), vec![], &mut gen, "main");
-        let (parent_level, _) =
-            Level::new_level::<TestFrame>(parent_parent, vec![], &mut gen, "f");
-        let (callee_level, func) = Level::new_level::<TestFrame>(
-            parent_level.clone(),
-            vec![false, false],
-            &mut gen,
-            "g",
-        );
+        let (parent_level, _) = Level::new_level::<TestFrame>(parent_parent, vec![], &mut gen, "f");
+        let (callee_level, func) =
+            Level::new_level::<TestFrame>(parent_level.clone(), vec![false, false], &mut gen, "g");
 
         let actual = call_exp::<TestFrame>(
             func,
@@ -1144,19 +1145,10 @@ mod tests {
             Level::new_level::<TestFrame>(Level::Top.into(), vec![], &mut gen, "main");
         let (peer_a, _) =
             Level::new_level::<TestFrame>(common_parent.clone(), vec![], &mut gen, "a");
-        let (peer_b, func) = Level::new_level::<TestFrame>(
-            common_parent.clone(),
-            vec![false, false],
-            &mut gen,
-            "b",
-        );
+        let (peer_b, func) =
+            Level::new_level::<TestFrame>(common_parent.clone(), vec![false, false], &mut gen, "b");
         // c will call a
-        let (c_inside_b, _) = Level::new_level::<TestFrame>(
-            peer_b.clone(),
-            vec![],
-            &mut gen,
-            "c",
-        );
+        let (c_inside_b, _) = Level::new_level::<TestFrame>(peer_b.clone(), vec![], &mut gen, "c");
 
         let actual = call_exp::<TestFrame>(
             func,

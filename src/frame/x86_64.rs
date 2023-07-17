@@ -164,7 +164,8 @@ impl Frame for x86_64_Frame {
             if let Some(ref formals_move) = self.formals_move {
                 moves.push(formals_move.clone());
             }
-            return translate::make_seq(moves);
+            moves.push(body);
+            translate::make_seq(moves)
         }
     }
 
