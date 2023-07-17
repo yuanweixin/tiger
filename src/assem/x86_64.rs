@@ -128,37 +128,42 @@ impl Codegen for X86Asm {
                     arg_regs.push(Self::munch_exp(arg_exp, result, gen));
                 }
 
-                let mut i = arg_regs.len() - 1;
-                // args after the 6th one go on stack.
-                while i > 5 {
-                    result.push(Instr::Oper {
-                        assem: "push 'S0".into(),
-                        dst: Dst(vec![]),
-                        src: Src(vec![arg_regs[i]]),
-                        jump: vec![],
-                    });
-                    i -= 1;
-                }
+                if num_args > 0 {
+                    let mut i = arg_regs.len() - 1;
+                    // args after the 6th one go on stack.
+                    while i > 5 {
+                        result.push(Instr::Oper {
+                            assem: "push 'S0".into(),
+                            dst: Dst(vec![]),
+                            src: Src(vec![arg_regs[i]]),
+                            jump: vec![],
+                        });
+                        i -= 1;
+                    }
 
-                // let m = number of return values.
-                // tiger lang only has reference types or plain int types, so only need to implement the m=1 case.
-                // for m=1, rax holds return value.
-                // for m=2, we'd expect results in rax, rdx.
-                // for m>2, we'd have to reserve space on the caller stack to hold the results,
-                // BEFORE pushing arguments onto the stack. rdi would hold the value of rsp after
-                // we allocated that space but before pushing arguments, which gives us 1 less register
-                // to pass arguments in (so 5 instead of 6).
-                while i + 1 > 0 {
-                    let arg_passing_regs = x86_64::arg_regs(gen);
-                    result.push(Instr::Oper {
-                        assem: "mov 'D0, 'S0".into(),
-                        dst: Dst(vec![arg_passing_regs[i]]),
-                        src: Src(vec![arg_regs[i]]),
-                        jump: vec![],
-                    });
-                    i -= 1;
+                    // note about the use of rax, rdx as return value registers.
+                    // tiger lang only has reference types or plain int types, so only need to implement the m=1 case.
+                    // let m = number of return values.
+                    // for m=1, rax holds return value.
+                    // for m=2, we'd expect results in rax, rdx.
+                    // for m>2, we'd have to reserve space on the caller stack to hold the results,
+                    // BEFORE pushing arguments onto the stack. rdi would hold the value of rsp after
+                    // we allocated that space but before pushing arguments, which gives us 1 less register
+                    // to pass arguments in (so 5 instead of 6).
+                    while i + 1 > 0 {
+                        let arg_passing_regs = x86_64::arg_regs(gen);
+                        result.push(Instr::Oper {
+                            assem: "mov 'D0, 'S0".into(),
+                            dst: Dst(vec![arg_passing_regs[i]]),
+                            src: Src(vec![arg_regs[i]]),
+                            jump: vec![],
+                        });
+                        if i == 0 {
+                            break;
+                        }
+                        i -= 1;
+                    }
                 }
-
                 // do the call
                 result.push(Instr::Oper {
                     assem: "call 'S0".into(),
