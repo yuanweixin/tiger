@@ -170,7 +170,7 @@ fn lift_stm(s: IrStm, gen: &mut dyn Uuids, nop_marker_label: temp::Label) -> IrS
             }
         }
         IrStm::Exp(ebox) => match *ebox {
-            IrExp::Call(e, mut el) => {
+            IrExp::Call(e, el) => {
                 let mut vd = VecDeque::from(el);
                 vd.push_front(*e);
                 reorder_stm(

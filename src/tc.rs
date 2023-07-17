@@ -82,6 +82,8 @@ fn main() {
         util::exit(util::ReturnCode::TypeError);
     }
 
+    // TODO missing tigermain
+    // missing all the calls, hmm
     let mut xxx = Vec::new();
     for frag in frags.unwrap().into_iter() {
         match frag {

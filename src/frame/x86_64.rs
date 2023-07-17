@@ -16,10 +16,13 @@ pub struct x86_64_Frame {
     formals: Vec<Access>,
     // the sequence of moves to put register parameter to place from which it is seen
     // in this frame. if it's a InReg param it should be Move(t_fresh, <temp corresponding to arg reg>)
-    // if it is a InFrame then it should be Move(Mem(+(FP, Offset)), <temp corresponding to arg reg>)
+    // if it is a InFrame then it should be Move(Mem(+(FP, Offset)), <temp corresponding to arg reg>).
+    // with the exception of the tigermain, every user defined fn is compiled with the static link. although,
+    // it is possible (as an optimization) to skip the static link if none of the calls can result in a
+    // variable access of a variable defined in a higher level.
     // since we always have static link that escapes, this statement should always be constructable.
     // if not, it is an impl bug!
-    formals_move: IrStm,
+    formals_move: Option<IrStm>,
     next_local_offset: i32,
 }
 
@@ -90,7 +93,7 @@ impl Frame for x86_64_Frame {
         Self: Sized,
     {
         &[
-            RDI, RSI, RDX, RCX, RSP, RAX, RBX, R8, R9, R10, R11, R12, R13, R14, R15,
+            RDI, RSI, RDX, RCX, RSP, RAX, RBX, RBP, R8, R9, R10, R11, R12, R13, R14, R15,
         ]
     }
 
@@ -158,7 +161,9 @@ impl Frame for x86_64_Frame {
             // will allow clone here, feels cleaner to just leave the frame's data
             // as is instead of moving out the formals_move, although in practice
             // we won't call proc_entry_exit1 more than once anyway.
-            moves.push(self.formals_move.clone());
+            if let Some(ref formals_move) = self.formals_move {
+                moves.push(formals_move.clone());
+            }
             return translate::make_seq(moves);
         }
     }
@@ -230,10 +235,15 @@ impl Frame for x86_64_Frame {
                 moves.push(Move(IrExp::Temp(t), IrExp::Temp(gen.named_temp(arg_reg))));
             }
         }
+
         Self {
             name,
             formals,
-            formals_move: translate::make_seq(moves),
+            formals_move: if moves.len() > 0 {
+                Some(translate::make_seq(moves))
+            } else {
+                None
+            },
             next_local_offset,
         }
     }

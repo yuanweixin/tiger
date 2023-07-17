@@ -1362,9 +1362,22 @@ pub fn translate<T: Frame + 'static>(
 
     escape::find_escapes(&mut ctx, ast);
 
-    let (main_level, _) =
+    let (main_level,..) =
         Level::new_level::<T>(Level::outermost(), Vec::new(), ctx.gen, "tigermain");
-    let (_, _) = trans_exp::<T>(&mut ctx, main_level, ast, None);
+    let (tigermain_ir, _) = trans_exp::<T>(&mut ctx, main_level.clone(), ast, None);
+
+    match &*main_level.borrow() {
+        Level::Top => unreachable!(),
+        Level::Nested { .. } => {
+            translate::proc_entry_exit(
+                main_level.clone(),
+                tigermain_ir,
+                &mut ctx.frags,
+                ctx.gen,
+                can_spill,
+            );
+        }
+    }
 
     if ctx.has_error() {
         Err(())
@@ -1453,7 +1466,7 @@ mod tests {
         fn proc_entry_exit3(
             &self,
             _: &Vec<crate::assem::Instr>,
-            _: &mut dyn Uuids
+            _: &mut dyn Uuids,
         ) -> (frame::Prologue, frame::Epilogue) {
             todo!()
         }
