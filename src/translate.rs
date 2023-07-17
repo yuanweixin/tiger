@@ -171,7 +171,7 @@ impl Level {
     }
 }
 
-fn make_seq(stmts: Vec<IrStm>) -> IrStm {
+pub fn make_seq(stmts: Vec<IrStm>) -> IrStm {
     assert!(
         !stmts.is_empty(),
         "bug in impl, trying to combine 0 IrStm into 1, clearly impossible"
@@ -746,11 +746,12 @@ pub fn proc_entry_exit(
     body: TrExp,
     frags: &mut Vec<frame::Frag>,
     gen: &mut dyn Uuids,
+    can_spill: bool
 ) {
     match &*level.borrow() {
         Level::Top => panic!("impl bug, proc_entry_exit cannot be used on Top level"),
         Level::Nested { frame, .. } => {
-            let augmented = frame.borrow().proc_entry_exit1(un_nx(body, gen));
+            let augmented = frame.borrow().proc_entry_exit1(un_nx(body, gen), can_spill);
             frags.push(frame::Frag::Proc {
                 body: augmented,
                 frame: frame.clone(),
@@ -826,7 +827,7 @@ mod tests {
             g.named_temp(FP)
         }
 
-        fn proc_entry_exit1(&self, _: IrStm) -> IrStm {
+        fn proc_entry_exit1(&self, _: IrStm, _: bool) -> IrStm {
             todo!()
         }
 

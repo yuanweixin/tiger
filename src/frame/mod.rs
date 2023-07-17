@@ -58,7 +58,7 @@ pub trait Frame: Debug {
     /// temporaries and move callee saved registers to these. If no spilling, then all callee-save
     /// and return address registers should be written to the frame at start of proc body and
     /// fetched back afterwards.
-    fn proc_entry_exit1(&self, body: IrStm) -> IrStm;
+    fn proc_entry_exit1(&self, body: IrStm, can_spill: bool) -> IrStm;
 
     /// this function appends a "sink" instruction at the end of the function body to tell register
     /// allocator that certian registers are live at procedure exit. this typically means all the

@@ -1,16 +1,23 @@
 use crate::{
-    assem::{Dst, Src, Instr},
+    assem::{Dst, Instr, Src},
     frame::{Access, Escapes, Frame, Register},
     ir,
-    ir::{helpers::*, IrExp, IrStm},
+    ir::{helpers::*, IrExp, IrStm, IrBinop},
     temp,
     temp::{Label, Uuids},
+    translate
 };
 
 #[derive(Debug)]
 pub struct x86_64_Frame {
     name: Label,
     formals: Vec<Access>,
+    // the sequence of moves to put register parameter to place from which it is seen
+    // in this frame. if it's a InReg param it should be Move(t_fresh, <temp corresponding to arg reg>)
+    // if it is a InFrame then it should be Move(Mem(+(FP, Offset)), <temp corresponding to arg reg>)
+    // since we always have static link that escapes, this statement should always be constructable.
+    // if not, it is an impl bug!
+    formals_move: IrStm,
     next_local_offset: i32,
 }
 
@@ -122,13 +129,15 @@ impl Frame for x86_64_Frame {
         gen.named_temp(RBP)
     }
 
-    fn proc_entry_exit1(&self, body: IrStm) -> IrStm {
-        // assuming register allocator can spill,
-        // we just need to insert a bunch of Move(t, c) for each of the callee-save
-        // registers c, and t is a fresh temporary. this lets the register allocator
-        // spill if necessary (as pre-colored temporaries are never spilled.
-        // on procedure exit, we will do the reverse and restore (i.e. Move(c, t) where
-        // t is the same t not a fresh register).
+    fn proc_entry_exit1(&self, body: IrStm, can_spill: bool) -> IrStm {
+        // TODO insert self.formals_move
+        // TODO
+        if can_spill {
+            todo!()
+        } else {
+            //
+        }
+
         IrStm::Exp(Box::new(IrExp::Const(42)))
     }
 
@@ -153,18 +162,37 @@ impl Frame for x86_64_Frame {
 
     fn new(name: Label, formals_escapes: Vec<Escapes>, gen: &mut dyn Uuids) -> Self {
         let mut formals = Vec::with_capacity(formals_escapes.len());
-
+        let mut moves = Vec::new();
+        let mut next_local_offset: i32 = -8;
         for (i, escape) in formals_escapes.iter().enumerate() {
             if i > 5 || *escape {
-                formals.push(Access::InFrame(42));
+                formals.push(Access::InFrame(next_local_offset));
+                next_local_offset = next_local_offset
+                    .checked_add(Self::word_size() as i32 * -1)
+                    .unwrap();
+                if i < 6 {
+                    let arg_reg = ARG_REGS[i];
+                    moves.push(Move(
+                        Mem(Binop(
+                            IrBinop::Plus,
+                            IrExp::Const(next_local_offset),
+                            IrExp::Temp(Self::frame_pointer(gen)),
+                        )),
+                        IrExp::Temp(gen.named_temp(arg_reg)),
+                    ));
+                }
             } else {
-                formals.push(Access::InReg(gen.new_temp()));
+                let t = gen.new_temp();
+                formals.push(Access::InReg(t));
+                let arg_reg = ARG_REGS[i];
+                moves.push(Move(IrExp::Temp(t), IrExp::Temp(gen.named_temp(arg_reg))));
             }
         }
         Self {
             name,
             formals,
-            next_local_offset: -8,
+            formals_move: translate::make_seq(moves),
+            next_local_offset
         }
     }
 

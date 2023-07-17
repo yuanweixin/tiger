@@ -53,6 +53,7 @@ pub struct TypeCheckingContext<'a> {
     input: &'a str,
     gen: &'a mut dyn Uuids,
     frags: Vec<frame::Frag>,
+    can_spill: bool, // whether register allocator can spill, affects how we handle callee save registers
 }
 
 macro_rules! top_level_fn {
@@ -72,7 +73,7 @@ macro_rules! top_level_fn {
 }
 
 impl<'a> TypeCheckingContext<'a> {
-    fn new<T: Frame + 'static>(input: &'a str, gen: &'a mut dyn Uuids) -> Self {
+    fn new<T: Frame + 'static>(input: &'a str, gen: &'a mut dyn Uuids, can_spill: bool) -> Self {
         let type_env = Self::base_env_type_env(gen);
         let varfun_env = TypeCheckingContext::base_varfun_env::<T>(gen);
         Self {
@@ -83,6 +84,7 @@ impl<'a> TypeCheckingContext<'a> {
             input,
             gen,
             frags: Vec::new(),
+            can_spill
         }
     }
 
@@ -1109,6 +1111,7 @@ fn trans_dec<T: Frame + 'static>(
                             fun_body_ir,
                             &mut ctx.frags,
                             ctx.gen,
+                            ctx.can_spill
                         );
                     }
                 }
@@ -1339,8 +1342,9 @@ pub fn translate<T: Frame + 'static>(
     input: &str,
     ast: &mut Exp,
     gen: &mut dyn Uuids,
+    can_spill: bool
 ) -> Result<Vec<frame::Frag>, ()> {
-    let mut ctx = TypeCheckingContext::new::<T>(input, gen);
+    let mut ctx = TypeCheckingContext::new::<T>(input, gen, can_spill);
 
     escape::find_escapes(&mut ctx, ast);
 
@@ -1422,7 +1426,7 @@ mod tests {
             temp::test_helpers::new_unnamed_temp(1)
         }
 
-        fn proc_entry_exit1(&self, x: IrStm) -> IrStm {
+        fn proc_entry_exit1(&self, x: IrStm, _: bool) -> IrStm {
             // just don't add stuff to the body for test purpose.
             x
         }
@@ -1470,7 +1474,7 @@ mod tests {
         let mut gen: UuidsImpl = Uuids::new();
 
         let result = panic::catch_unwind(move || {
-            let res = super::translate::<TestFrame>(input, &mut ast, &mut gen);
+            let res = super::translate::<TestFrame>(input, &mut ast, &mut gen, false);
             match (is_good, res) {
                 (false, Ok(..)) => {
                     panic!(
