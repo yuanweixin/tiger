@@ -26,18 +26,158 @@ use crate::{
     temp::{Uuids, UuidsImpl},
 };
 
+use std::collections::HashMap;
 lrlex_mod!("tiger.l");
 lrpar_mod!("tiger.y");
+
+struct OptOpt {
+    opt_name: &'static str,
+    desc: &'static str,
+}
+
+fn opt_opts() -> HashMap<&'static str, OptOpt> {
+    let mut res = HashMap::new();
+    res.insert(
+        "cf",
+        OptOpt {
+            opt_name: "cf",
+            desc: "constant folding",
+        },
+    );
+    res.insert(
+        "reg",
+        OptOpt {
+            opt_name: "reg",
+            desc: "register allocation",
+        },
+    );
+    res.insert(
+        "mc",
+        OptOpt {
+            opt_name: "mc",
+            desc: "move coalescing, implies register allocation",
+        },
+    );
+    res.insert(
+        "cse",
+        OptOpt {
+            opt_name: "cse",
+            desc: "common subexpression elimination",
+        },
+    );
+    res.insert(
+        "cse",
+        OptOpt {
+            opt_name: "cse",
+            desc: "common subexpression elimination",
+        },
+    );
+
+    res.insert(
+        "alg",
+        OptOpt {
+            opt_name: "alg",
+            desc: "algebraic optimizations (identities and reassociation)",
+        },
+    );
+    res.insert(
+        "copy",
+        OptOpt {
+            opt_name: "copy",
+            desc: "copy propagation",
+        },
+    );
+
+    res.insert(
+        "dce",
+        OptOpt {
+            opt_name: "dce",
+            desc: "dead code elimination",
+        },
+    );
+    res.insert(
+        "inl",
+        OptOpt {
+            opt_name: "inl",
+            desc: "inlining",
+        },
+    );
+
+    res.insert(
+        "sr",
+        OptOpt {
+            opt_name: "sr",
+            desc: "strength reduction",
+        },
+    );
+
+    res.insert(
+        "lu",
+        OptOpt {
+            opt_name: "lu",
+            desc: "loop unrolling",
+        },
+    );
+
+    res.insert(
+        "licm",
+        OptOpt {
+            opt_name: "licm",
+            desc: "loop-invariant code motion",
+        },
+    );
+
+    res.insert(
+        "pre",
+        OptOpt {
+            opt_name: "pre",
+            desc: "partial redundancy elimination",
+        },
+    );
+
+    res.insert(
+        "cp",
+        OptOpt {
+            opt_name: "cp",
+            desc: "constant propagation",
+        },
+    );
+
+    res.insert(
+        "vn",
+        OptOpt {
+            opt_name: "vn",
+            desc: "local value numbering",
+        },
+    );
+
+    res.insert(
+        "sa",
+        OptOpt {
+            opt_name: "sa",
+            desc: "stack-allocate non-escaping records and arrays",
+        },
+    );
+
+    res
+}
 
 fn main() {
     let matches = command!()
         .arg(Arg::new("file"))
         .arg(arg!(--irgen "dump the ir, after constant folding (if enabled), to file named <basename>.ir").required(false))
-        .arg(arg!(--irrun "run the ir through interpreter"))
         .arg(arg!(--"report-opts" "output the list of optimizations supported by compiler"))
         .arg(arg!(--optir <phase> "output the ir after <phase>, where <phase> can be initial|final"))
         .arg(arg!(-O<opt> "enable optimization <opt>, can be specified multiple times. other optimizations are disabled unless enabled. <opt> is the list of optimizations output from --report-opts. -O0 means disable all optimizations.").action(ArgAction::Append))
         .get_matches();
+
+    if matches.get_flag("report-opts") {
+        println!("Supported optimizations");
+        for (_, optopt) in opt_opts() {
+            println!("\t{}: {}", optopt.opt_name, optopt.desc);
+        }
+        util::exit(util::ReturnCode::Ok);
+    }
 
     let file = matches.get_one::<String>("file");
     if let None = file {
@@ -97,6 +237,7 @@ fn main() {
                 for stm in trace.into_iter() {
                     assem::x86_64::X86Asm::code_gen_frame(frame.clone(), stm, &mut asm, &mut gen);
                 }
+
                 frame.borrow().proc_entry_exit2(&mut asm, &mut gen);
                 let (prologue, epilogue) = frame.borrow().proc_entry_exit3(&asm, &mut gen);
                 xxx.push((prologue, epilogue, asm));
@@ -116,4 +257,5 @@ fn main() {
         }
         println!("{}", epilogue);
     }
+    util::exit(util::ReturnCode::Ok);
 }

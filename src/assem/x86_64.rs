@@ -208,8 +208,18 @@ impl Codegen for X86Asm {
             Temp(t) => t,
             Name(label) => {
                 let t = gen.new_unnamed_temp();
+                let is_named_label = match label {
+                    temp::Label::Named(..) => true,
+                    temp::Label::Unnamed(..) => false,
+                };
+
                 result.push(Instr::Oper {
-                    assem: "lea 'D0, ['J0]".into(),
+                    // TODO does this need to be RIP relative?
+                    assem: if is_named_label {
+                        "lea 'D0, ['J0]".into()
+                    } else {
+                        "lea 'D0, [.L'J0]".into()
+                    },
                     dst: Dst(vec![t]),
                     src: Src::empty(),
                     // TODO is jump used for analysis?
