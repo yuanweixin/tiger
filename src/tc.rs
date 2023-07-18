@@ -37,6 +37,7 @@ struct OptOpt {
 
 fn opt_opts() -> HashMap<&'static str, OptOpt> {
     let mut res = HashMap::new();
+    // TODO this needs to reflect what's actually implemented :shrug:
     res.insert(
         "cf",
         OptOpt {
