@@ -317,20 +317,12 @@ pub fn call_exp<T: Frame>(
     // call stack lexically until we hit the callee's parent.
     if *callee_level.borrow().get_parent().borrow() == *caller_level.borrow() {
         // use the parent's frame (value of frame pointer) as static link.
-        // TODO i think this is wrong because this is in the caller's context
-        // and so the caller's frame pointer IS the static link to pass.
-        // as usual, tests are fucking useless when you don't clearly understand
-        // the problem so you just copy the wrong shit into the test and trick
-        // yourself to think it's correct.
-        augmented_args.push(
-            callee_level
-                .borrow()
-                .parent_frame(Temp(T::frame_pointer(gen))),
-        );
+        // this is in the caller's context
+        // and parent is the caller, so caller's frame pointer IS the static link to pass.
+        augmented_args.push(Temp(T::frame_pointer(gen)));
         for arg in args {
             augmented_args.push(un_ex(arg, gen));
         }
-
         return if is_unit_return_type {
             Nx(Exp(Call(Name(func), augmented_args)))
         } else {
@@ -1065,7 +1057,7 @@ mod tests {
         let expected = Nx(Exp(Call(
             Name(func),
             vec![
-                Mem(Temp(TestFrame::frame_pointer(&mut gen))),
+                Temp(TestFrame::frame_pointer(&mut gen)),
                 Const(0),
                 Const(1),
             ],

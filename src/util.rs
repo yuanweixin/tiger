@@ -1,3 +1,4 @@
+// TODO this seems unnecessary.
 #[allow(dead_code)]
 pub enum ReturnCode {
     Ok = 0,
