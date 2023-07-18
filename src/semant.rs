@@ -1362,7 +1362,7 @@ pub fn translate<T: Frame + 'static>(
 
     escape::find_escapes(&mut ctx, ast);
 
-    let (main_level,..) =
+    let (main_level, ..) =
         Level::new_level::<T>(Level::outermost(), Vec::new(), ctx.gen, "tigermain");
     let (tigermain_ir, _) = trans_exp::<T>(&mut ctx, main_level.clone(), ast, None);
 
@@ -1416,7 +1416,7 @@ mod tests {
         where
             Self: Sized,
         {
-            todo!()
+            unreachable!()
         }
 
         fn external_call(name: Label, exps: Vec<crate::ir::IrExp>) -> crate::ir::IrExp
@@ -1437,14 +1437,14 @@ mod tests {
         where
             Self: Sized,
         {
-            todo!()
+            unreachable!()
         }
 
         fn string(_: temp::Label, _: &str) -> String
         where
             Self: Sized,
         {
-            todo!()
+            unreachable!()
         }
 
         fn frame_pointer(_: &mut dyn Uuids) -> temp::Temp
@@ -1460,7 +1460,7 @@ mod tests {
         }
 
         fn proc_entry_exit2(&self, instrs: &mut Vec<crate::assem::Instr>, g: &mut dyn Uuids) {
-            todo!()
+            unreachable!()
         }
 
         fn proc_entry_exit3(
@@ -1468,7 +1468,7 @@ mod tests {
             _: &Vec<crate::assem::Instr>,
             _: &mut dyn Uuids,
         ) -> (frame::Prologue, frame::Epilogue) {
-            todo!()
+            unreachable!()
         }
 
         fn new(_: Label, formals: Vec<Escapes>, gen: &mut dyn Uuids) -> Self {

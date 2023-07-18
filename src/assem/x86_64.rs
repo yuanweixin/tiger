@@ -68,7 +68,7 @@ impl Codegen for X86Asm {
             }
             Exp(e) => {
                 let e_temp = Self::munch_exp(*e, result, gen);
-                let new_t = gen.new_temp();
+                let new_t = gen.new_unnamed_temp();
                 result.push(Instr::Oper {
                     assem: "mov 'D0, 'S0".into(),
                     dst: Dst(vec![new_t]),
@@ -173,7 +173,7 @@ impl Codegen for X86Asm {
                 });
 
                 // persist the result register.
-                let dest = gen.new_temp();
+                let dest = gen.new_unnamed_temp();
                 result.push(Instr::Oper {
                     assem: "mov 'D0, 'S0".into(),
                     dst: Dst(vec![dest]),
@@ -195,7 +195,7 @@ impl Codegen for X86Asm {
                 dest
             }
             Const(i) => {
-                let t = gen.new_temp();
+                let t = gen.new_unnamed_temp();
                 result.push(Instr::Oper {
                     // TODO does this shit work for negative numbers?
                     assem: format!("mov 'D0, {}", i),
@@ -207,7 +207,7 @@ impl Codegen for X86Asm {
             }
             Temp(t) => t,
             Name(label) => {
-                let t = gen.new_temp();
+                let t = gen.new_unnamed_temp();
                 result.push(Instr::Oper {
                     assem: "lea 'D0, ['J0]".into(),
                     dst: Dst(vec![t]),

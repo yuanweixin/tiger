@@ -193,7 +193,7 @@ fn un_ex(tr: TrExp, gen: &mut dyn Uuids) -> IrExp {
     match tr {
         TrExp::Ex(exp) => *exp,
         TrExp::Cx(cond) => {
-            let r = gen.new_temp();
+            let r = gen.new_unnamed_temp();
             let t = gen.new_unnamed_label();
             let f = gen.new_unnamed_label();
             Eseq(
@@ -266,7 +266,7 @@ pub fn string_cmp<T: Frame>(
             vec![un_ex(lhs, gen), un_ex(rhs, gen)],
         ))
     } else {
-        let r = gen.new_temp();
+        let r = gen.new_unnamed_temp();
         Ex(Eseq(
             Move(
                 Temp(r),
@@ -389,7 +389,7 @@ pub fn string_exp(s: &str, gen: &mut dyn Uuids, frags: &mut Vec<frame::Frag>) ->
 }
 
 pub fn record_exp<T: Frame>(site_irs: Vec<TrExp>, gen: &mut dyn Uuids) -> TrExp {
-    let r = gen.new_temp();
+    let r = gen.new_unnamed_temp();
     let mut instrs = Vec::new();
 
     instrs.push(Move(
@@ -485,8 +485,8 @@ pub fn for_loop(
     let test_label = gen.new_unnamed_label();
     let body_label = gen.new_unnamed_label();
     let cont_label = gen.new_unnamed_label();
-    let i = gen.new_temp();
-    let limit = gen.new_temp();
+    let i = gen.new_unnamed_temp();
+    let limit = gen.new_unnamed_temp();
     // the extra check after `body` avoids overflow where hi=maxint.
     // let var i := lo
     //  var limit := hi
@@ -547,7 +547,7 @@ fn full_conditional(cond_ir: TrExp, then_ir: TrExp, else_ir: TrExp, gen: &mut dy
     let true_cx_branch_label = gen.new_unnamed_label();
     let false_cx_branch_label = gen.new_unnamed_label();
     let done = gen.new_unnamed_label();
-    let r = gen.new_temp();
+    let r = gen.new_unnamed_temp();
 
     match (&then_ir, &else_ir) {
         (TrExp::Nx(..), TrExp::Nx(..)) => {
@@ -796,7 +796,7 @@ mod tests {
         where
             Self: Sized,
         {
-            todo!()
+            unreachable!()
         }
 
         fn external_call(func: temp::Label, args: Vec<crate::ir::IrExp>) -> crate::ir::IrExp
@@ -824,7 +824,7 @@ mod tests {
         where
             Self: Sized,
         {
-            todo!()
+            unreachable!()
         }
 
         fn frame_pointer(g: &mut dyn Uuids) -> temp::Temp
@@ -835,11 +835,11 @@ mod tests {
         }
 
         fn proc_entry_exit1(&mut self, _: IrStm, _: bool, _: &mut dyn Uuids) -> IrStm {
-            todo!()
+            unreachable!()
         }
 
         fn proc_entry_exit2(&self, _: &mut Vec<crate::assem::Instr>, _: &mut dyn Uuids) {
-            todo!()
+            unreachable!()
         }
 
         fn proc_entry_exit3(
@@ -847,7 +847,7 @@ mod tests {
             _: &Vec<crate::assem::Instr>,
             _: &mut dyn Uuids,
         ) -> (frame::Prologue, frame::Epilogue) {
-            todo!()
+            unreachable!()
         }
 
         fn new(name: temp::Label, formals: Vec<Escapes>, g: &mut dyn Uuids) -> Self {
@@ -858,7 +858,7 @@ mod tests {
                     formals_accesses.push(frame::Access::InFrame(offset));
                     offset += 4;
                 } else {
-                    formals_accesses.push(frame::Access::InReg(g.new_temp()));
+                    formals_accesses.push(frame::Access::InReg(g.new_unnamed_temp()));
                 }
             }
             TestFrame {

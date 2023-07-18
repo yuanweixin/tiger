@@ -24,7 +24,6 @@ impl Label {
     pub fn resolve_named_label<'a>(&self, gen: &'a mut dyn Uuids) -> &'a str {
         match self {
             Label::Unnamed(..) => panic!("impl bug: expected named label"),
-            // TODO how the fuck does this work when put into interner?
             Label::Named(sym) => gen.resolve(&sym).unwrap()
         }
     }
@@ -43,8 +42,7 @@ pub trait Uuids {
 
     fn intern(&mut self, name: &str) -> Symbol;
 
-    // TODO rename to new_unnamed_temp
-    fn new_temp(&mut self) -> Temp;
+    fn new_unnamed_temp(&mut self) -> Temp;
 
     // Since the design went with not having temp generation at the global
     // level (i.e. can't do a lazy static and use that in the frame impl to
@@ -123,7 +121,7 @@ impl Uuids for UuidsImpl {
         self.pool.intern(name)
     }
 
-    fn new_temp(&mut self) -> Temp {
+    fn new_unnamed_temp(&mut self) -> Temp {
         let t = Temp::Unnamed(self.next_id);
         self.next_id = NonZeroUsize::new(self.next_id.get().wrapping_add(1)).unwrap();
         t

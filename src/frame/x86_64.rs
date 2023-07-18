@@ -222,7 +222,7 @@ impl Frame for x86_64_Frame {
                     formals.push(Access::InFrame(in_frame_offset));
                     in_frame_offset += WORD_SIZE as i32;
                 } else {
-                    let t = gen.new_temp();
+                    let t = gen.new_unnamed_temp();
                     formals.push(Access::InReg(t));
                 }
             } else {
@@ -289,7 +289,7 @@ impl Frame for x86_64_Frame {
             self.num_locals += 1;
             res
         } else {
-            Access::InReg(gen.new_temp())
+            Access::InReg(gen.new_unnamed_temp())
         }
     }
 }

@@ -38,7 +38,7 @@ fn reorder(
     } else {
         match ev[0] {
             IrExp::Call(..) => {
-                let t = gen.new_temp();
+                let t = gen.new_unnamed_temp();
                 let e0 = ev.pop_front().unwrap();
                 let eseq = Eseq(Move(Temp(t), e0), Temp(t));
                 ev.push_front(eseq);
@@ -60,7 +60,7 @@ fn reorder(
                     e_rest.push_front(e);
                     (stmt % stmts_rest, e_rest)
                 } else {
-                    let t = gen.new_temp();
+                    let t = gen.new_unnamed_temp();
                     e_rest.push_front(Temp(t));
                     (stmt % Move(Temp(t), e) % stmts_rest, e_rest)
                 }
@@ -600,7 +600,7 @@ mod tests {
             panic!();
         }
 
-        fn new_temp(&mut self) -> temp::Temp {
+        fn new_unnamed_temp(&mut self) -> temp::Temp {
             let nxt = self.syms.next();
             match nxt {
                 None => {
@@ -650,7 +650,7 @@ mod tests {
         #[test]
         fn temp_is_identity() {
             let mut gen: UuidsImpl = Uuids::new();
-            let t = gen.new_temp();
+            let t = gen.new_unnamed_temp();
             let expected = vec![Exp(Temp(t))];
             let actual = linearize(Exp(Temp(t)), &mut gen);
             assert_eq!(expected, actual);
@@ -660,7 +660,7 @@ mod tests {
         fn exp_eseq() {
             let mut gen: UuidsImpl = Uuids::new();
             let l = gen.new_unnamed_label();
-            let t = gen.new_temp();
+            let t = gen.new_unnamed_temp();
 
             let expected = vec![Label(l), Exp(Temp(t))];
             let actual = linearize(Exp(Eseq(Label(l), Temp(t))), &mut gen);
@@ -672,7 +672,7 @@ mod tests {
             let mut gen: UuidsImpl = Uuids::new();
             let l = gen.new_unnamed_label();
             let l2 = gen.new_unnamed_label();
-            let t = gen.new_temp();
+            let t = gen.new_unnamed_temp();
 
             let expected = vec![Label(l), Label(l2), Exp(Temp(t))];
             let actual = linearize(Exp(Eseq(Label(l), Eseq(Label(l2), Temp(t)))), &mut gen);
@@ -684,7 +684,7 @@ mod tests {
             let mut gen: UuidsImpl = Uuids::new();
             let l = gen.new_unnamed_label();
             let l2 = gen.new_unnamed_label();
-            let t = gen.new_temp();
+            let t = gen.new_unnamed_temp();
 
             let expected = vec![Label(l), Label(l2), Exp(Binop(Plus, Temp(t), Const(2)))];
             let actual = linearize(
@@ -703,7 +703,7 @@ mod tests {
             let mut gen: UuidsImpl = Uuids::new();
             let l = gen.new_unnamed_label();
             let l2 = gen.new_unnamed_label();
-            let t = gen.new_temp();
+            let t = gen.new_unnamed_temp();
 
             let expected = vec![Label(l), Label(l2), Exp(Mem(Temp(t)))];
             let actual = linearize(Exp(Mem(Eseq(Label(l), Eseq(Label(l2), Temp(t))))), &mut gen);
@@ -715,7 +715,7 @@ mod tests {
             let mut gen: UuidsImpl = Uuids::new();
             let l = gen.new_unnamed_label();
             let l2 = gen.new_unnamed_label();
-            let t = gen.new_temp();
+            let t = gen.new_unnamed_temp();
 
             let expected = vec![Label(l), Label(l2), Jump(Temp(t), vec![l])];
             let actual = linearize(
@@ -731,8 +731,8 @@ mod tests {
 
             let l = gen.new_unnamed_label();
             let l2 = gen.new_unnamed_label();
-            let t = gen.new_temp();
-            let t2 = gen.new_temp();
+            let t = gen.new_unnamed_temp();
+            let t2 = gen.new_unnamed_temp();
 
             let expected = vec![Label(l), Label(l2), Cjump(Gt, Temp(t), Temp(t2), l, l2)];
             let actual = linearize(
@@ -753,7 +753,7 @@ mod tests {
             let mut gen: UuidsImpl = Uuids::new();
             let l = gen.new_unnamed_label();
             let l2 = gen.new_unnamed_label();
-            let t = gen.new_temp();
+            let t = gen.new_unnamed_temp();
 
             let expected = vec![Label(l), Label(l2), Exp(Binop(Plus, Const(2), Temp(t)))];
             let actual = linearize(
@@ -828,7 +828,7 @@ mod tests {
 
             let l = gen.new_unnamed_label();
             let l2 = gen.new_unnamed_label();
-            let t = gen.new_temp();
+            let t = gen.new_unnamed_temp();
 
             let expected = vec![Label(l), Label(l2), Cjump(Gt, Const(42), Temp(t), l, l2)];
             let actual = linearize(
@@ -849,8 +849,8 @@ mod tests {
             let mut gen: UuidsImpl = Uuids::new();
             let l = gen.new_unnamed_label();
             let l2 = gen.new_unnamed_label();
-            let t = gen.new_temp();
-            let t2 = gen.new_temp();
+            let t = gen.new_unnamed_temp();
+            let t2 = gen.new_unnamed_temp();
 
             let expected = vec![Label(l), Label(l2), Move(Temp(t), Temp(t2))];
             let actual = linearize(
@@ -865,8 +865,8 @@ mod tests {
             let mut gen: UuidsImpl = Uuids::new();
             let l = gen.new_unnamed_label();
             let l2 = gen.new_unnamed_label();
-            let t = gen.new_temp();
-            let t2 = gen.new_temp();
+            let t = gen.new_unnamed_temp();
+            let t2 = gen.new_unnamed_temp();
 
             let expected = vec![Label(l), Label(l2), Move(Mem(Temp(t)), Temp(t2))];
             let actual = linearize(
@@ -879,7 +879,7 @@ mod tests {
         #[test]
         fn move_mem_eseq_right() {
             let mut gen: UuidsImpl = Uuids::new();
-            let t = gen.new_temp();
+            let t = gen.new_unnamed_temp();
 
             let expected = vec![Move(Temp(t), Const(42)), Move(Temp(t), Mem(Temp(t)))];
             let actual = linearize(
@@ -942,7 +942,7 @@ mod tests {
         #[test]
         fn move_temp_call_eseq() {
             let mut gen: UuidsImpl = Uuids::new();
-            let t = gen.new_temp();
+            let t = gen.new_unnamed_temp();
 
             let expected = vec![
                 Move(Temp(t), Const(43)),
@@ -961,7 +961,7 @@ mod tests {
         #[test]
         fn seq_is_eliminated() {
             let mut gen: UuidsImpl = Uuids::new();
-            let t = gen.new_temp();
+            let t = gen.new_unnamed_temp();
             let expected = vec![Exp(Const(1)), Exp(Const(2))];
             let actual = linearize(Seq(Exp(Const(1)), Exp(Const(2))), &mut gen);
             assert_eq!(expected, actual);
@@ -1143,8 +1143,6 @@ mod tests {
             assert!((&mut blocks as &mut dyn BlockList).next().is_none());
         }
 
-        // validates all the original statement present.
-        // TODO kinda pita with the elimination of jumps and rearranging of cjumps.
         #[test]
         fn jumps_follow_by_jump_dst() {
             let l1 = test_helpers::new_unnamed_label(100);

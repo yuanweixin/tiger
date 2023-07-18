@@ -138,7 +138,6 @@ impl Instr {
                     match c {
                         '\'' => {
                             iter.next(); // consume the '
-                                         // todo seek kind
                             let kind_char = consume_control_char(&mut iter, assem);
                             let template_arg_idx = consume_index(&mut tmp, &mut iter, assem);
 

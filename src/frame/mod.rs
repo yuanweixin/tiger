@@ -46,11 +46,10 @@ pub trait Frame: Debug {
     fn registers() -> &'static [Register]
     where
         Self: Sized;
-    // TODO not sure what kind of table this is
-    // fn temp_map -> Sym
+
     fn string(label: temp::Label, val: &str) -> String
     where
-        Self: Sized; // TODO signature
+        Self: Sized;
 
     /// Handle call arguments and callee saved registers.
     /// This is part of the code of a function body.
