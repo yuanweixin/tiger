@@ -319,7 +319,7 @@ pub fn call_exp<T: Frame>(
         // use the parent's frame (value of frame pointer) as static link.
         // this is in the caller's context
         // and parent is the caller, so caller's frame pointer IS the static link to pass.
-        augmented_args.push(Temp(T::frame_pointer(gen)));
+        augmented_args.push(Level::current_frame::<T>(gen));
         for arg in args {
             augmented_args.push(un_ex(arg, gen));
         }
@@ -336,8 +336,10 @@ pub fn call_exp<T: Frame>(
     // start at the current frame's FP.
     let mut expr = Level::current_frame::<T>(gen);
     // keep moving up the call stack lexically until we hit the callee's parent.
-    while *p.borrow() != Level::Top && *p.borrow() != *callee_level.borrow().get_parent().borrow() {
+    while *p.borrow() != *callee_level.borrow().get_parent().borrow() {
         expr = p.borrow().parent_frame(expr);
+        // get_parent panics if passed the top level, which should never happen
+        // in a well typed program because there always exit a common ancestor (tigermain).
         let tmp = p.borrow().get_parent();
         p = tmp;
     }
