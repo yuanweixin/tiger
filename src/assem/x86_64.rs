@@ -128,6 +128,15 @@ impl Codegen for X86Asm {
                     arg_regs.push(Self::munch_exp(arg_exp, result, gen));
                 }
 
+                // with the Call() extended with the info about the args access,
+                // we have enough info to tell which of the args to pass on the
+                // stack and which ones to pass in registers. since we use static
+                // link which needs to live on the stack and is _sometimes_ the
+                // first argument (it is absent in top level calls to built-in fns),
+                // we cannot generally rely on the arg position. but with the access
+                // info we know exactly what to generate.
+                // TODO add the Vec<Access> to Call, fix build, then create the instrs here.
+
                 if num_args > 0 {
                     let mut i = arg_regs.len() - 1;
                     // args after the 6th one go on stack.
