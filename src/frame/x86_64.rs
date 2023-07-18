@@ -25,10 +25,7 @@ pub struct x86_64_Frame {
     // since we always have static link that escapes, this statement should always be constructable.
     // if not, it is an impl bug!
     formals_move: Option<IrStm>,
-    // i32 because this is gonna be negative.
-    // so, to update it you keep subtracting WORD_SIZE.
-    // you use this as: [FP + alloc_local_offset].
-    alloc_local_offset: i32,
+    num_locals: usize,
 }
 
 pub const RBP: &str = "rbp";
@@ -188,12 +185,11 @@ impl Frame for x86_64_Frame {
         instrs: &Vec<crate::assem::Instr>,
         gen: &mut dyn Uuids,
     ) -> (super::Prologue, super::Epilogue) {
-        let offset_locals = -(self.next_local_offset + WORD_SIZE as i32);
-        let prologue = if offset_locals > 0 {
+        let prologue = if self.num_locals > 0 {
             format!(
                 "{}:\n\tpush rbp\n\tmov rbp, rsp\n\tsub rsp, -{}",
                 self.name.resolve_named_label(gen),
-                offset_locals
+                self.num_locals * WORD_SIZE
             )
         } else {
             format!(
@@ -202,8 +198,8 @@ impl Frame for x86_64_Frame {
             )
         };
 
-        let epilogue = if offset_locals > 0 {
-            format!("\tadd rsp, {}\n\tpop rbp\n\tret", offset_locals)
+        let epilogue = if self.num_locals > 0 {
+            format!("\tadd rsp, {}\n\tpop rbp\n\tret", self.num_locals * WORD_SIZE)
         } else {
             format!("\tpop rbp\n\tret")
         };
@@ -234,7 +230,7 @@ impl Frame for x86_64_Frame {
                 formals.push(Access::InReg(t));
 
                 let arg_reg = ARG_REGS[num_nonescapes_seen];
-                moves.push(Move(t, IrExp::Temp(gen.named_temp(arg_reg))));
+                moves.push(Move(IrExp::Temp(t), IrExp::Temp(gen.named_temp(arg_reg))));
 
                 num_nonescapes_seen += 1;
             }
@@ -250,7 +246,7 @@ impl Frame for x86_64_Frame {
                 // this happens with the top level pre-defined fns and tigermain.
                 None
             },
-            alloc_local_offset: -(WORD_SIZE as i32),
+            num_locals: 0
         }
     }
 
@@ -264,10 +260,9 @@ impl Frame for x86_64_Frame {
 
     fn alloc_local(&mut self, escapes: Escapes, gen: &mut dyn Uuids) -> Access {
         if escapes {
-            let res = Access::InFrame(self.next_local_offset);
-            self.next_local_offset
-                .checked_add(-(WORD_SIZE as i32))
-                .unwrap();
+            let offset = ((self.num_locals+1) * WORD_SIZE) as i32 * -1;
+            let res = Access::InFrame(offset);
+            self.num_locals += 1;
             res
         } else {
             Access::InReg(gen.new_temp())
