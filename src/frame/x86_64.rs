@@ -199,7 +199,10 @@ impl Frame for x86_64_Frame {
         };
 
         let epilogue = if self.num_locals > 0 {
-            format!("\tadd rsp, {}\n\tpop rbp\n\tret", self.num_locals * WORD_SIZE)
+            format!(
+                "\tadd rsp, {}\n\tpop rbp\n\tret",
+                self.num_locals * WORD_SIZE
+            )
         } else {
             format!("\tpop rbp\n\tret")
         };
@@ -208,31 +211,52 @@ impl Frame for x86_64_Frame {
 
     fn new(name: Label, formals_escapes: Vec<Escapes>, gen: &mut dyn Uuids) -> Self {
         let mut formals = Vec::with_capacity(formals_escapes.len());
-        let mut moves = Vec::new();
 
-        // the rule for deciding whether something should be InReg or InFrame is:
-        // 1. if it escapes, it is always InFrame.
-        // 2. the first 6 (depends on number of return values functions can have;
-        //    the basic version of tiger only has int or reference return types) non-escaping
-        //    arguments will go into the arg registers.
-        // 3. any non-escaping arg past the first 6 will go InFrame.
-        // note: InFrame is accessed wrt to the FP when the frame is active.
-        // since in system v calling convention the args are pushed onto stack above or
-        // at the frame pointer, the offset used to access the arg is positive.
-        let mut in_frame_offset = WORD_SIZE as i32;
-        let mut num_nonescapes_seen = 0;
+        // if it's part of the first 6 args, it is InReg, unless it escapes.
+        // everything else is InFrame.
+        let mut in_frame_offset = 0;
+
         for (i, escape) in formals_escapes.iter().enumerate() {
-            if *escape || num_nonescapes_seen >= ARG_REGS.len() {
-                formals.push(Access::InFrame(in_frame_offset));
-                in_frame_offset = in_frame_offset.checked_add(WORD_SIZE as i32).unwrap();
+            if i < ARG_REGS.len() {
+                if *escape {
+                    formals.push(Access::InFrame(in_frame_offset));
+                    in_frame_offset += WORD_SIZE as i32;
+                } else {
+                    let t = gen.new_temp();
+                    formals.push(Access::InReg(t));
+                }
             } else {
-                let t = gen.new_temp();
-                formals.push(Access::InReg(t));
-
-                let arg_reg = ARG_REGS[num_nonescapes_seen];
-                moves.push(Move(IrExp::Temp(t), IrExp::Temp(gen.named_temp(arg_reg))));
-
-                num_nonescapes_seen += 1;
+                formals.push(Access::InFrame(in_frame_offset));
+                in_frame_offset += WORD_SIZE as i32;
+            }
+        }
+        // create the moves.
+        let mut moves = Vec::new();
+        for (i, f) in formals.iter().enumerate() {
+            if i < ARG_REGS.len() {
+                // these need to be moved from the arg register into whatever location
+                // they were assigned to.
+                match f {
+                    Access::InReg(t) => {
+                        moves.push(Move(
+                            IrExp::Temp(*t),
+                            IrExp::Temp(gen.named_temp(ARG_REGS[i])),
+                        ));
+                    }
+                    Access::InFrame(offset) => {
+                        moves.push(Move(
+                            Mem(Binop(
+                                IrBinop::Plus,
+                                IrExp::Const(*offset),
+                                IrExp::Temp(Self::frame_pointer(gen)),
+                            )),
+                            IrExp::Temp(gen.named_temp(ARG_REGS[i])),
+                        ));
+                    }
+                }
+            } else {
+                // already on stack, no need to move.
+                break;
             }
         }
 
@@ -246,7 +270,7 @@ impl Frame for x86_64_Frame {
                 // this happens with the top level pre-defined fns and tigermain.
                 None
             },
-            num_locals: 0
+            num_locals: 0,
         }
     }
 
@@ -260,7 +284,7 @@ impl Frame for x86_64_Frame {
 
     fn alloc_local(&mut self, escapes: Escapes, gen: &mut dyn Uuids) -> Access {
         if escapes {
-            let offset = ((self.num_locals+1) * WORD_SIZE) as i32 * -1;
+            let offset = ((self.num_locals + 1) * WORD_SIZE) as i32 * -1;
             let res = Access::InFrame(offset);
             self.num_locals += 1;
             res

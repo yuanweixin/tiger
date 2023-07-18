@@ -317,6 +317,11 @@ pub fn call_exp<T: Frame>(
     // call stack lexically until we hit the callee's parent.
     if *callee_level.borrow().get_parent().borrow() == *caller_level.borrow() {
         // use the parent's frame (value of frame pointer) as static link.
+        // TODO i think this is wrong because this is in the caller's context
+        // and so the caller's frame pointer IS the static link to pass.
+        // as usual, tests are fucking useless when you don't clearly understand
+        // the problem so you just copy the wrong shit into the test and trick
+        // yourself to think it's correct.
         augmented_args.push(
             callee_level
                 .borrow()
