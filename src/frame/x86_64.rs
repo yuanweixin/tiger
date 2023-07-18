@@ -143,6 +143,7 @@ impl Frame for x86_64_Frame {
         if can_spill {
             todo!()
         } else {
+            moves.push(IrStm::Label(gen.named_label(".callee_save")));
             // move callee save registers and the return address registers.
             for name in CALLEE_SAVES.iter().chain([RAX].iter()) {
                 let acc = self.alloc_local(true, gen);
@@ -187,24 +188,24 @@ impl Frame for x86_64_Frame {
     ) -> (super::Prologue, super::Epilogue) {
         let prologue = if self.num_locals > 0 {
             format!(
-                "{}:\n\tpush rbp\n\tmov rbp, rsp\n\tsub rsp, -{}",
+                "{}:\n.prologue\n\tpush rbp\n\tmov rbp, rsp\n\tsub rsp, -{}",
                 self.name.resolve_named_label(gen),
                 self.num_locals * WORD_SIZE
             )
         } else {
             format!(
-                "{}:\n\tpush rbp\n\tmov rbp, rsp",
+                "{}:\n.prologue\n\tpush rbp\n\tmov rbp, rsp",
                 self.name.resolve_named_label(gen)
             )
         };
 
         let epilogue = if self.num_locals > 0 {
             format!(
-                "\tadd rsp, {}\n\tpop rbp\n\tret",
+                ".epilogue\n\tadd rsp, {}\n\tpop rbp\n\tret",
                 self.num_locals * WORD_SIZE
             )
         } else {
-            format!("\tpop rbp\n\tret")
+            format!(".epilogue\n\tpop rbp\n\tret")
         };
         return (prologue, epilogue);
     }
@@ -232,6 +233,9 @@ impl Frame for x86_64_Frame {
         }
         // create the moves.
         let mut moves = Vec::new();
+        if formals.len() > 0 {
+            moves.push(IrStm::Label(gen.named_label(".move_arguments")));
+        }
         for (i, f) in formals.iter().enumerate() {
             if i < ARG_REGS.len() {
                 // these need to be moved from the arg register into whatever location

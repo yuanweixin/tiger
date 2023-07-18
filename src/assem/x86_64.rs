@@ -19,15 +19,26 @@ impl Codegen for X86Asm {
     fn munch_stm(stm: IrStm, result: &mut Vec<Instr>, gen: &mut dyn Uuids) {
         match stm {
             Move(dst_exp, src_exp) => {
-                let dst = Self::munch_exp(*dst_exp, result, gen);
+                // After canonicalizing, we should only end up with
+                // Move(Mem, _) or Move(Temp, _)
+
                 let src = Self::munch_exp(*src_exp, result, gen);
 
-                result.push(Instr::Oper {
-                    assem: "mov 'D0, 'S0".into(),
-                    dst: Dst(vec![dst]),
-                    src: Src(vec![src, dst]),
-                    jump: vec![],
-                });
+                match *dst_exp {
+                    IrExp::Mem(tgt) => {
+                        let dst = Self::munch_exp(*tgt, result, gen);
+                        result.push(Instr::Oper {
+                            assem: "mov ['S1], 'S0".into(),
+                            dst: Dst::empty(),
+                            src: Src(vec![src, dst]),
+                            jump: vec![],
+                        });
+                    },
+                    IrExp::Temp(x) => {
+                        result.push(Instr::Move { assem: "mov 'D0, 'S0", dst: x, src });
+                    },
+                    _ => panic!("impl bug, Move should be to a Temp or Mem")
+                }
             }
             Jump(e, target_labels) => {
                 let t = Self::munch_exp(*e, result, gen);
@@ -69,10 +80,9 @@ impl Codegen for X86Asm {
             }
             Exp(e) => {
                 let e_temp = Self::munch_exp(*e, result, gen);
-                let new_t = gen.new_unnamed_temp();
                 result.push(Instr::Oper {
                     assem: "mov 'D0, 'S0".into(),
-                    dst: Dst(vec![new_t]),
+                    dst: Dst(vec![e_temp]),
                     src: Src(vec![e_temp]),
                     jump: vec![],
                 });
@@ -100,8 +110,8 @@ impl Codegen for X86Asm {
                 let instr = match op {
                     Plus => "add 'D0, 'S0",
                     Minus => "sub 'D0, 'S0",
-                    IrBinop::Mul => "mul 'D0, 'S0",
-                    IrBinop::Div => "div 'S0", // RAX is trashed
+                    IrBinop::Mul => "imul 'D0, 'S0",
+                    IrBinop::Div => "idiv 'S0", // TODO RAX is trashed
                     IrBinop::And => "and 'D0, 'S0",
                     IrBinop::Or => "or 'D0, 'S0",
                     // base tiger language doesn't have these
@@ -111,11 +121,16 @@ impl Codegen for X86Asm {
                     ArShift => "sar 'D0, 'S0", // note idiv rounds quotient toward 0, sar rounds quotient toward neg infinity
                     IrBinop::Xor => "xor 'D0, 'S0",
                 };
+                let is_div = matches!(op, IrBinop::Div);
                 let a_temp = Self::munch_exp(*a, result, gen);
                 let b_temp = Self::munch_exp(*b, result, gen);
                 result.push(Instr::Oper {
                     assem: instr.into(),
-                    dst: Dst(vec![a_temp]),
+                    dst: Dst(if is_div {
+                        vec![a_temp, x86_64::named_register(gen, x86_64::RAX)]
+                    } else {
+                        vec![a_temp]
+                    }),
                     src: Src(vec![b_temp]),
                     jump: vec![],
                 });
@@ -198,7 +213,6 @@ impl Codegen for X86Asm {
             Const(i) => {
                 let t = gen.new_unnamed_temp();
                 result.push(Instr::Oper {
-                    // TODO does this shit work for negative numbers?
                     assem: format!("mov 'D0, {}", i),
                     dst: Dst(vec![t]),
                     src: Src::empty(),
@@ -215,11 +229,10 @@ impl Codegen for X86Asm {
                 };
 
                 result.push(Instr::Oper {
-                    // TODO does this need to be RIP relative?
                     assem: if is_named_label {
-                        "lea 'D0, ['J0]".into()
+                        "lea 'D0, ['J0 + rip]".into()
                     } else {
-                        "lea 'D0, [.L'J0]".into()
+                        "lea 'D0, [.L'J0 + rip]".into()
                     },
                     dst: Dst(vec![t]),
                     src: Src::empty(),
@@ -230,14 +243,7 @@ impl Codegen for X86Asm {
                 t
             }
             Mem(e) => {
-                let t = Self::munch_exp(*e, result, gen);
-                result.push(Instr::Oper {
-                    assem: "mov 'D0, 'S0".into(),
-                    dst: Dst(vec![t]),
-                    src: Src(vec![t]),
-                    jump: vec![],
-                });
-                t
+                Self::munch_exp(*e, result, gen)
             }
             Eseq(..) => panic!("impl bug: Eseq should have been eliminated"),
         }

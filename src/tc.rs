@@ -270,13 +270,13 @@ fn main() {
                     );
                 }
 
-                if !opts.register_allocation_enabled() {
-                    assems = assem::x86_64::do_trivial_register_allcation(
-                        frame.clone(),
-                        assems,
-                        &mut gen,
-                    );
-                }
+                // if !opts.register_allocation_enabled() {
+                //     assems = assem::x86_64::do_trivial_register_allcation(
+                //         frame.clone(),
+                //         assems,
+                //         &mut gen,
+                //     );
+                // }
 
                 frame.borrow().proc_entry_exit2(&mut assems, &mut gen);
                 let (prologue, epilogue) = frame.borrow().proc_entry_exit3(&assems, &mut gen);
@@ -288,6 +288,7 @@ fn main() {
     let tm = gen.to_temp_map(x86_64_Frame::registers());
     for (prologue, epilogue, asm) in xxx.iter() {
         println!("{}", prologue);
+        println!("{}", ".todobody");
         for i in asm {
             let s = i.format(&tm, true, &mut gen);
             if s.len() > 0 {

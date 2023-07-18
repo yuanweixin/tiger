@@ -179,12 +179,12 @@ pub fn make_seq(stmts: Vec<IrStm>) -> IrStm {
     if stmts.len() == 1 {
         return stmts.into_iter().next().unwrap();
     }
-    let mut iter = stmts.into_iter();
+    let mut iter = stmts.into_iter().rev();
     let last = iter.next().unwrap();
-    let sec_last = iter.next().unwrap();
-    let mut so_far = Seq(sec_last, last);
-    while let Some(nxt) = iter.next() {
-        so_far = Seq(nxt, so_far);
+    let second_last = iter.next().unwrap();
+    let mut so_far = Seq(second_last, last);
+    while let Some(prev) = iter.next() {
+        so_far = Seq(prev, so_far);
     }
     so_far
 }
@@ -1058,11 +1058,7 @@ mod tests {
         // being called by your parent, so the static link to your parent should be first argument.
         let expected = Nx(Exp(Call(
             Name(func),
-            vec![
-                Temp(TestFrame::frame_pointer(&mut gen)),
-                Const(0),
-                Const(1),
-            ],
+            vec![Temp(TestFrame::frame_pointer(&mut gen)), Const(0), Const(1)],
         )));
         assert_eq!(expected, actual);
     }
@@ -1167,5 +1163,33 @@ mod tests {
             ],
         )));
         assert_eq!(expected, actual);
+    }
+
+    #[test]
+    fn test_make_seq() {
+        let mut gen: UuidsImpl = Uuids::new();
+        let input = vec![Label(gen.named_label("1"))];
+        assert_eq!(IrStm::Label(gen.named_label("1")), make_seq(input));
+
+        let input = vec![Label(gen.named_label("1")), Label(gen.named_label("2"))];
+
+        assert_eq!(
+            Seq(Label(gen.named_label("1")), Label(gen.named_label("2"))),
+            make_seq(input)
+        );
+
+        let input = vec![
+            Label(gen.named_label("1")),
+            Label(gen.named_label("2")),
+            Label(gen.named_label("3")),
+        ];
+
+        assert_eq!(
+            Seq(
+                Label(gen.named_label("1")),
+                Seq(Label(gen.named_label("2")), Label(gen.named_label("3")))
+            ),
+            make_seq(input)
+        );
     }
 }

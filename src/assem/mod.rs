@@ -167,7 +167,7 @@ impl Instr {
                                 }
                                 'D' | 'd' => {
                                     if template_arg_idx >= dst.0.len() {
-                                        panic!("impl bug: invalid index {} in asm template string referencing dst'{}'", template_arg_idx, assem);
+                                        panic!("impl bug: invalid index {} in asm template string referencing dst '{}'", template_arg_idx, assem);
                                     }
                                     let t = dst.0[template_arg_idx];
                                     add_temp_string(t, &tm, relaxed, &mut res);
