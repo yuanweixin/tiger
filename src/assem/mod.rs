@@ -263,7 +263,7 @@ mod tests {
         let dst = temp::test_helpers::new_unnamed_temp(1);
         let src = temp::test_helpers::new_unnamed_temp(2);
         let i = Instr::Move {
-            assem: "mov t'D, t'S",
+            assem: "mov 'D, 'S",
             dst,
             src,
         };
@@ -425,7 +425,7 @@ mod tests {
         let src = temp::test_helpers::new_unnamed_temp(2);
         let lbl = temp::test_helpers::new_unnamed_label(3);
         let i = Instr::Oper {
-            assem: "mov t'D0, t'S0, .L'J0".into(),
+            assem: "mov 'D0, 'S0, .L'J0".into(),
             dst: Dst(vec![dst]),
             src: Src(vec![src]),
             jump: vec![lbl],
@@ -445,7 +445,7 @@ mod tests {
         let src = temp::test_helpers::new_unnamed_temp(2);
         let lbl = temp::test_helpers::new_unnamed_label(3);
         let i = Instr::Oper {
-            assem: "mov t'D0, t'S0, .L'J0".into(),
+            assem: "mov 'D0, 'S0, .L'J0".into(),
             dst: Dst(vec![dst]),
             src: Src(vec![src]),
             jump: vec![lbl],
