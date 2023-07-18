@@ -1,8 +1,9 @@
-use std::cmp::max;
+use std::{cmp::max, collections::HashMap};
 
 use crate::{
     assem::*,
-    frame::{x86_64, FrameRef},
+    frame,
+    frame::{x86_64, x86_64::x86_64_Frame, Frame, FrameRef},
     ir::{
         IrBinop::{self, *},
         IrExp::*,
@@ -246,4 +247,79 @@ impl Codegen for X86Asm {
     fn code_gen_frame(_: FrameRef, stm: IrStm, instrs: &mut Vec<Instr>, gen: &mut dyn Uuids) {
         Self::munch_stm(stm, instrs, gen);
     }
+}
+
+struct TempOffset(HashMap<temp::Temp, i32>);
+
+impl TempOffset {
+    fn new() -> Self {
+        TempOffset(HashMap::new())
+    }
+
+    fn get_or_allocate(&mut self, frame: FrameRef, tmp: temp::Temp, gen: &mut dyn Uuids) -> i32 {
+        if let Some(offset) = self.0.get(&tmp) {
+            *offset
+        } else {
+            let access = frame.borrow_mut().alloc_local(true, gen);
+            match access {
+                frame::Access::InFrame(offset) => {
+                    self.0.insert(tmp, offset);
+                    offset
+                }
+                _ => panic!("impl bug, alloc_local call here should return InFrame"),
+            }
+        }
+    }
+
+    fn get(&mut self, tmp: temp::Temp) -> i32 {
+        *self.0.get(&tmp).unwrap()
+    }
+}
+
+pub fn do_trivial_register_allcation(
+    frame: FrameRef,
+    assems: Vec<Instr>,
+    gen: &mut dyn Uuids,
+) -> Vec<Instr> {
+    let rax = x86_64::named_register(gen, x86_64::RAX);
+    let rcx = x86_64::named_register(gen, x86_64::RCX);
+    let rdx = x86_64::named_register(gen, x86_64::RDX);
+
+    let mut temp_to_offset = TempOffset::new();
+
+    let built_ins = <x86_64_Frame as Frame>::temp_map(gen);
+
+    let mut result = Vec::new();
+    for asm in assems {
+        match asm {
+            asm @ Instr::Label { .. } => result.push(asm),
+            Instr::Move { assem, dst, src } => {
+                if !built_ins.contains_key(&dst) {
+                    let offset_dst = temp_to_offset.get_or_allocate(frame.clone(), dst, gen);
+                    // source should already exist because something must have generated
+                    // it before. otherwise it is an impl bug.
+                    let offset_src = temp_to_offset.get(src);
+                    // read the source into a register.
+                    result.push(Instr::Oper {
+                        assem: format!("mov rax, [rbp+ {}]", offset_src),
+                        // TODO are these relevant if we don't do register allocation?
+                        // I am using empty here because I don't think they matter. Could turn out
+                        // to be wrong if any other optimization use this.
+                        dst: Dst::empty(),
+                        src: Src::empty(),
+                        jump: vec![],
+                    });
+                    // move that register into the dst memory location.
+                    result.push(Instr::Oper {
+                        assem: format!("mov [rbp + {}], rax", offset_dst),
+                        dst: Dst::empty(),
+                        src: Src::empty(),
+                        jump: vec![],
+                    });
+                }
+            }
+            asm @ Instr::Oper { .. } => result.push(asm),
+        }
+    }
+    result
 }

@@ -1,6 +1,6 @@
 use std::env;
 
-use clap::{arg, command, Arg, ArgAction};
+use clap::{arg, command, Arg, ArgAction, ArgMatches};
 use lrlex::lrlex_mod;
 use lrpar::lrpar_mod;
 use std::fs;
@@ -33,6 +33,27 @@ lrpar_mod!("tiger.y");
 struct OptOpt {
     opt_name: &'static str,
     desc: &'static str,
+}
+
+struct CompilerOptions(ArgMatches);
+
+impl CompilerOptions {
+    // todo get the rest of them
+    pub fn optimizations_disabled(&self) -> bool {
+        return true;
+    }
+    pub fn constant_folding_enabled(&self) -> bool {
+        return false;
+    }
+    pub fn register_allocation_enabled(&self) -> bool {
+        return false;
+    }
+    pub fn report_opts(&self) -> bool {
+        return false;
+    }
+    pub fn file(&self) -> Option<&String> {
+        self.0.get_one::<String>("file")
+    }
 }
 
 fn opt_opts() -> HashMap<&'static str, OptOpt> {
@@ -163,6 +184,10 @@ fn opt_opts() -> HashMap<&'static str, OptOpt> {
     res
 }
 
+fn get_enabled_optimizations() {
+    // TODO get here when this be needed.
+}
+
 fn main() {
     let matches = command!()
         .arg(Arg::new("file"))
@@ -171,8 +196,9 @@ fn main() {
         .arg(arg!(--optir <phase> "output the ir after <phase>, where <phase> can be initial|final"))
         .arg(arg!(-O<opt> "enable optimization <opt>, can be specified multiple times. other optimizations are disabled unless enabled. <opt> is the list of optimizations output from --report-opts. -O0 means disable all optimizations.").action(ArgAction::Append))
         .get_matches();
+    let opts = CompilerOptions(matches);
 
-    if matches.get_flag("report-opts") {
+    if opts.report_opts() {
         println!("Supported optimizations");
         for (_, optopt) in opt_opts() {
             println!("\t{}: {}", optopt.opt_name, optopt.desc);
@@ -180,7 +206,7 @@ fn main() {
         util::exit(util::ReturnCode::Ok);
     }
 
-    let file = matches.get_one::<String>("file");
+    let file = opts.file();
     if let None = file {
         eprintln!("Missing required argument <file>");
         util::exit(util::ReturnCode::ExUsage);
@@ -230,18 +256,31 @@ fn main() {
                 println!("{}", x86_64_Frame::string(label, s.as_str()));
             }
             frame::Frag::Proc { body, frame } => {
-                let mut asm = Vec::new();
+                let mut assems = Vec::new();
                 let linearized = canon::linearize(body, &mut gen);
                 let (blist, done_label) = canon::basic_blocks(linearized, &mut gen);
                 let trace = canon::trace_schedule(blist, done_label, &mut gen);
 
                 for stm in trace.into_iter() {
-                    assem::x86_64::X86Asm::code_gen_frame(frame.clone(), stm, &mut asm, &mut gen);
+                    assem::x86_64::X86Asm::code_gen_frame(
+                        frame.clone(),
+                        stm,
+                        &mut assems,
+                        &mut gen,
+                    );
                 }
 
-                frame.borrow().proc_entry_exit2(&mut asm, &mut gen);
-                let (prologue, epilogue) = frame.borrow().proc_entry_exit3(&asm, &mut gen);
-                xxx.push((prologue, epilogue, asm));
+                if !opts.register_allocation_enabled() {
+                    assems = assem::x86_64::do_trivial_register_allcation(
+                        frame.clone(),
+                        assems,
+                        &mut gen,
+                    );
+                }
+
+                frame.borrow().proc_entry_exit2(&mut assems, &mut gen);
+                let (prologue, epilogue) = frame.borrow().proc_entry_exit3(&assems, &mut gen);
+                xxx.push((prologue, epilogue, assems));
             }
         };
     }
