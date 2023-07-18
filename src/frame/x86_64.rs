@@ -1,3 +1,5 @@
+use core::num;
+
 use itertools::Itertools;
 
 use crate::{
@@ -23,7 +25,10 @@ pub struct x86_64_Frame {
     // since we always have static link that escapes, this statement should always be constructable.
     // if not, it is an impl bug!
     formals_move: Option<IrStm>,
-    next_local_offset: i32,
+    // i32 because this is gonna be negative.
+    // so, to update it you keep subtracting WORD_SIZE.
+    // you use this as: [FP + alloc_local_offset].
+    alloc_local_offset: i32,
 }
 
 pub const RBP: &str = "rbp";
@@ -155,12 +160,9 @@ impl Frame for x86_64_Frame {
                             IrExp::Temp(gen.named_temp(name)),
                         ));
                     }
-                    Access::InReg(..) => panic!("impl bug: expected InFrame"),
+                    Access::InReg(..) => panic!("impl bug: expected InFrame for local"),
                 }
             }
-            // will allow clone here, feels cleaner to just leave the frame's data
-            // as is instead of moving out the formals_move, although in practice
-            // we won't call proc_entry_exit1 more than once anyway.
             if let Some(ref formals_move) = self.formals_move {
                 moves.push(formals_move.clone());
             }
@@ -211,29 +213,30 @@ impl Frame for x86_64_Frame {
     fn new(name: Label, formals_escapes: Vec<Escapes>, gen: &mut dyn Uuids) -> Self {
         let mut formals = Vec::with_capacity(formals_escapes.len());
         let mut moves = Vec::new();
-        let mut next_local_offset: i32 = -(WORD_SIZE as i32);
+
+        // the rule for deciding whether something should be InReg or InFrame is:
+        // 1. if it escapes, it is always InFrame.
+        // 2. the first 6 (depends on number of return values functions can have;
+        //    the basic version of tiger only has int or reference return types) non-escaping
+        //    arguments will go into the arg registers.
+        // 3. any non-escaping arg past the first 6 will go InFrame.
+        // note: InFrame is accessed wrt to the FP when the frame is active.
+        // since in system v calling convention the args are pushed onto stack above or
+        // at the frame pointer, the offset used to access the arg is positive.
+        let mut in_frame_offset = WORD_SIZE as i32;
+        let mut num_nonescapes_seen = 0;
         for (i, escape) in formals_escapes.iter().enumerate() {
-            if i > 5 || *escape {
-                formals.push(Access::InFrame(next_local_offset));
-                next_local_offset = next_local_offset
-                    .checked_add(WORD_SIZE as i32 * -1)
-                    .unwrap();
-                if i < 6 {
-                    let arg_reg = ARG_REGS[i];
-                    moves.push(Move(
-                        Mem(Binop(
-                            IrBinop::Plus,
-                            IrExp::Const(next_local_offset),
-                            IrExp::Temp(Self::frame_pointer(gen)),
-                        )),
-                        IrExp::Temp(gen.named_temp(arg_reg)),
-                    ));
-                }
+            if *escape || num_nonescapes_seen >= ARG_REGS.len() {
+                formals.push(Access::InFrame(in_frame_offset));
+                in_frame_offset = in_frame_offset.checked_add(WORD_SIZE as i32).unwrap();
             } else {
                 let t = gen.new_temp();
                 formals.push(Access::InReg(t));
-                let arg_reg = ARG_REGS[i];
-                moves.push(Move(IrExp::Temp(t), IrExp::Temp(gen.named_temp(arg_reg))));
+
+                let arg_reg = ARG_REGS[num_nonescapes_seen];
+                moves.push(Move(t, IrExp::Temp(gen.named_temp(arg_reg))));
+
+                num_nonescapes_seen += 1;
             }
         }
 
@@ -243,9 +246,11 @@ impl Frame for x86_64_Frame {
             formals_move: if moves.len() > 0 {
                 Some(translate::make_seq(moves))
             } else {
+                // happens when there is no args at all.
+                // this happens with the top level pre-defined fns and tigermain.
                 None
             },
-            next_local_offset,
+            alloc_local_offset: -(WORD_SIZE as i32),
         }
     }
 
