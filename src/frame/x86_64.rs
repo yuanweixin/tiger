@@ -195,14 +195,14 @@ impl Frame for x86_64_Frame {
     ) -> (super::Prologue, super::Epilogue) {
         let prologue = if self.num_locals > 0 {
             format!(
-                "{}:\n.{}_prologue\n\tpush rbp\n\tmov rbp, rsp\n\tsub rsp, -{}",
+                "{}:\n.{}_prologue:\n\tpush rbp\n\tmov rbp, rsp\n\tsub rsp, -{}",
                 self.name.resolve_named_label(gen),
                 self.name.resolve_named_label(gen),
                 self.num_locals * WORD_SIZE
             )
         } else {
             format!(
-                "{}:\n.{}_prologue\n\tpush rbp\n\tmov rbp, rsp",
+                "{}:\n.{}_prologue:\n\tpush rbp\n\tmov rbp, rsp",
                 self.name.resolve_named_label(gen),
                 self.name.resolve_named_label(gen)
             )
@@ -210,13 +210,13 @@ impl Frame for x86_64_Frame {
 
         let epilogue = if self.num_locals > 0 {
             format!(
-                ".{}_epilogue\n\tadd rsp, {}\n\tpop rbp\n\tret",
+                ".{}_epilogue:\n\tadd rsp, {}\n\tpop rbp\n\tret",
                 self.name.resolve_named_label(gen),
                 self.num_locals * WORD_SIZE
             )
         } else {
             format!(
-                ".{}_epilogue\n\tpop rbp\n\tret",
+                ".{}_epilogue:\n\tpop rbp\n\tret",
                 self.name.resolve_named_label(gen)
             )
         };

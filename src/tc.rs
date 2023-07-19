@@ -285,19 +285,33 @@ fn main() -> Result<(), Box<dyn Error>> {
         };
     }
 
-    // TODO link it with the runtime
-    // TODO trivial register allocation
+    // TODO [2 days] trivial register allocation
+    // TODO [1 days] link it with the runtime - yup full of errors
+    // TODO next steps
+    // 1. [0.5-1 day] set up test cases where the main program is invoked on valid programs, then said programs get run.
+    // 2. [0.25 day] for test purpose, might want to allow tigermain to return int types. this way output can be checked on cmdline.
+    // 3. [0.5 day] fix up the use and deps in the generated Instr objects for register allocation use.
+    // 4.a [2-3 days] understand
+    // 4.b [2-3 days] implement liveness.
+    // 5.a. [2-3 days] understand register allocation.
+    // 5.b. [2-3 days] impl register allocation
+    // 6. [2 days] figure out how to even test 4, 5
+    // 7. [1+1 days] plug in register allocation.
+    // 8. [0.5 day] fix up the compiler options.
     let output_path = PathBuf::from(opts.file().unwrap()).with_extension("s");
 
     let outf = File::create(output_path)?;
     let mut bout = BufWriter::new(outf);
 
+    // TODO move this into some target specific helper module once done?
+    // or just get that part that generates the body label.
     let tm = gen.to_temp_map(x86_64_Frame::registers());
+    writeln!(bout, ".intel_syntax noprefix")?;
     for (prologue, epilogue, asm, fn_name) in xxx.iter() {
         writeln!(bout, "{}", prologue)?;
-        writeln!(bout, ".{}_body", fn_name)?;
+        writeln!(bout, ".{}_body:", fn_name)?;
         for i in asm {
-            let s = i.format(&tm, true, &mut gen);
+            let smov 'D0,  = i.format(&tm, true, &mut gen);
             if s.len() > 0 {
                 // because proc_entry_exit2 added the dummy instruction, it will cause an empty line
                 if s.chars().next().unwrap() != '.' {
@@ -312,5 +326,6 @@ fn main() -> Result<(), Box<dyn Error>> {
     }
 
     bout.flush()?;
+
     Result::Ok(())
 }

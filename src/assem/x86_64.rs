@@ -93,11 +93,11 @@ impl Codegen for X86Asm {
             }
             Label(lab) => match lab {
                 temp::Label::Named(..) => result.push(Instr::Label {
-                    assem: "'L".into(), // function labels don't need the .L prefix
+                    assem: "'L:".into(), // function labels don't need the .L prefix
                     lab,
                 }),
                 temp::Label::Unnamed(..) => result.push(Instr::Label {
-                    assem: ".L'L".into(), // non-fn labels need a .L prefix
+                    assem: ".L'L:".into(), // non-fn labels need a .L prefix
                     lab,
                 }),
             },
@@ -217,7 +217,7 @@ impl Codegen for X86Asm {
             Const(i) => {
                 let t = gen.new_unnamed_temp();
                 result.push(Instr::Oper {
-                    assem: format!("mov 'D0, {}", i),
+                    assem: format!("mov  'D0, {}", i),
                     dst: Dst(vec![t]),
                     src: Src::empty(),
                     jump: vec![],
