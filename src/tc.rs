@@ -311,7 +311,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         writeln!(bout, "{}", prologue)?;
         writeln!(bout, ".{}_body:", fn_name)?;
         for i in asm {
-            let smov 'D0,  = i.format(&tm, true, &mut gen);
+            let s = i.format(&tm, true, &mut gen);
             if s.len() > 0 {
                 // because proc_entry_exit2 added the dummy instruction, it will cause an empty line
                 if s.chars().next().unwrap() != '.' {
