@@ -5,6 +5,7 @@ use crate::{
     frame::{Frame, FrameRef},
     int_types::TigerInt,
     ir::{
+        helpers::Move,
         IrBinop::*,
         IrExp,
         IrExp::{Const, Name, Temp},
@@ -360,7 +361,22 @@ pub fn nil_exp() -> TrExp {
     // nil denotes a value nil belonging to every record type.
     // if record variable v contains value nil, it is a checked runtime
     // error to select a field from v.
-    Ex(Const(0))
+    //
+    // record and arrays are implemented as pointers in the runtime.
+    // furthermore, in x86 ABI the NULL pointer is 0.
+    //
+    // the c-faq question 5.17 lists some historical machines that don't use 0 for null.
+    // https://c-faq.com/null/machexamp.html
+    //
+    // and question 5.5 touches on the c compiler translating use of 0 in pointer context
+    // into whatever internal bit pattern the machine actually uses.
+    // https://c-faq.com/null/machnon0.html
+    //
+    // this hints at the need for tracking whether a Const(0) is used in pointer context.
+    // Null was added for this purpose.
+    // for compiling to x86 it is a purely pedantic exercise, but it seems like the "correct"
+    // thing to do.
+    Ex(IrExp::Null)
 }
 
 pub fn int_exp(i: TigerInt) -> TrExp {
@@ -740,7 +756,16 @@ pub fn subscript_var<T: Frame>(lhs_ir: TrExp, idx_ir: TrExp, gen: &mut dyn Uuids
     ))
 }
 
-pub fn proc_entry_exit(
+pub fn add_zero_return_value<T: Frame>(ir: TrExp, gen: &mut dyn Uuids) -> TrExp {
+    let stm = un_nx(ir, gen);
+    Nx(Seq(
+        stm,
+        Move(Temp(T::return_value_register(gen)), Const(0)),
+    ))
+}
+
+pub fn proc_entry_exit<T: Frame>(
+    has_return_val: bool,
     level: LevelRef,
     body: TrExp,
     frags: &mut Vec<frame::Frag>,
@@ -750,9 +775,17 @@ pub fn proc_entry_exit(
     match &*level.borrow() {
         Level::Top => panic!("impl bug, proc_entry_exit cannot be used on Top level"),
         Level::Nested { frame, .. } => {
-            let augmented = frame
-                .borrow_mut()
-                .proc_entry_exit1(un_nx(body, gen), can_spill, gen);
+            let body_with_return = if has_return_val {
+                let body_exp = un_ex(body, gen);
+                Nx(Move(Temp(T::return_value_register(gen)), body_exp))
+            } else {
+                body
+            };
+            let augmented =
+                frame
+                    .borrow_mut()
+                    .proc_entry_exit1(un_nx(body_with_return, gen), can_spill, gen);
+
             frags.push(frame::Frag::Proc {
                 body: augmented,
                 frame: frame.clone(),
@@ -784,8 +817,16 @@ mod tests {
     }
 
     const FP: &str = "fp";
+    const RV: &str = "rv";
 
     impl Frame for TestFrame {
+        fn return_value_register(gen: &mut dyn Uuids) -> temp::Temp
+        where
+            Self: Sized,
+        {
+            gen.named_temp(RV)
+        }
+
         fn temp_map(_: &mut dyn Uuids) -> temp::TempMap
         where
             Self: Sized,

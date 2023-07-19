@@ -78,6 +78,10 @@ pub trait Frame: Debug {
     where
         Self: Sized;
 
+    fn return_value_register(gen: &mut dyn Uuids) -> temp::Temp
+    where
+        Self: Sized;
+
     fn temp_map(gen: &mut dyn Uuids) -> temp::TempMap
     where
         Self: Sized;

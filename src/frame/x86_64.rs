@@ -138,35 +138,42 @@ impl Frame for x86_64_Frame {
         gen.named_temp(RBP)
     }
 
+    fn return_value_register(gen: &mut dyn Uuids) -> temp::Temp
+    where
+        Self: Sized,
+    {
+        gen.named_temp(RAX)
+    }
+
     fn proc_entry_exit1(&mut self, body: IrStm, can_spill: bool, gen: &mut dyn Uuids) -> IrStm {
         let mut moves = Vec::new();
-        if can_spill {
-            todo!()
-        } else {
-            moves.push(IrStm::Label(gen.named_label(".callee_save")));
-            // move callee save registers and the return address registers.
-            for name in CALLEE_SAVES.iter().chain([RAX].iter()) {
-                let acc = self.alloc_local(true, gen);
-                match acc {
-                    Access::InFrame(offset) => {
-                        moves.push(Move(
-                            Mem(Binop(
-                                IrBinop::Plus,
-                                IrExp::Const(offset),
-                                IrExp::Temp(Self::frame_pointer(gen)),
-                            )),
-                            IrExp::Temp(gen.named_temp(name)),
-                        ));
-                    }
-                    Access::InReg(..) => panic!("impl bug: expected InFrame for local"),
-                }
-            }
-            if let Some(ref formals_move) = self.formals_move {
-                moves.push(formals_move.clone());
-            }
-            moves.push(body);
-            translate::make_seq(moves)
-        }
+        // if can_spill {
+        //     todo!()
+        // } else {
+        //     moves.push(IrStm::Label(gen.named_label(".callee_save")));
+        //     // move callee save registers and the return address registers.
+        //     for name in CALLEE_SAVES.iter().chain([RAX].iter()) {
+        //         let acc = self.alloc_local(true, gen);
+        //         match acc {
+        //             Access::InFrame(offset) => {
+        //                 moves.push(Move(
+        //                     Mem(Binop(
+        //                         IrBinop::Plus,
+        //                         IrExp::Const(offset),
+        //                         IrExp::Temp(Self::frame_pointer(gen)),
+        //                     )),
+        //                     IrExp::Temp(gen.named_temp(name)),
+        //                 ));
+        //             }
+        //             Access::InReg(..) => panic!("impl bug: expected InFrame for local"),
+        //         }
+        //     }
+        //     if let Some(ref formals_move) = self.formals_move {
+        //         moves.push(formals_move.clone());
+        //     }
+        moves.push(body);
+        translate::make_seq(moves)
+        // }
     }
 
     fn proc_entry_exit2(&self, instrs: &mut Vec<crate::assem::Instr>, gen: &mut dyn Uuids) {

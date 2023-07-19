@@ -1,5 +1,5 @@
-#undef __STDC__
 #include <stdio.h>
+#include <stdlib.h>
 
 int *initArray(int size, int init)
 {
@@ -55,7 +55,10 @@ void flush()
 struct string consts[256];
 struct string empty = {0, ""};
 
-int main()
+extern int tigermain();
+
+    int
+    main()
 {
     int i;
     for (i = 0; i < 256; i++)
@@ -63,7 +66,7 @@ int main()
         consts[i].length = 1;
         consts[i].chars[0] = i;
     }
-    return tigermain(0 /* static link!? */);
+    return tigermain();
 }
 
 int ord(struct string *s)
@@ -132,9 +135,7 @@ int not(int i)
     return !i;
 }
 
-#undef getchar
-
-struct string *getchar()
+struct string *getChar()
 {
     int i = getc(stdin);
     if (i == EOF)

@@ -293,7 +293,12 @@ fn main() {
             let s = i.format(&tm, true, &mut gen);
             if s.len() > 0 {
                 // because proc_entry_exit2 added the dummy instruction, it will cause an empty line
-                println!("\t{}", i.format(&tm, true, &mut gen));
+                if s.chars().next().unwrap() != '.' {
+                    println!("\t{}", i.format(&tm, true, &mut gen));
+                } else {
+                    // label, don't indent.
+                    println!("{}", i.format(&tm, true, &mut gen));
+                }
             }
         }
         println!("{}", epilogue);

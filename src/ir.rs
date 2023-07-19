@@ -4,6 +4,7 @@ use crate::temp;
 
 #[derive(Hash, Eq, PartialEq, Debug, Clone)]
 pub enum IrExp {
+    Null,
     Const(TigerInt),
     Name(temp::Label),
     Temp(temp::Temp),

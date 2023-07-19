@@ -227,3 +227,6 @@ explains what non-canonical memory address means in x86 context.
 
 https://cs.brown.edu/courses/csci1310/2020/notes/l08.html
 has useful section on addressing mode which also talks about the rip addressing patterns
+
+https://stackoverflow.com/questions/56465415/how-do-i-push-the-equivalent-of-null-in-c-to-the-stack-in-assembly#:~:text=In%20all%20x86%20calling%20conventions%20%2F%20ABIs%2C%20the,including%20all%20x86-64%20conventions%2C%20pass%20args%20in%20registers.%29
+it is safe to use value 0 if we need to return null (i.e. translate nil to 0)

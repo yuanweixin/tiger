@@ -188,6 +188,12 @@ pub enum Type {
 impl Type {
     fn compatible_with(&self, other: &Self) -> bool {
         match (self, other) {
+            // error should not be compatible with anything even itself.
+            // although, the typical usage pattern is to first check if we got any Type::Error
+            // on hand, if so, we do not print more (noisy) error messages. the compatible with check
+            // is really intended to detect that between non-Error types, so that we can trigger
+            // type checking messages.
+            (Type::Error, _) | (_, Type::Error) => false,
             (Type::Nil, Type::Record(_, _)) | (Type::Record(_, _), Type::Nil) => true,
             (a, b) => a == b,
         }
@@ -1108,10 +1114,11 @@ fn trans_dec<T: Frame + 'static>(
                         // in other words, breaks do not work across function boundaries.
                         let (fun_body_ir, fun_body_ty) =
                             trans_exp::<T>(ctx, level.clone(), &*fundec.body, None);
-                        if !fun_body_ty.compatible_with(&result)
-                            && !matches!(fun_body_ty, Type::Error)
-                            && !matches!(result, Type::Error)
-                        {
+                        if matches!(fun_body_ty, Type::Error) || matches!(result, Type::Error) {
+                            // error msg already printed when the error first appeared, and ctx already
+                            // flagged, so just move on and check the other fundecs.
+                            continue;
+                        } else if !fun_body_ty.compatible_with(&result) {
                             ctx.flag_error_with_msg(
                                 &fundec.pos,
                                 &format!(
@@ -1119,14 +1126,27 @@ fn trans_dec<T: Frame + 'static>(
                                     result, fun_body_ty
                                 ),
                             );
+                        } else {
+                            // if function has return value, we will have to indicate it so that the
+                            // ir generator will tack on a Move to the return value register at the end
+                            // of the function.
+                            let has_return_val = match result {
+                                Type::Array(..) | Type::Int | Type::String | Type::Record(..) => {
+                                    true
+                                }
+                                Type::Error | Type::Unit | Type::Name(..) | Type::Nil => false,
+                            };
+
+                            // this has the side effect of adding this function to fragment list.
+                            translate::proc_entry_exit::<T>(
+                                has_return_val,
+                                level.clone(),
+                                fun_body_ir,
+                                &mut ctx.frags,
+                                ctx.gen,
+                                ctx.can_spill,
+                            );
                         }
-                        translate::proc_entry_exit(
-                            level.clone(),
-                            fun_body_ir,
-                            &mut ctx.frags,
-                            ctx.gen,
-                            ctx.can_spill,
-                        );
                     }
                 }
                 ctx.varfun_env.end_scope();
@@ -1366,15 +1386,19 @@ pub fn translate<T: Frame + 'static>(
         Level::new_level::<T>(Level::outermost(), Vec::new(), ctx.gen, "tigermain");
     let (tigermain_ir, _) = trans_exp::<T>(&mut ctx, main_level.clone(), ast, None);
 
+    let tigermain_ir_return_zero = translate::add_zero_return_value::<T>(tigermain_ir, ctx.gen);
+
     match &*main_level.borrow() {
         Level::Top => unreachable!(),
         Level::Nested { .. } => {
-            translate::proc_entry_exit(
+            translate::proc_entry_exit::<T>(
+                false, // there's no sensible value to interpret the main body as, so don't use it as a return value.
                 main_level.clone(),
-                tigermain_ir,
+                tigermain_ir_return_zero,
                 &mut ctx.frags,
                 ctx.gen,
                 can_spill,
+
             );
         }
     }
@@ -1411,7 +1435,17 @@ mod tests {
         next_offset: i32,
     }
 
+    const FP: &str = "fp";
+    const RV: &str = "rv";
+
     impl Frame for TestFrame {
+        fn return_value_register(gen: &mut dyn Uuids) -> temp::Temp
+        where
+            Self: Sized,
+        {
+            gen.named_temp(RV)
+        }
+
         fn temp_map(gen: &mut dyn Uuids) -> temp::TempMap
         where
             Self: Sized,
@@ -1497,9 +1531,9 @@ mod tests {
         let lexerderef = tiger_l::lexerdef();
         let lexer = lexerderef.lexer(input);
         let (res, errs) = tiger_y::parse(&lexer);
-        assert!(errs.len() == 0);
-        assert!(res.is_some());
-        assert!(res.as_ref().unwrap().is_ok());
+        assert!(errs.len() == 0, "{} path={:?}", input, dir_path);
+        assert!(res.is_some(), "{}", input);
+        assert!(res.as_ref().unwrap().is_ok(), "{}", input);
 
         let mut ast = res.unwrap().unwrap();
 

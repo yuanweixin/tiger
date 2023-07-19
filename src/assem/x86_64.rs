@@ -33,11 +33,15 @@ impl Codegen for X86Asm {
                             src: Src(vec![src, dst]),
                             jump: vec![],
                         });
-                    },
+                    }
                     IrExp::Temp(x) => {
-                        result.push(Instr::Move { assem: "mov 'D0, 'S0", dst: x, src });
-                    },
-                    _ => panic!("impl bug, Move should be to a Temp or Mem")
+                        result.push(Instr::Move {
+                            assem: "mov 'D, 'S",
+                            dst: x,
+                            src,
+                        });
+                    }
+                    _ => panic!("impl bug, Move should be to a Temp or Mem"),
                 }
             }
             Jump(e, target_labels) => {
@@ -230,9 +234,9 @@ impl Codegen for X86Asm {
 
                 result.push(Instr::Oper {
                     assem: if is_named_label {
-                        "lea 'D0, ['J0 + rip]".into()
+                        "lea 'D0, 'J0[rip]".into()
                     } else {
-                        "lea 'D0, [.L'J0 + rip]".into()
+                        "lea 'D0, .L'J0[rip]".into()
                     },
                     dst: Dst(vec![t]),
                     src: Src::empty(),
@@ -242,10 +246,18 @@ impl Codegen for X86Asm {
                 });
                 t
             }
-            Mem(e) => {
-                Self::munch_exp(*e, result, gen)
-            }
+            Mem(e) => Self::munch_exp(*e, result, gen),
             Eseq(..) => panic!("impl bug: Eseq should have been eliminated"),
+            Null => {
+                let t = gen.new_unnamed_temp();
+                result.push(Instr::Oper {
+                    assem: "mov 'D0, 0".into(),
+                    dst: Dst(vec![t]),
+                    src: Src::empty(),
+                    jump: vec![],
+                });
+                t
+            }
         }
     }
 
