@@ -21,7 +21,7 @@ pub enum Label {
 }
 
 impl Label {
-    pub fn resolve_named_label<'a>(&self, gen: &'a mut dyn Uuids) -> &'a str {
+    pub fn resolve_named_label<'a>(&self, gen: &'a dyn Uuids) -> &'a str {
         match self {
             Label::Unnamed(..) => panic!("impl bug: expected named label"),
             Label::Named(sym) => gen.resolve(&sym).unwrap()

@@ -1,9 +1,10 @@
-use std::env;
+use std::{
+    collections::HashMap, env, error::Error, fs, fs::File, io::BufWriter, io::Write, path::PathBuf,
+};
 
 use clap::{arg, command, Arg, ArgAction, ArgMatches};
 use lrlex::lrlex_mod;
 use lrpar::lrpar_mod;
-use std::fs;
 
 mod absyn;
 mod assem;
@@ -20,13 +21,11 @@ mod translate;
 mod util;
 
 use crate::{
-    assem::{x86_64::X86Asm, Codegen},
+    assem::{Codegen},
     frame::{x86_64::x86_64_Frame, Frame},
-    ir::IrStm,
     temp::{Uuids, UuidsImpl},
 };
 
-use std::collections::HashMap;
 lrlex_mod!("tiger.l");
 lrpar_mod!("tiger.y");
 
@@ -188,7 +187,7 @@ fn get_enabled_optimizations() {
     // TODO get here when this be needed.
 }
 
-fn main() {
+fn main() -> Result<(), Box<dyn Error>> {
     let matches = command!()
         .arg(Arg::new("file"))
         .arg(arg!(--irgen "dump the ir, after constant folding (if enabled), to file named <basename>.ir").required(false))
@@ -270,6 +269,7 @@ fn main() {
                     );
                 }
 
+                // TODO
                 // if !opts.register_allocation_enabled() {
                 //     assems = assem::x86_64::do_trivial_register_allcation(
                 //         frame.clone(),
@@ -277,31 +277,40 @@ fn main() {
                 //         &mut gen,
                 //     );
                 // }
-
+                let s = String::from(frame.borrow().name().resolve_named_label(&gen));
                 frame.borrow().proc_entry_exit2(&mut assems, &mut gen);
                 let (prologue, epilogue) = frame.borrow().proc_entry_exit3(&assems, &mut gen);
-                xxx.push((prologue, epilogue, assems));
+                xxx.push((prologue, epilogue, assems, s));
             }
         };
     }
 
+    // TODO link it with the runtime
+    // TODO trivial register allocation
+    let output_path = PathBuf::from(opts.file().unwrap()).with_extension("s");
+
+    let outf = File::create(output_path)?;
+    let mut bout = BufWriter::new(outf);
+
     let tm = gen.to_temp_map(x86_64_Frame::registers());
-    for (prologue, epilogue, asm) in xxx.iter() {
-        println!("{}", prologue);
-        println!("{}", ".todobody");
+    for (prologue, epilogue, asm, fn_name) in xxx.iter() {
+        writeln!(bout, "{}", prologue)?;
+        writeln!(bout, ".{}_body", fn_name)?;
         for i in asm {
             let s = i.format(&tm, true, &mut gen);
             if s.len() > 0 {
                 // because proc_entry_exit2 added the dummy instruction, it will cause an empty line
                 if s.chars().next().unwrap() != '.' {
-                    println!("\t{}", i.format(&tm, true, &mut gen));
+                    writeln!(bout, "\t{}", i.format(&tm, true, &mut gen))?;
                 } else {
                     // label, don't indent.
-                    println!("{}", i.format(&tm, true, &mut gen));
+                    writeln!(bout, "{}", i.format(&tm, true, &mut gen))?;
                 }
             }
         }
-        println!("{}", epilogue);
+        writeln!(bout, "{}", epilogue)?;
     }
-    util::exit(util::ReturnCode::Ok);
+
+    bout.flush()?;
+    Result::Ok(())
 }
