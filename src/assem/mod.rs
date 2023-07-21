@@ -121,6 +121,16 @@ impl Instr {
     }
 
     pub fn format(&self, tm: &temp::TempMap, relaxed: bool, gen: &mut dyn Uuids) -> String {
+        #[inline]
+        fn label_string(l: temp::Label, gen: &mut dyn Uuids) -> String {
+            match l {
+                temp::Label::Unnamed(id) => {
+                    format!("{}", id)
+                }
+                l @ temp::Label::Named(..) => l.resolve_named_label(gen).into(),
+            }
+        }
+
         fn add_temp_string(t: temp::Temp, tm: &temp::TempMap, relaxed: bool, res: &mut String) {
             if let Some(s) = tm.get(&t) {
                 res.push_str(s)
@@ -168,16 +178,7 @@ impl Instr {
                                         panic!("impl bug: invalid index {} in asm template string referencing jump'{}'", template_arg_idx, assem);
                                     }
                                     let t = jump[template_arg_idx];
-                                    // maybe this?
-                                    match t {
-                                        temp::Label::Unnamed(id) => {
-                                            res.push_str(format!("{}", id).as_str());
-                                        }
-                                        l @ temp::Label::Named(..) => {
-                                            let s = l.resolve_named_label(gen);
-                                            res.push_str(s);
-                                        }
-                                    }
+                                    res.push_str(label_string(t, gen).as_str());
                                 }
                                 'D' | 'd' => {
                                     if template_arg_idx >= dst.0.len() {
@@ -211,15 +212,7 @@ impl Instr {
                                 panic!("impl bug: invalid control character {}", cc);
                             }
 
-                            match lab {
-                                temp::Label::Unnamed(id) => {
-                                    res.push_str(format!("{}", id).as_str());
-                                }
-                                l @ temp::Label::Named(..) => {
-                                    let s = l.resolve_named_label(gen);
-                                    res.push_str(s);
-                                }
-                            }
+                            res.push_str(label_string(*lab, gen).as_str());
                         }
                         some_char => {
                             res.push(*some_char);

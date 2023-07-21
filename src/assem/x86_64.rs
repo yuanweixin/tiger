@@ -3,7 +3,7 @@ use std::{cmp::max, collections::HashMap};
 use crate::{
     assem::*,
     frame,
-    frame::{x86_64, x86_64::x86_64_Frame, Frame, FrameRef},
+    frame::{x86_64, FrameRef},
     ir::{
         IrBinop::{self, *},
         IrExp::*,
@@ -64,17 +64,22 @@ impl Codegen for X86Asm {
                 });
 
                 let assem = match r {
-                    Eq => "je ['J0]",
-                    Ne => "jne ['J0]",
-                    Lt => "jl ['J0]",
-                    Gt => "jg ['J0]",
-                    Le => "jle ['J0]",
-                    Ge => "jge ['J0]",
-                    Ult => "jb ['J0]",
-                    Ule => "jbe ['J0]",
-                    Ugt => "ja ['J0]",
-                    Uge => "jae ['J0]",
+                    Eq => "je .L'J0",
+                    Ne => "jne .L'J0",
+                    Lt => "jl .L'J0",
+                    Gt => "jg .L'J0",
+                    Le => "jle .L'J0",
+                    Ge => "jge .L'J0",
+                    Ult => "jb .L'J0",
+                    Ule => "jbe .L'J0",
+                    Ugt => "ja .L'J0",
+                    Uge => "jae .L'J0",
                 };
+
+                // a sanity check just in case.
+                assert!(matches!(lt, temp::Label::Unnamed(..)));
+                assert!(matches!(lf, temp::Label::Unnamed(..)));
+
                 result.push(Instr::Oper {
                     assem: assem.into(),
                     dst: Dst::empty(),
@@ -83,7 +88,7 @@ impl Codegen for X86Asm {
                 });
             }
             Exp(e) => {
-                let e_temp = Self::munch_exp(*e, result, gen);
+                let _ = Self::munch_exp(*e, result, gen);
             }
             Label(lab) => match lab {
                 temp::Label::Named(..) => result.push(Instr::Label {
