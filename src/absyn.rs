@@ -138,6 +138,7 @@ pub mod types {
 // at any rate, tiger.y is not a regular rust file, so inappropriate place for tests.
 #[cfg(test)]
 mod tests {
+    use crate::util;
     use lrlex::lrlex_mod;
     use lrpar::lrpar_mod;
     use std::fs;
@@ -147,10 +148,10 @@ mod tests {
 
     #[test]
     fn test_good() {
-        let paths = fs::read_dir("tests/tiger_programs/parsing/good").unwrap();
+        let paths = util::get_tig_files_in("tests/tiger_programs/parsing/good");
 
-        for path in paths {
-            let p = path.unwrap().path();
+        assert!(paths.len() > 0);
+        for p in paths {
             println!("path is {}", p.display());
             let input = fs::read_to_string(p).unwrap();
             let lexerdef = tiger_l::lexerdef();
@@ -165,10 +166,9 @@ mod tests {
 
     #[test]
     fn test_bad() {
-        let paths = fs::read_dir("tests/tiger_programs/parsing/bad").unwrap();
-
-        for path in paths {
-            let p = path.unwrap().path();
+        let paths = util::get_tig_files_in("tests/tiger_programs/parsing/bad");
+        assert!(paths.len() > 0);
+        for p in paths {
             println!("path is {}", p.display());
             let input = fs::read_to_string(p).unwrap();
             let lexerdef = tiger_l::lexerdef();

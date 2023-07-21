@@ -773,6 +773,12 @@ pub fn subscript_var<T: Frame>(lhs_ir: TrExp, idx_ir: TrExp, gen: &mut dyn Uuids
     ))
 }
 
+pub fn add_int_return_value<T: Frame>(ir: TrExp, gen: &mut dyn Uuids) -> TrExp {
+    let expr = un_ex(ir, gen);
+    Nx(Move(Temp(T::return_value_register(gen)), expr))
+}
+
+
 pub fn add_zero_return_value<T: Frame>(ir: TrExp, gen: &mut dyn Uuids) -> TrExp {
     let stm = un_nx(ir, gen);
     Nx(Seq(

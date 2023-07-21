@@ -315,7 +315,7 @@ fn run_on_file(opts: &dyn CompilerOptions) -> Result<util::ReturnCode, Box<dyn E
     }
 
     // TODO [2 days 7/19, 7/20] trivial register allocation
-    // TODO [1 days] link it with the runtime - yup full of errors
+    // TODO [1 days 7/19] link it with the runtime - yup full of errors
     // TODO next steps
     // 1. [0.5-1 day] set up test cases where the main program is invoked on valid programs, then said programs get run.
     // 2. [0.25 day] for test purpose, might want to allow tigermain to return int types. this way output can be checked on cmdline.
@@ -422,19 +422,19 @@ mod tests {
     }
 
     #[test]
-    fn appel_good_programs() {
-        let paths = fs::read_dir("tests/tiger_programs/semant/good/").unwrap();
+    fn compile_appel_good_programs() {
+        // rough test to ensure the thing doesn't crash.
+        // ofc, this is a far cry from checking the stuff works as expected.
+        let paths = util::get_tig_files_in("tests/tiger_programs/semant/good/");
 
         for path in paths {
-            let fname = path.unwrap().path().to_str().map(|x| String::from(x));
+            let fname = path.to_str().map(|x| String::from(x));
             let opts = TestOpts {
                 file: fname.as_ref(),
                 ..TestOpts::default()
             };
-            println!("Testing path {:?}", opts.file.unwrap());
             let res = run_on_file(&opts);
             assert_eq!(util::ReturnCode::Ok, res.unwrap());
-            println!("Finished testing path {:?}", opts.file.unwrap());
         }
     }
 }

@@ -300,7 +300,10 @@ pub mod trivial_reg {
     }
 
     /// The registers we use on x86.
-    const TRIVIAL_REGISTERS: [&str; 3] = [x86_64::RAX, x86_64::RCX, x86_64::RDX];
+    /// Ordering matters. RAX is listed last because it is used as return register.
+    /// The Jump at the end of a basic block would require a register, so we don't want that to
+    /// trample the RAX content.
+    const TRIVIAL_REGISTERS: [&str; 3] = [x86_64::RCX, x86_64::RDX, x86_64::RAX, ];
 
     /// Performs register allocation for a single instruction.
     /// If a machine register is part of the `src` of an instruction (i.e. "use" set of the instruction)

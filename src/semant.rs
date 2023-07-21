@@ -1225,10 +1225,12 @@ fn trans_dec<T: Frame + 'static>(
                                     EnvEntry::VarEntry {
                                         ty: t.clone(),
                                         readonly: false,
-                                        access: acc.clone()
+                                        access: acc.clone(),
                                     },
                                 );
-                                return Some(translate::var_dec_assignment::<T>(acc.1, init_ir, ctx.gen));
+                                return Some(translate::var_dec_assignment::<T>(
+                                    acc.1, init_ir, ctx.gen,
+                                ));
                             }
                         }
                     }
@@ -1387,17 +1389,22 @@ pub fn translate<T: Frame + 'static>(
 
     let (main_level, ..) =
         Level::new_level::<T>(Level::outermost(), Vec::new(), ctx.gen, "tigermain");
-    let (tigermain_ir, _) = trans_exp::<T>(&mut ctx, main_level.clone(), ast, None);
+    let (tigermain_ir, tigermain_ty) = trans_exp::<T>(&mut ctx, main_level.clone(), ast, None);
 
-    let tigermain_ir_return_zero = translate::add_zero_return_value::<T>(tigermain_ir, ctx.gen);
-
+    // if main evaluate to an int, we can move that as the return value.
+    // other types of return values are not sensibile as int, so just use 0.
+    let tigermain_return_val_ir = if tigermain_ty == Type::Int {
+        translate::add_int_return_value::<T>(tigermain_ir, ctx.gen)
+    } else {
+        translate::add_zero_return_value::<T>(tigermain_ir, ctx.gen)
+    };
     match &*main_level.borrow() {
         Level::Top => unreachable!(),
         Level::Nested { .. } => {
             translate::proc_entry_exit::<T>(
                 false, // there's no sensible value to interpret the main body as, so don't use it as a return value.
                 main_level.clone(),
-                tigermain_ir_return_zero,
+                tigermain_return_val_ir,
                 &mut ctx.frags,
                 ctx.gen,
                 can_spill,
@@ -1420,7 +1427,9 @@ mod tests {
         frame::{Escapes, Frame},
         ir::{IrExp, IrStm},
         temp::{self, Label, Uuids},
+        util
     };
+    use std::path::PathBuf;
 
     use lrlex::lrlex_mod;
     use lrpar::lrpar_mod;
@@ -1579,27 +1588,27 @@ mod tests {
         result.unwrap()
     }
 
-    fn test_file(path: DirEntry, is_good: bool) {
-        let input = fs::read_to_string(path.path()).unwrap();
-        test_input_helper(&input, is_good, path.path().to_str());
+    fn test_file(path: PathBuf, is_good: bool) {
+        let input = fs::read_to_string(path.clone()).unwrap();
+        test_input_helper(&input, is_good, path.to_str());
     }
 
     #[test]
     fn appel_good_programs() {
-        let paths = fs::read_dir("tests/tiger_programs/semant/good/").unwrap();
+        let paths = util::get_tig_files_in("tests/tiger_programs/semant/good");
 
         for path in paths {
             println!("Testing path {:?}", &path);
-            test_file(path.unwrap(), true);
+            test_file(path, true);
         }
     }
 
     #[test]
     fn appel_bad_programs() {
-        let paths = fs::read_dir("tests/tiger_programs/semant/bad/").unwrap();
+        let paths = util::get_tig_files_in("tests/tiger_programs/semant/bad");
 
         for path in paths {
-            test_file(path.unwrap(), false);
+            test_file(path, false);
         }
     }
 
