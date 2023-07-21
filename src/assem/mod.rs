@@ -72,42 +72,104 @@ pub trait Codegen {
     fn code_gen_frame(f: FrameRef, stm: IrStm, instrs: &mut Vec<Instr>, gen: &mut dyn Uuids);
 }
 
+fn consume_control_char(iter: &mut impl Iterator<Item = (usize, char)>, assem: &str) -> char {
+    let kind = iter.next();
+    if kind.is_none() {
+        panic!("impl bug: missing control character in {}", assem);
+    }
+    kind.unwrap().1
+}
+
+fn consume_index(
+    tmp: &mut String,
+    iter: &mut Peekable<impl Iterator<Item = (usize, char)>>,
+    assem: &str,
+) -> usize {
+    tmp.clear();
+    while let Some((_, d)) = iter.peek() {
+        if d.is_numeric() {
+            tmp.push(*d);
+            iter.next(); // consume
+        } else {
+            break;
+        }
+    }
+
+    match usize::from_str(tmp.as_str()) {
+        Ok(template_arg_idx) => template_arg_idx,
+        Err(..) => {
+            panic!("impl bug: invalid asm template string {}", assem)
+        }
+    }
+}
+
 impl Instr {
+    pub fn get_sources(&self) -> Vec<temp::Temp> {
+        match self {
+            Instr::Label { .. } => vec![],
+            Instr::Move { src, .. } => vec![*src],
+            Instr::Oper { src, .. } => src.0.clone(),
+        }
+    }
+
+    pub fn get_dests(&self) -> Vec<temp::Temp> {
+        match self {
+            Instr::Label { .. } => vec![],
+            Instr::Move { dst, .. } => vec![*dst],
+            Instr::Oper { dst, .. } => dst.0.clone(),
+        }
+    }
+
+    //  TODO delete me when I am no longer needed for sure.
+    // pub fn get_templist_from_template(&self, is_src: bool) -> Vec<temp::Temp> {
+    //     let mut res = Vec::new();
+    //     match self {
+    //         Instr::Label { .. } => {}
+    //         Instr::Move { dst, src, .. } => {
+    //             if is_src {
+    //                 res.push(*src)
+    //             } else {
+    //                 res.push(*dst)
+    //             }
+    //         }
+    //         Instr::Oper {
+    //             assem, dst, src, ..
+    //         } => {
+    //             let mut iter = assem.char_indices().peekable();
+    //             let mut tmp = String::new();
+
+    //             while let Some((_, c)) = iter.peek() {
+    //                 match c {
+    //                     '\'' => {
+    //                         iter.next(); // consume the '
+    //                         let kind_char = consume_control_char(&mut iter, assem);
+    //                         let template_arg_idx = consume_index(&mut tmp, &mut iter, assem);
+
+    //                         match kind_char {
+    //                             'S' | 's' => {
+    //                                 if is_src {
+    //                                     res.push(src.0[template_arg_idx]);
+    //                                 }
+    //                             }
+    //                             'D' | 'd' => {
+    //                                 if !is_src {
+    //                                     res.push(dst.0[template_arg_idx]);
+    //                                 }
+    //                             }
+    //                             _ => {}
+    //                         }
+    //                     }
+    //                     x => {
+    //                         iter.next();
+    //                     } // consume next char to make progress
+    //                 }
+    //             }
+    //         }
+    //     }
+    //     res
+    // }
+
     pub fn format(&self, tm: &temp::TempMap, relaxed: bool, gen: &mut dyn Uuids) -> String {
-        fn consume_control_char(
-            iter: &mut impl Iterator<Item = (usize, char)>,
-            assem: &str,
-        ) -> char {
-            let kind = iter.next();
-            if kind.is_none() {
-                panic!("impl bug: missing control character in {}", assem);
-            }
-            kind.unwrap().1
-        }
-
-        fn consume_index(
-            tmp: &mut String,
-            iter: &mut Peekable<impl Iterator<Item = (usize, char)>>,
-            assem: &str,
-        ) -> usize {
-            tmp.clear();
-            while let Some((_, d)) = iter.peek() {
-                if d.is_numeric() {
-                    tmp.push(*d);
-                    iter.next(); // consume
-                } else {
-                    break;
-                }
-            }
-
-            match usize::from_str(tmp.as_str()) {
-                Ok(template_arg_idx) => template_arg_idx,
-                Err(..) => {
-                    panic!("impl bug: invalid asm template string {}", assem)
-                }
-            }
-        }
-
         fn add_temp_string(t: temp::Temp, tm: &temp::TempMap, relaxed: bool, res: &mut String) {
             if let Some(s) = tm.get(&t) {
                 res.push_str(s)
@@ -155,11 +217,12 @@ impl Instr {
                                         panic!("impl bug: invalid index {} in asm template string referencing jump'{}'", template_arg_idx, assem);
                                     }
                                     let t = jump[template_arg_idx];
+                                    // maybe this?
                                     match t {
                                         temp::Label::Unnamed(id) => {
                                             res.push_str(format!("{}", id).as_str());
                                         }
-                                        l@temp::Label::Named(..) => {
+                                        l @ temp::Label::Named(..) => {
                                             let s = l.resolve_named_label(gen);
                                             res.push_str(s);
                                         }
@@ -201,7 +264,7 @@ impl Instr {
                                 temp::Label::Unnamed(id) => {
                                     res.push_str(format!("{}", id).as_str());
                                 }
-                                l@temp::Label::Named(..) => {
+                                l @ temp::Label::Named(..) => {
                                     let s = l.resolve_named_label(gen);
                                     res.push_str(s);
                                 }
@@ -369,7 +432,6 @@ mod tests {
         assert_eq!(expected, actual);
     }
 
-
     #[test]
     #[should_panic]
     fn format_label_missing_control_character() {
@@ -405,8 +467,8 @@ mod tests {
         assert_eq!(expected, actual);
     }
 
-     #[test]
-     #[should_panic]
+    #[test]
+    #[should_panic]
     fn format_named_label_missing_symbol() {
         let mut gen: UuidsImpl = Uuids::new();
         let sym = gen.intern("hello");

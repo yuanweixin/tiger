@@ -10,7 +10,7 @@ use crate::{
         IrRelop::*,
         IrStm::*,
     },
-    temp::Uuids,
+    temp::{TempMap, Uuids},
 };
 
 pub struct X86Asm;
@@ -47,7 +47,7 @@ impl Codegen for X86Asm {
             Jump(e, target_labels) => {
                 let t = Self::munch_exp(*e, result, gen);
                 result.push(Instr::Oper {
-                    assem: "jmp ['S0]".into(),
+                    assem: "jmp 'S0".into(),
                     dst: Dst::empty(),
                     src: Src(vec![t]),
                     jump: target_labels,
@@ -84,12 +84,6 @@ impl Codegen for X86Asm {
             }
             Exp(e) => {
                 let e_temp = Self::munch_exp(*e, result, gen);
-                result.push(Instr::Oper {
-                    assem: "mov 'D0, 'S0".into(),
-                    dst: Dst(vec![e_temp]),
-                    src: Src(vec![e_temp]),
-                    jump: vec![],
-                });
             }
             Label(lab) => match lab {
                 temp::Label::Named(..) => result.push(Instr::Label {
@@ -131,11 +125,17 @@ impl Codegen for X86Asm {
                 result.push(Instr::Oper {
                     assem: instr.into(),
                     dst: Dst(if is_div {
+                        // div is a single operand operation that operates on RAX.
+                        // by construction, a_temp is a fresh temporary, so it will not be RAX.
                         vec![a_temp, x86_64::named_register(gen, x86_64::RAX)]
                     } else {
                         vec![a_temp]
                     }),
-                    src: Src(vec![b_temp]),
+                    // op a, b where a is both read and written to.
+                    // must include a here because it is also a source.
+                    // in trivial reg allocation, this would result in a load of a_temp from memory before the instruction.
+                    // but, since we use 'S0, b_temp must come first...not deep but very tricky.
+                    src: Src(vec![b_temp, a_temp]),
                     jump: vec![],
                 });
                 a_temp
@@ -234,7 +234,7 @@ impl Codegen for X86Asm {
 
                 result.push(Instr::Oper {
                     assem: if is_named_label {
-                        "lea 'D0, 'J0[rip]".into()
+                        "lea 'D0, 'J0@PLT[rip]".into()
                     } else {
                         "lea 'D0, .L'J0[rip]".into()
                     },
@@ -267,17 +267,27 @@ impl Codegen for X86Asm {
     }
 }
 
-struct TempOffset(HashMap<temp::Temp, i32>);
+/// This module contains the code to do trivial register allocation.
+pub mod trivial_reg {
+    use super::*;
 
-impl TempOffset {
-    fn new() -> Self {
-        TempOffset(HashMap::new())
-    }
+    /// In a given frame, maps the temporary to the offset in the frame.
+    pub struct TempOffset(HashMap<temp::Temp, i32>);
 
-    fn get_or_allocate(&mut self, frame: FrameRef, tmp: temp::Temp, gen: &mut dyn Uuids) -> i32 {
-        if let Some(offset) = self.0.get(&tmp) {
-            *offset
-        } else {
+    impl TempOffset {
+        pub fn new() -> Self {
+            TempOffset(HashMap::new())
+        }
+
+        fn get_or_allocate(
+            &mut self,
+            frame: FrameRef,
+            tmp: temp::Temp,
+            gen: &mut dyn Uuids,
+        ) -> i32 {
+            if let Some(offset) = self.0.get(&tmp) {
+                return *offset;
+            }
             let access = frame.borrow_mut().alloc_local(true, gen);
             match access {
                 frame::Access::InFrame(offset) => {
@@ -287,57 +297,189 @@ impl TempOffset {
                 _ => panic!("impl bug, alloc_local call here should return InFrame"),
             }
         }
+
+        fn get(&mut self, tmp: &temp::Temp) -> i32 {
+            *self.0.get(&tmp).unwrap()
+        }
     }
 
-    fn get(&mut self, tmp: temp::Temp) -> i32 {
-        *self.0.get(&tmp).unwrap()
-    }
-}
+    /// The registers we use on x86.
+    const TRIVIAL_REGISTERS: [&str; 3] = [x86_64::RAX, x86_64::RCX, x86_64::RDX];
 
-pub fn do_trivial_register_allcation(
-    frame: FrameRef,
-    assems: Vec<Instr>,
-    gen: &mut dyn Uuids,
-) -> Vec<Instr> {
-    let rax = x86_64::named_register(gen, x86_64::RAX);
-    let rcx = x86_64::named_register(gen, x86_64::RCX);
-    let rdx = x86_64::named_register(gen, x86_64::RDX);
+    /// Performs register allocation for a single instruction.
+    /// If a machine register is part of the `src` of an instruction (i.e. "use" set of the instruction)
+    /// then we are not gonna use it, because it is "live" until the actual instruction. Instead we would
+    /// pick the next available register. It is assumed an instruction at most uses 3 registers, so it is
+    /// a bug if we do run out.
+    ///
+    /// The algorithm is simple. We look at the temporaries in the src/dst fields of Instr::Move and Instr::Oper.
+    ///
+    /// If temporary is built-in, we leave it alone.
+    ///
+    /// If it is a src register, we pick the next available machine register r, and do "mov r, [fp + offset]"
+    ///         where offset is the stack offset of this register. in a valid program, it must already have an offset
+    ///         mapped. this is because, it would be invalid to read from a register that was never set!
+    /// Otherwise, it is a dst register.
+    ///         allocate a spot for it in the frame if there is not one.
+    ///         then, we assign an available machine register rres to it.
+    ///         the instruction would have the src/dst registers replaced with machine register temporaries.
+    ///         finally, after the instruction, we include a "mov [fp + offset], rres"
+    ///             where offset is the fp relative offset of the dst register.
+    ///         note: we will assume there is at most 1 abstract register that is used as the dst.
+    pub fn do_trivial_register_allcation(
+        frame: FrameRef,
+        input: Instr,
+        output: &mut Vec<Instr>, // each input maps to 1 or more final instructions.
+        gen: &mut dyn Uuids,
+        built_ins: &TempMap,
+        temp_to_offset: &mut TempOffset,
+    ) {
+        if matches!(input, Instr::Label { .. }) {
+            output.push(input);
+            return;
+        }
 
-    let mut temp_to_offset = TempOffset::new();
+        // eliminate candidates that shows up in the source because they are the instruction's
+        // data dependency, so we cannot use (overwrite) the register before we can perform the instruction.
+        let sources = input.get_sources();
+        let candidates = TRIVIAL_REGISTERS
+            .map(|s| gen.named_temp(s))
+            .iter()
+            .filter(|x| !sources.contains(x))
+            .map(|x| *x)
+            .collect::<Vec<temp::Temp>>();
 
-    let built_ins = <x86_64_Frame as Frame>::temp_map(gen);
+        // registers to color. derived from the template string.
+        // note: we also filter out anything that is already colored.
+        let srcs = input
+            .get_sources()
+            .iter()
+            .filter(|r| !built_ins.contains_key(r))
+            .map(|x| *x)
+            .collect::<Vec<temp::Temp>>();
+        let dsts = input
+            .get_dests()
+            .iter()
+            .filter(|r| !built_ins.contains_key(r))
+            .map(|x| *x)
+            .collect::<Vec<temp::Temp>>();
 
-    let mut result = Vec::new();
-    for asm in assems {
-        match asm {
-            asm @ Instr::Label { .. } => result.push(asm),
-            Instr::Move { assem, dst, src } => {
-                if !built_ins.contains_key(&dst) {
-                    let offset_dst = temp_to_offset.get_or_allocate(frame.clone(), dst, gen);
-                    // source should already exist because something must have generated
-                    // it before. otherwise it is an impl bug.
-                    let offset_src = temp_to_offset.get(src);
-                    // read the source into a register.
-                    result.push(Instr::Oper {
-                        assem: format!("mov rax, [rbp+ {}]", offset_src),
-                        // TODO are these relevant if we don't do register allocation?
-                        // I am using empty here because I don't think they matter. Could turn out
-                        // to be wrong if any other optimization use this.
-                        dst: Dst::empty(),
-                        src: Src::empty(),
-                        jump: vec![],
-                    });
-                    // move that register into the dst memory location.
-                    result.push(Instr::Oper {
-                        assem: format!("mov [rbp + {}], rax", offset_dst),
-                        dst: Dst::empty(),
+        // we should always have enough colors to cover all the registers needed.
+        assert!(
+            srcs.len() + dsts.len() <= candidates.len(),
+            "srcs={:?}, dsts={:?}, candidates={:?}",
+            srcs,
+            dsts,
+            candidates
+        );
+
+        // this is an extra validation of the code gen. sources should already have been
+        // allocated in the frame, otherwise we are referring to some dangling thing!
+        for ref s in srcs.iter() {
+            assert!(temp_to_offset.0.contains_key(s));
+        }
+
+        // validate the assumption that we only explicitly write to 1 abstract register.
+        // i don't think any of the x86 instructions we use here can update more than 1.
+        assert!(dsts.len() <= 1);
+
+        // allocate space for dst in the current frame if it doesn't exist.
+        for ref d in dsts.iter() {
+            temp_to_offset.get_or_allocate(frame.clone(), **d, gen);
+        }
+
+        // do coloring.
+        let mut colors = HashMap::with_capacity(3);
+        let mut choices = candidates.iter();
+        for r in srcs.iter().chain(dsts.iter()) {
+            let color = choices.next().unwrap();
+            colors.insert(r, *color);
+        }
+
+        // now we actually do code gen.
+        match input {
+            Instr::Move { assem, src, dst } => {
+                if srcs.len() > 0 {
+                    // copy src from memory into its assigned register.
+                    let x: temp::Temp = srcs[0];
+                    debug_assert!(x == src, "impl bug");
+                    let src_offset = temp_to_offset.get(&src);
+                    output.push(Instr::Oper {
+                        assem: format!("mov 'D0, [rbp + {}]", src_offset),
+                        dst: Dst(vec![*colors.get(&x).unwrap()]),
                         src: Src::empty(),
                         jump: vec![],
                     });
                 }
+
+                output.push(Instr::Move {
+                    assem,
+                    src: *colors.get(&src).unwrap_or(&src),
+                    dst: *colors.get(&dst).unwrap_or(&dst),
+                });
+
+                if dsts.len() > 0 {
+                    // copy dst from its register back to memory.
+                    let x = dsts[0];
+                    debug_assert!(x == dst, "impl bug");
+                    let dst_offset = temp_to_offset.get(&dst);
+
+                    output.push(Instr::Oper {
+                        assem: format!("mov [rbp + {}], 'S0", dst_offset),
+                        dst: Dst::empty(),
+                        src: Src(vec![*colors.get(&x).unwrap()]),
+                        jump: vec![],
+                    });
+                }
             }
-            asm @ Instr::Oper { .. } => result.push(asm),
+            Instr::Oper {
+                assem,
+                dst,
+                src,
+                jump,
+            } => {
+                if srcs.len() > 0 {
+                    for ref s in srcs.iter() {
+                        let src_offset = temp_to_offset.get(*s);
+                        output.push(Instr::Oper {
+                            assem: format!("mov 'D0, [rbp + {}]", src_offset),
+                            dst: Dst(vec![*colors.get(s).unwrap()]),
+                            src: Src::empty(),
+                            jump: vec![],
+                        });
+                    }
+                }
+
+                output.push(Instr::Oper {
+                    assem,
+                    dst: Dst(dst
+                        .0
+                        .iter()
+                        .map(|x| colors.get(x).unwrap_or(x))
+                        .map(|x| *x)
+                        .collect()),
+                    src: Src(src
+                        .0
+                        .iter()
+                        .map(|x| colors.get(x).unwrap_or(x))
+                        .map(|x| *x)
+                        .collect()),
+                    jump,
+                });
+
+                if dsts.len() > 0 {
+                    for d in dsts.iter() {
+                        let dst_offset = temp_to_offset.get(d);
+                        output.push(Instr::Oper {
+                            assem: format!("mov [rbp + {}], 'S0", dst_offset),
+                            dst: Dst::empty(),
+                            src: Src(vec![*colors.get(&d).unwrap()]),
+                            jump: vec![],
+                        });
+                    }
+                }
+            }
+            Instr::Label { .. } => unreachable!(),
         }
     }
-    result
 }

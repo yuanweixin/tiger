@@ -193,31 +193,34 @@ impl Frame for x86_64_Frame {
         instrs: &Vec<crate::assem::Instr>,
         gen: &mut dyn Uuids,
     ) -> (super::Prologue, super::Epilogue) {
+        let function_name =                 self.name.resolve_named_label(gen);
         let prologue = if self.num_locals > 0 {
             format!(
-                "{}:\n.{}_prologue:\n\tpush rbp\n\tmov rbp, rsp\n\tsub rsp, -{}",
-                self.name.resolve_named_label(gen),
-                self.name.resolve_named_label(gen),
+                "{}:\n.{}_prologue:\n\tpush rbp\n\tmov rbp, rsp\n\tsub rsp, {}",
+                function_name,
+                function_name,
                 self.num_locals * WORD_SIZE
             )
         } else {
             format!(
                 "{}:\n.{}_prologue:\n\tpush rbp\n\tmov rbp, rsp",
-                self.name.resolve_named_label(gen),
-                self.name.resolve_named_label(gen)
+                function_name,
+                function_name,
             )
         };
 
         let epilogue = if self.num_locals > 0 {
             format!(
-                ".{}_epilogue:\n\tadd rsp, {}\n\tpop rbp\n\tret",
-                self.name.resolve_named_label(gen),
-                self.num_locals * WORD_SIZE
+                ".{}_epilogue:\n\tadd rsp, {}\n\tpop rbp\n\tret\n\t.globl {}\n\t.type {}, @function",
+                function_name,
+                self.num_locals * WORD_SIZE,
+                function_name,
+                function_name,
             )
         } else {
             format!(
                 ".{}_epilogue:\n\tpop rbp\n\tret",
-                self.name.resolve_named_label(gen)
+                function_name,
             )
         };
         return (prologue, epilogue);

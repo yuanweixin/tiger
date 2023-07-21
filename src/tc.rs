@@ -21,7 +21,8 @@ mod translate;
 mod util;
 
 use crate::{
-    assem::{Codegen},
+    assem::x86_64::trivial_reg,
+    assem::Codegen,
     frame::{x86_64::x86_64_Frame, Frame},
     temp::{Uuids, UuidsImpl},
 };
@@ -29,6 +30,7 @@ use crate::{
 lrlex_mod!("tiger.l");
 lrpar_mod!("tiger.y");
 
+const DEBUG_TRIVIAL_REG_ALLOCATION: bool = true;
 struct OptOpt {
     opt_name: &'static str,
     desc: &'static str,
@@ -248,6 +250,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         util::exit(util::ReturnCode::TypeError);
     }
 
+    let tm = gen.to_temp_map(x86_64_Frame::registers());
     let mut xxx = Vec::new();
     for frag in frags.unwrap().into_iter() {
         match frag {
@@ -260,23 +263,52 @@ fn main() -> Result<(), Box<dyn Error>> {
                 let (blist, done_label) = canon::basic_blocks(linearized, &mut gen);
                 let trace = canon::trace_schedule(blist, done_label, &mut gen);
 
+                // the trivial allocator could have been done as a single pass over the
+                // finished list of instr. but it's done here inside each fragment so we
+                // still have access to the IrStm that leads to the blocks of asm. this is
+                // for sanity and ease of debugging by printing out the strings.
+                let mut temp_offset = trivial_reg::TempOffset::new();
                 for stm in trace.into_iter() {
+                    if DEBUG_TRIVIAL_REG_ALLOCATION {
+                        println!("\n{:?}", stm);
+                    }
+                    // IrStm -> Vec<InStr>
+                    let mut trivial_reg_alloc_input = Vec::new();
                     assem::x86_64::X86Asm::code_gen_frame(
                         frame.clone(),
                         stm,
-                        &mut assems,
+                        &mut trivial_reg_alloc_input,
                         &mut gen,
                     );
+
+                    // This maps each Instr to 1 or more InStr.
+                    if !opts.register_allocation_enabled() {
+                        for instr in trivial_reg_alloc_input {
+                            if DEBUG_TRIVIAL_REG_ALLOCATION {
+                                println!("#{}", instr.format(&tm, true, &mut gen));
+                            }
+                            // this extra temporary is used to aid debugging.
+                            let mut generated = Vec::new();
+                            trivial_reg::do_trivial_register_allcation(
+                                frame.clone(),
+                                instr,
+                                &mut generated,
+                                &mut gen,
+                                &tm,
+                                &mut temp_offset,
+                            );
+                            for ins in generated {
+                                if DEBUG_TRIVIAL_REG_ALLOCATION {
+                                    println!("{}", ins.format(&tm, true, &mut gen));
+                                }
+                                assems.push(ins);
+                            }
+                        }
+                    } else {
+                        assems.extend(trivial_reg_alloc_input);
+                    }
                 }
 
-                // TODO
-                // if !opts.register_allocation_enabled() {
-                //     assems = assem::x86_64::do_trivial_register_allcation(
-                //         frame.clone(),
-                //         assems,
-                //         &mut gen,
-                //     );
-                // }
                 let s = String::from(frame.borrow().name().resolve_named_label(&gen));
                 frame.borrow().proc_entry_exit2(&mut assems, &mut gen);
                 let (prologue, epilogue) = frame.borrow().proc_entry_exit3(&assems, &mut gen);
@@ -285,7 +317,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         };
     }
 
-    // TODO [2 days] trivial register allocation
+    // TODO [2 days 7/19, 7/20] trivial register allocation
     // TODO [1 days] link it with the runtime - yup full of errors
     // TODO next steps
     // 1. [0.5-1 day] set up test cases where the main program is invoked on valid programs, then said programs get run.
@@ -301,12 +333,14 @@ fn main() -> Result<(), Box<dyn Error>> {
     let output_path = PathBuf::from(opts.file().unwrap()).with_extension("s");
 
     let outf = File::create(output_path)?;
+
+
     let mut bout = BufWriter::new(outf);
 
-    // TODO move this into some target specific helper module once done?
-    // or just get that part that generates the body label.
-    let tm = gen.to_temp_map(x86_64_Frame::registers());
+    // TODO move the asm prologue into some target specific thing.
     writeln!(bout, ".intel_syntax noprefix")?;
+    writeln!(bout, ".globl	tigermain")?;
+    writeln!(bout, ".type tigermain, @function")?;
     for (prologue, epilogue, asm, fn_name) in xxx.iter() {
         writeln!(bout, "{}", prologue)?;
         writeln!(bout, ".{}_body:", fn_name)?;

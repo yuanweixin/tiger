@@ -1,5 +1,9 @@
 use std::num::NonZeroUsize;
-use std::{collections::HashMap, fmt::Display, hash::Hash};
+use std::{
+    collections::HashMap,
+    fmt::{Debug, Display},
+    hash::Hash,
+};
 
 use crate::frame;
 use crate::symbol::{Interner, Symbol};
@@ -8,13 +12,13 @@ use crate::symtab::SymbolTable;
 // most temp are unnamed, only the registers are named
 // the extra cost is an extra word. otoh this makes it
 // clearer what "kind" a temporary is.
-#[derive(Eq, PartialEq, Copy, Clone, Hash, Debug)]
+#[derive(Eq, PartialEq, Copy, Clone, Hash)]
 pub enum Temp {
     Named(Symbol),
     Unnamed(NonZeroUsize),
 }
 
-#[derive(Eq, PartialEq, Copy, Clone, Hash, Debug)]
+#[derive(Eq, PartialEq, Copy, Clone, Hash)]
 pub enum Label {
     Named(Symbol),
     Unnamed(NonZeroUsize),
@@ -24,7 +28,7 @@ impl Label {
     pub fn resolve_named_label<'a>(&self, gen: &'a dyn Uuids) -> &'a str {
         match self {
             Label::Unnamed(..) => panic!("impl bug: expected named label"),
-            Label::Named(sym) => gen.resolve(&sym).unwrap()
+            Label::Named(sym) => gen.resolve(&sym).unwrap(),
         }
     }
 }
@@ -70,6 +74,24 @@ pub struct UuidsImpl {
     next_id: NonZeroUsize,
     pool: Interner,
     name_temp: SymbolTable<Temp>,
+}
+
+impl Debug for Temp {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Temp::Named(s) => f.write_fmt(format_args!("named_tmp{}", s.to_usize())),
+            Temp::Unnamed(id) => f.write_fmt(format_args!("t{}", id)),
+        }
+    }
+}
+
+impl Debug for Label {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Label::Named(s) => f.write_fmt(format_args!("named_label{}", s.to_usize())),
+            Label::Unnamed(id) => f.write_fmt(format_args!("unnamed_label{}", id)),
+        }
+    }
 }
 
 impl Display for Temp {
