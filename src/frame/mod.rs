@@ -51,6 +51,8 @@ pub trait Frame: Debug {
     where
         Self: Sized;
 
+    fn asm_file_prologue() -> &'static str where Self: Sized;
+
     /// Handle call arguments and callee saved registers.
     /// This is part of the code of a function body.
     /// 1. moving call arguments into the abstract registers or memory locations in the callee.

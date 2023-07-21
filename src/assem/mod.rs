@@ -120,55 +120,6 @@ impl Instr {
         }
     }
 
-    //  TODO delete me when I am no longer needed for sure.
-    // pub fn get_templist_from_template(&self, is_src: bool) -> Vec<temp::Temp> {
-    //     let mut res = Vec::new();
-    //     match self {
-    //         Instr::Label { .. } => {}
-    //         Instr::Move { dst, src, .. } => {
-    //             if is_src {
-    //                 res.push(*src)
-    //             } else {
-    //                 res.push(*dst)
-    //             }
-    //         }
-    //         Instr::Oper {
-    //             assem, dst, src, ..
-    //         } => {
-    //             let mut iter = assem.char_indices().peekable();
-    //             let mut tmp = String::new();
-
-    //             while let Some((_, c)) = iter.peek() {
-    //                 match c {
-    //                     '\'' => {
-    //                         iter.next(); // consume the '
-    //                         let kind_char = consume_control_char(&mut iter, assem);
-    //                         let template_arg_idx = consume_index(&mut tmp, &mut iter, assem);
-
-    //                         match kind_char {
-    //                             'S' | 's' => {
-    //                                 if is_src {
-    //                                     res.push(src.0[template_arg_idx]);
-    //                                 }
-    //                             }
-    //                             'D' | 'd' => {
-    //                                 if !is_src {
-    //                                     res.push(dst.0[template_arg_idx]);
-    //                                 }
-    //                             }
-    //                             _ => {}
-    //                         }
-    //                     }
-    //                     x => {
-    //                         iter.next();
-    //                     } // consume next char to make progress
-    //                 }
-    //             }
-    //         }
-    //     }
-    //     res
-    // }
-
     pub fn format(&self, tm: &temp::TempMap, relaxed: bool, gen: &mut dyn Uuids) -> String {
         fn add_temp_string(t: temp::Temp, tm: &temp::TempMap, relaxed: bool, res: &mut String) {
             if let Some(s) = tm.get(&t) {

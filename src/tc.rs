@@ -337,10 +337,7 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     let mut bout = BufWriter::new(outf);
 
-    // TODO move the asm prologue into some target specific thing.
-    writeln!(bout, ".intel_syntax noprefix")?;
-    writeln!(bout, ".globl	tigermain")?;
-    writeln!(bout, ".type tigermain, @function")?;
+    writeln!(bout, "{}", x86_64_Frame::asm_file_prologue())?;
     for (prologue, epilogue, asm, fn_name) in xxx.iter() {
         writeln!(bout, "{}", prologue)?;
         writeln!(bout, ".{}_body:", fn_name)?;

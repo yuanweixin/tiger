@@ -90,6 +90,10 @@ pub fn special_regs(gen: &mut dyn Uuids) -> Vec<temp::Temp> {
 }
 
 impl Frame for x86_64_Frame {
+    fn asm_file_prologue() -> &'static str where Self: Sized {
+        ".intel_syntax noprefix"
+    }
+
     fn registers() -> &'static [Register]
     where
         Self: Sized,

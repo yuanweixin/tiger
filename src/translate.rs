@@ -820,6 +820,10 @@ mod tests {
     const RV: &str = "rv";
 
     impl Frame for TestFrame {
+        fn asm_file_prologue() -> &'static str where Self: Sized {
+            unreachable!()
+        }
+
         fn return_value_register(gen: &mut dyn Uuids) -> temp::Temp
         where
             Self: Sized,
