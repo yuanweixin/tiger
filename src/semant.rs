@@ -1156,14 +1156,15 @@ fn trans_dec<T: Frame + 'static>(
         Dec::VarDec {
             name,
             escape,
-            typ,
+            typ: decl_typ,
             init,
             pos,
         } => {
             let var_name_sym = ctx.intern(name);
             let name = &ctx.input[name.start()..name.end()];
-            let (_, init_ty) = trans_exp::<T>(ctx, level.clone(), init, break_label);
-            match typ {
+            let (init_ir, init_ty) = trans_exp::<T>(ctx, level.clone(), init, break_label);
+
+            match decl_typ {
                 None => {
                     if matches!(init_ty, Type::Nil) {
                         ctx.flag_error_with_msg (pos, &format!("Variable {} is declared with unknown type and initiated with nil. Fix by using the long form, e.g. var {} : <your-type> = ...", name, name));
@@ -1175,11 +1176,11 @@ fn trans_dec<T: Frame + 'static>(
                             EnvEntry::VarEntry {
                                 ty: init_ty,
                                 readonly: false,
-                                access: acc,
+                                access: acc.clone(),
                             },
                         );
+                        return Some(translate::var_dec_assignment::<T>(acc.1, init_ir, ctx.gen));
                     }
-                    None
                 }
                 Some((span, pos)) => {
                     let var_typ_sym = ctx.intern(span);
@@ -1224,15 +1225,17 @@ fn trans_dec<T: Frame + 'static>(
                                     EnvEntry::VarEntry {
                                         ty: t.clone(),
                                         readonly: false,
-                                        access: acc,
+                                        access: acc.clone()
                                     },
                                 );
+                                return Some(translate::var_dec_assignment::<T>(acc.1, init_ir, ctx.gen));
                             }
                         }
                     }
-                    None
                 }
             }
+            // if it falls through, some error occurred.
+            None
         }
 
         Dec::TypeDec(tydecs) => {
@@ -1398,7 +1401,6 @@ pub fn translate<T: Frame + 'static>(
                 &mut ctx.frags,
                 ctx.gen,
                 can_spill,
-
             );
         }
     }
@@ -1439,7 +1441,10 @@ mod tests {
     const RV: &str = "rv";
 
     impl Frame for TestFrame {
-        fn asm_file_prologue() -> &'static str where Self: Sized {
+        fn asm_file_prologue() -> &'static str
+        where
+            Self: Sized,
+        {
             unreachable!();
         }
 

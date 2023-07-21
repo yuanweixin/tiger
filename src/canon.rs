@@ -552,7 +552,7 @@ mod tests {
         ir::{IrBinop::*, IrExp, IrRelop::*, IrStm},
         symbol::Interner,
         symbol::Symbol,
-        temp::{self, test_helpers, Uuids, Label},
+        temp::{self, test_helpers, Label, Uuids},
     };
     use itertools;
     use std::num::NonZeroUsize;

@@ -451,6 +451,21 @@ pub fn seq_exp(exp_irs: Vec<TrExp>, has_return_value: bool, gen: &mut dyn Uuids)
     }
 }
 
+pub fn var_dec_assignment<T: Frame>(
+    dst_access: frame::Access,
+    rhs_exp: TrExp,
+    gen: &mut dyn Uuids,
+) -> TrExp {
+    let rhs_exp_ex = un_ex(rhs_exp, gen);
+    match dst_access {
+        frame::Access::InReg(r) => Nx(Move(Temp(r), rhs_exp_ex)),
+        frame::Access::InFrame(offset) => Nx(Move(
+            Mem(Binop(Plus, Temp(T::frame_pointer(gen)), Const(offset))),
+            rhs_exp_ex,
+        )),
+    }
+}
+
 pub fn assignment(dst_ir: TrExp, src_ir: TrExp, gen: &mut dyn Uuids) -> TrExp {
     Nx(Move(un_ex(dst_ir, gen), un_ex(src_ir, gen)))
 }
@@ -742,9 +757,11 @@ pub fn subscript_var<T: Frame>(lhs_ir: TrExp, idx_ir: TrExp, gen: &mut dyn Uuids
     let lhs_unexed = un_ex(lhs_ir, gen);
     Ex(Eseq(
         make_seq(vec![
+            // if index < 0, it's bad
             Cjump(Ge, idx.clone(), Const(0), upper_check, bad),
             Label(upper_check),
-            Cjump(Lt, idx.clone(), lhs_unexed.clone(), access, bad),
+            // if idx >= size, it's bad
+            Cjump(Lt, idx.clone(), Mem(lhs_unexed.clone()), access, bad),
             Label(bad),
             Exp(T::external_call(
                 gen.named_label("exit"),
@@ -820,7 +837,10 @@ mod tests {
     const RV: &str = "rv";
 
     impl Frame for TestFrame {
-        fn asm_file_prologue() -> &'static str where Self: Sized {
+        fn asm_file_prologue() -> &'static str
+        where
+            Self: Sized,
+        {
             unreachable!()
         }
 

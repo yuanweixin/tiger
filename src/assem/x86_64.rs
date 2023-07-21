@@ -297,10 +297,6 @@ pub mod trivial_reg {
                 _ => panic!("impl bug, alloc_local call here should return InFrame"),
             }
         }
-
-        fn get(&mut self, tmp: &temp::Temp) -> i32 {
-            *self.0.get(&tmp).unwrap()
-        }
     }
 
     /// The registers we use on x86.
@@ -317,8 +313,9 @@ pub mod trivial_reg {
     /// If temporary is built-in, we leave it alone.
     ///
     /// If it is a src register, we pick the next available machine register r, and do "mov r, [fp + offset]"
-    ///         where offset is the stack offset of this register. in a valid program, it must already have an offset
-    ///         mapped. this is because, it would be invalid to read from a register that was never set!
+    ///         where offset is the stack offset of this register. due to trace scheduling, it is possible for
+    ///         the use of a source temporary to show up before it is assigned to. hence, we use get_or_allocate
+    ///         for source temporaries as well.
     /// Otherwise, it is a dst register.
     ///         allocate a spot for it in the frame if there is not one.
     ///         then, we assign an available machine register rres to it.
@@ -373,12 +370,6 @@ pub mod trivial_reg {
             candidates
         );
 
-        // this is an extra validation of the code gen. sources should already have been
-        // allocated in the frame, otherwise we are referring to some dangling thing!
-        for ref s in srcs.iter() {
-            assert!(temp_to_offset.0.contains_key(s));
-        }
-
         // validate the assumption that we only explicitly write to 1 abstract register.
         // i don't think any of the x86 instructions we use here can update more than 1.
         assert!(dsts.len() <= 1);
@@ -403,7 +394,7 @@ pub mod trivial_reg {
                     // copy src from memory into its assigned register.
                     let x: temp::Temp = srcs[0];
                     debug_assert!(x == src, "impl bug");
-                    let src_offset = temp_to_offset.get(&src);
+                    let src_offset = temp_to_offset.get_or_allocate(frame.clone(), src, gen);
                     output.push(Instr::Oper {
                         assem: format!("mov 'D0, [rbp + {}]", src_offset),
                         dst: Dst(vec![*colors.get(&x).unwrap()]),
@@ -422,7 +413,7 @@ pub mod trivial_reg {
                     // copy dst from its register back to memory.
                     let x = dsts[0];
                     debug_assert!(x == dst, "impl bug");
-                    let dst_offset = temp_to_offset.get(&dst);
+                    let dst_offset = temp_to_offset.get_or_allocate(frame.clone(), dst, gen);
 
                     output.push(Instr::Oper {
                         assem: format!("mov [rbp + {}], 'S0", dst_offset),
@@ -440,7 +431,7 @@ pub mod trivial_reg {
             } => {
                 if srcs.len() > 0 {
                     for ref s in srcs.iter() {
-                        let src_offset = temp_to_offset.get(*s);
+                        let src_offset = temp_to_offset.get_or_allocate(frame.clone(), **s, gen);
                         output.push(Instr::Oper {
                             assem: format!("mov 'D0, [rbp + {}]", src_offset),
                             dst: Dst(vec![*colors.get(s).unwrap()]),
@@ -469,7 +460,7 @@ pub mod trivial_reg {
 
                 if dsts.len() > 0 {
                     for d in dsts.iter() {
-                        let dst_offset = temp_to_offset.get(d);
+                        let dst_offset = temp_to_offset.get_or_allocate(frame.clone(), *d, gen);
                         output.push(Instr::Oper {
                             assem: format!("mov [rbp + {}], 'S0", dst_offset),
                             dst: Dst::empty(),

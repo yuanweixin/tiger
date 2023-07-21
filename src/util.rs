@@ -1,5 +1,6 @@
 // TODO this seems unnecessary.
 #[allow(dead_code)]
+#[derive(Debug, Eq, PartialEq)]
 pub enum ReturnCode {
     Ok = 0,
 

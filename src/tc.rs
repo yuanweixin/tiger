@@ -36,24 +36,30 @@ struct OptOpt {
     desc: &'static str,
 }
 
-struct CompilerOptions(ArgMatches);
+trait CompilerOptions {
+    fn optimizations_disabled(&self) -> bool;
+    fn constant_folding_enabled(&self) -> bool;
+    fn register_allocation_enabled(&self) -> bool;
+    fn report_opts(&self) -> bool;
+    fn file(&self) -> Option<&String>;
+}
 
-impl CompilerOptions {
+impl CompilerOptions for ArgMatches {
     // todo get the rest of them
-    pub fn optimizations_disabled(&self) -> bool {
+    fn optimizations_disabled(&self) -> bool {
         return true;
     }
-    pub fn constant_folding_enabled(&self) -> bool {
+    fn constant_folding_enabled(&self) -> bool {
         return false;
     }
-    pub fn register_allocation_enabled(&self) -> bool {
+    fn register_allocation_enabled(&self) -> bool {
         return false;
     }
-    pub fn report_opts(&self) -> bool {
+    fn report_opts(&self) -> bool {
         return false;
     }
-    pub fn file(&self) -> Option<&String> {
-        self.0.get_one::<String>("file")
+    fn file(&self) -> Option<&String> {
+        self.get_one::<String>("file")
     }
 }
 
@@ -185,39 +191,19 @@ fn opt_opts() -> HashMap<&'static str, OptOpt> {
     res
 }
 
-fn get_enabled_optimizations() {
-    // TODO get here when this be needed.
-}
 
-fn main() -> Result<(), Box<dyn Error>> {
-    let matches = command!()
-        .arg(Arg::new("file"))
-        .arg(arg!(--irgen "dump the ir, after constant folding (if enabled), to file named <basename>.ir").required(false))
-        .arg(arg!(--"report-opts" "output the list of optimizations supported by compiler"))
-        .arg(arg!(--optir <phase> "output the ir after <phase>, where <phase> can be initial|final"))
-        .arg(arg!(-O<opt> "enable optimization <opt>, can be specified multiple times. other optimizations are disabled unless enabled. <opt> is the list of optimizations output from --report-opts. -O0 means disable all optimizations.").action(ArgAction::Append))
-        .get_matches();
-    let opts = CompilerOptions(matches);
-
-    if opts.report_opts() {
-        println!("Supported optimizations");
-        for (_, optopt) in opt_opts() {
-            println!("\t{}: {}", optopt.opt_name, optopt.desc);
-        }
-        util::exit(util::ReturnCode::Ok);
-    }
-
-    let file = opts.file();
-    if let None = file {
+fn run_on_file(opts: &dyn CompilerOptions) -> Result<util::ReturnCode, Box<dyn Error>> {
+    let fpath = opts.file();
+    if let None = fpath {
         eprintln!("Missing required argument <file>");
-        util::exit(util::ReturnCode::ExUsage);
+        return Ok(util::ReturnCode::ExUsage);
     }
 
-    let input = fs::read_to_string(file.unwrap());
+    let input = fs::read_to_string(fpath.unwrap());
 
     if let Err(ref err) = input {
-        eprintln!("Unable to read file {}, got error {}", file.unwrap(), err);
-        util::exit(util::ReturnCode::OtherErrors);
+        eprintln!("Unable to read file {}, got error {}", fpath.unwrap(), err);
+        return Ok(util::ReturnCode::OtherErrors);
     }
 
     let lexerdef: lrlex::LRNonStreamingLexerDef<lrlex::DefaultLexerTypes> = tiger_l::lexerdef();
@@ -230,7 +216,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         for e in errs {
             println!("{}", e.pp(&lexer, &tiger_y::token_epp));
         }
-        util::exit(util::ReturnCode::SyntaxError);
+        return Ok(util::ReturnCode::SyntaxError);
     }
 
     let mut gen: UuidsImpl = Uuids::new();
@@ -247,17 +233,28 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     if frags.is_err() {
         println!("type checking failed");
-        util::exit(util::ReturnCode::TypeError);
+        return Ok(util::ReturnCode::TypeError);
     }
 
     let tm = gen.to_temp_map(x86_64_Frame::registers());
     let mut xxx = Vec::new();
+    let output_path = PathBuf::from(opts.file().unwrap()).with_extension("s");
+    let outf = File::create(output_path)?;
+    let mut bout = BufWriter::new(outf);
+
     for frag in frags.unwrap().into_iter() {
         match frag {
             frame::Frag::String(label, s) => {
-                println!("{}", x86_64_Frame::string(label, s.as_str()));
+                // TODO this has to be output to the final asm.
+                if DEBUG_TRIVIAL_REG_ALLOCATION {
+                    println!("{}", x86_64_Frame::string(label, s.as_str()));
+                }
+                writeln!(bout, "{}", x86_64_Frame::string(label, s.as_str()))?;
             }
             frame::Frag::Proc { body, frame } => {
+                if DEBUG_TRIVIAL_REG_ALLOCATION {
+                    println!("\n### IR BEGIN###{:#?}\n### IR END ###", body);
+                }
                 let mut assems = Vec::new();
                 let linearized = canon::linearize(body, &mut gen);
                 let (blist, done_label) = canon::basic_blocks(linearized, &mut gen);
@@ -330,12 +327,6 @@ fn main() -> Result<(), Box<dyn Error>> {
     // 6. [2 days] figure out how to even test 4, 5
     // 7. [1+1 days] plug in register allocation.
     // 8. [0.5 day] fix up the compiler options.
-    let output_path = PathBuf::from(opts.file().unwrap()).with_extension("s");
-
-    let outf = File::create(output_path)?;
-
-
-    let mut bout = BufWriter::new(outf);
 
     writeln!(bout, "{}", x86_64_Frame::asm_file_prologue())?;
     for (prologue, epilogue, asm, fn_name) in xxx.iter() {
@@ -358,5 +349,92 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     bout.flush()?;
 
-    Result::Ok(())
+    Result::Ok(util::ReturnCode::Ok)
+}
+
+fn main() -> Result<(), Box<dyn Error>> {
+    let matches = command!()
+        .arg(Arg::new("file"))
+        .arg(arg!(--irgen "dump the ir, after constant folding (if enabled), to file named <basename>.ir").required(false))
+        .arg(arg!(--"report-opts" "output the list of optimizations supported by compiler"))
+        .arg(arg!(--optir <phase> "output the ir after <phase>, where <phase> can be initial|final"))
+        .arg(arg!(-O<opt> "enable optimization <opt>, can be specified multiple times. other optimizations are disabled unless enabled. <opt> is the list of optimizations output from --report-opts. -O0 means disable all optimizations.").action(ArgAction::Append))
+        .get_matches();
+
+    if matches.report_opts() {
+        println!("Supported optimizations");
+        for (_, optopt) in opt_opts() {
+            println!("\t{}: {}", optopt.opt_name, optopt.desc);
+        }
+        util::exit(util::ReturnCode::Ok);
+    }
+
+    let res = run_on_file(&matches);
+    if res.is_ok() {
+        util::exit(res.unwrap());
+    } else {
+        eprintln!("{:?}", res.err());
+        util::exit(util::ReturnCode::OtherErrors);
+    }
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    struct TestOpts<'a> {
+        optimizations_disabled: bool, // overrides other optimization options
+        constant_folding_enabled: bool,
+        register_allocation_enabled: bool,
+        report_opts: bool,
+        file: Option<&'a String>,
+    }
+
+    impl<'a> Default for TestOpts<'a> {
+        fn default() -> Self {
+            Self {
+                optimizations_disabled: true, // overrides other optimization options
+                constant_folding_enabled: false,
+                register_allocation_enabled: false,
+                report_opts: false,
+                file: None,
+            }
+        }
+    }
+
+    impl<'a> CompilerOptions for TestOpts<'a> {
+        fn optimizations_disabled(&self) -> bool {
+            self.optimizations_disabled
+        }
+        fn constant_folding_enabled(&self) -> bool {
+            !self.optimizations_disabled() && self.constant_folding_enabled
+        }
+        fn register_allocation_enabled(&self) -> bool {
+            !self.optimizations_disabled() && self.register_allocation_enabled
+        }
+        fn report_opts(&self) -> bool {
+            self.report_opts
+        }
+        fn file(&self) -> Option<&String> {
+            self.file
+        }
+    }
+
+    #[test]
+    fn appel_good_programs() {
+        let paths = fs::read_dir("tests/tiger_programs/semant/good/").unwrap();
+
+        for path in paths {
+            let fname = path.unwrap().path().to_str().map(|x| String::from(x));
+            let opts = TestOpts {
+                file: fname.as_ref(),
+                ..TestOpts::default()
+            };
+            println!("Testing path {:?}", opts.file.unwrap());
+            let res = run_on_file(&opts);
+            assert_eq!(util::ReturnCode::Ok, res.unwrap());
+            println!("Finished testing path {:?}", opts.file.unwrap());
+        }
+    }
 }
