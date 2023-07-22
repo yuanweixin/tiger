@@ -1,0 +1,14 @@
+let
+
+ type any = {any : int}
+
+function returns_nil() : any =
+    nil
+in
+    let
+        var x : any := returns_nil()
+    in
+        42
+    end
+end
+
