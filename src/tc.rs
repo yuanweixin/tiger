@@ -316,8 +316,7 @@ fn run_on_file(opts: &dyn CompilerOptions) -> Result<util::ReturnCode, Box<dyn E
 
     // TODO [2 days 7/19, 7/20] trivial register allocation
     // TODO [1 days 7/19] link it with the runtime - yup full of errors
-    // TODO next steps
-    // 1. [0.5-1 day] set up test cases where the main program is invoked on valid programs, then said programs get run.
+    // 1. [1-2 day] get merge.tig and queens.tig to work!
     // 2. [0.25 day] for test purpose, might want to allow tigermain to return int types. this way output can be checked on cmdline.
     // 3. [0.5 day] fix up the use and deps in the generated Instr objects for register allocation use.
     // 4.a [2-3 days] understand
