@@ -230,3 +230,16 @@ has useful section on addressing mode which also talks about the rip addressing 
 
 https://stackoverflow.com/questions/56465415/how-do-i-push-the-equivalent-of-null-in-c-to-the-stack-in-assembly#:~:text=In%20all%20x86%20calling%20conventions%20%2F%20ABIs%2C%20the,including%20all%20x86-64%20conventions%2C%20pass%20args%20in%20registers.%29
 it is safe to use value 0 if we need to return null (i.e. translate nil to 0)
+
+https://stackoverflow.com/questions/2463150/what-is-the-fpie-option-for-position-independent-executables-in-gcc-and-ld
+not very high quality, just like the cmd-fu in one of the answers
+
+https://stackoverflow.com/questions/5469274/what-does-plt-mean-here?answertab=scoredesc#tab-top
+simple explanation of plt, links to some blog about how [glibc is loaded](http://dustin.schultz.io/how-is-glibc-loaded-at-runtime.html)
+
+https://reverseengineering.stackexchange.com/questions/1992/what-is-plt-got
+link to gold author long ass writeup about linkers
+
+https://www.technovelty.org/linux/plt-and-got-the-key-to-code-sharing-and-dynamic-libraries.html
+dive into how plt works in shared libraries
+
