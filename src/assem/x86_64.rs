@@ -114,7 +114,7 @@ impl Codegen for X86Asm {
                     Plus => "add 'D0, 'S0",
                     Minus => "sub 'D0, 'S0",
                     IrBinop::Mul => "imul 'D0, 'S0",
-                    IrBinop::Div => "idiv 'S0", // TODO RAX is trashed
+                    IrBinop::Div => "mov rdx, 0\nidiv 'S0", // rdx is zero'ed otherwise it complains about "floating point exception"
                     IrBinop::And => "and 'D0, 'S0",
                     IrBinop::Or => "or 'D0, 'S0",
                     // base tiger language doesn't have these
@@ -239,7 +239,7 @@ impl Codegen for X86Asm {
 
                 result.push(Instr::Oper {
                     assem: if is_named_label {
-                        "lea 'D0, 'J0@PLT[rip]".into()
+                        "lea 'D0, 'J0@PLT".into()
                     } else {
                         "lea 'D0, .L'J0[rip]".into()
                     },
