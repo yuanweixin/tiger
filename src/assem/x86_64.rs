@@ -110,6 +110,11 @@ impl Codegen for X86Asm {
     fn munch_exp(exp: IrExp, result: &mut Vec<Instr>, gen: &mut dyn Uuids) -> temp::Temp {
         match exp {
             Binop(op, a, b) => {
+                // TODO fix the special case where a is already a register.
+                // because, if dst is already a temporary, this would have the undesirable
+                // side effect of overwriting the temporary. otoh, if dst is some complex
+                // expression, it would have a fresh temporary generated, in which case
+                // it would be safe to simply overwrite it.
                 let instr = match op {
                     Plus => "add 'D0, 'S0",
                     Minus => "sub 'D0, 'S0",
@@ -125,7 +130,17 @@ impl Codegen for X86Asm {
                     IrBinop::Xor => "xor 'D0, 'S0",
                 };
                 let is_div = matches!(op, IrBinop::Div);
-                let a_temp = Self::munch_exp(*a, result, gen);
+                // TODO add a test case to cover this of `a` being a temporary.
+                let a_temp =
+                match *a {
+                    IrExp::Temp(t) => {
+                        let fresh = gen.new_unnamed_temp();
+                        result.push(Instr::Move { assem: "mov 'D, 'S", dst: fresh, src: t });
+                        fresh
+                    },
+                    _ => Self::munch_exp(*a, result, gen)
+                };
+
                 let b_temp = Self::munch_exp(*b, result, gen);
                 result.push(Instr::Oper {
                     assem: instr.into(),
