@@ -510,15 +510,23 @@ fn trans_exp<T: Frame + 'static>(
         Exp::SeqExp(exps) => {
             let mut ret_val = Type::Unit;
             let mut exp_irs = Vec::new();
+
+            // TODO patch up with type messages on the individual exps.
+            let mut has_err = false;
             for exp in exps {
                 let (exp_ir, exp_ty) = trans_exp::<T>(ctx, level.clone(), exp, break_label);
+                has_err |= exp_ty == Type::Error;
                 ret_val = exp_ty;
                 exp_irs.push(exp_ir);
             }
-            (
-                translate::seq_exp(exp_irs, !matches!(ret_val, Type::Unit), ctx.gen),
-                ret_val,
-            )
+            if has_err {
+                error_type_check_output()
+            } else {
+                (
+                    translate::seq_exp(exp_irs, !matches!(ret_val, Type::Unit), ctx.gen),
+                    ret_val,
+                )
+            }
         }
         Exp::AssignExp { var, exp, pos } => {
             // nil can be assigned to record types.
@@ -1430,7 +1438,7 @@ mod tests {
         frame::{Escapes, Frame},
         ir::{IrExp, IrStm},
         temp::{self, Label, Uuids},
-        util
+        util,
     };
     use std::path::PathBuf;
 

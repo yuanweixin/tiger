@@ -236,6 +236,9 @@ fn run_on_file(opts: &dyn CompilerOptions) -> Result<util::ReturnCode, Box<dyn E
     }
 
     let tm = gen.to_temp_map(x86_64_Frame::registers());
+    if DEBUG_END_TO_END {
+        println!("named temp map {:?}", tm);
+    }
     let mut xxx = Vec::new();
     let output_path = PathBuf::from(opts.file().unwrap()).with_extension("s");
     let outf = File::create(output_path)?;
@@ -306,7 +309,7 @@ fn run_on_file(opts: &dyn CompilerOptions) -> Result<util::ReturnCode, Box<dyn E
                     if !opts.register_allocation_enabled() {
                         for instr in trivial_reg_alloc_input {
                             if DEBUG_END_TO_END {
-                                println!("#{}", instr.format(&tm, true, &mut gen));
+                                println!("#!{}", instr.format(&tm, true, &mut gen));
                             }
                             // this extra temporary is used to aid debugging.
                             let mut generated = Vec::new();
@@ -350,7 +353,6 @@ fn run_on_file(opts: &dyn CompilerOptions) -> Result<util::ReturnCode, Box<dyn E
     // 6. [2 days] figure out how to even test 4, 5
     // 7. [1+1 days] plug in register allocation.
     // 8. [0.5 day] fix up the compiler options.
-
     writeln!(bout, "{}", x86_64_Frame::asm_file_prologue())?;
     for (prologue, epilogue, asm, fn_name) in xxx.iter() {
         writeln!(bout, "{}", prologue)?;

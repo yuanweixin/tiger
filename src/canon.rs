@@ -12,7 +12,7 @@ use crate::{
     temp::Uuids,
 };
 
-use std::collections::{HashMap, LinkedList, VecDeque};
+use std::collections::{HashMap, VecDeque};
 
 #[inline]
 fn nop(nop_marker_label: temp::Label) -> IrStm {
@@ -251,14 +251,12 @@ pub fn linearize(i: IrStm, gen: &mut dyn Uuids) -> Vec<IrStm> {
 #[derive(Debug)]
 pub struct Block {
     stmts: Vec<IrStm>,
-    marked: bool,
 }
 
 impl Block {
     fn new() -> Self {
         Self {
             stmts: Vec::new(),
-            marked: false,
         }
     }
 
@@ -547,15 +545,11 @@ pub fn trace_schedule(
 mod tests {
     use super::*;
     use crate::{
-        absyn, frame,
-        frame::{Escapes, Frame},
-        ir::{IrBinop::*, IrExp, IrRelop::*, IrStm},
-        symbol::Interner,
+        ir::{IrBinop::*, IrStm},
         symbol::Symbol,
         temp::{self, test_helpers, Label, Uuids},
     };
     use itertools;
-    use std::num::NonZeroUsize;
 
     struct UuidForTest {
         syms: Box<dyn Iterator<Item = usize>>,
@@ -578,7 +572,7 @@ mod tests {
     }
 
     impl Uuids for UuidForTest {
-        fn to_temp_map(&mut self, names: &[&'static str]) -> temp::TempMap {
+        fn to_temp_map(&mut self, _: &[&'static str]) -> temp::TempMap {
             todo!()
         }
 
@@ -591,12 +585,12 @@ mod tests {
         }
 
         #[inline]
-        fn resolve(&self, s: &Symbol) -> Option<&str> {
+        fn resolve(&self, _: &Symbol) -> Option<&str> {
             panic!();
         }
 
         #[inline]
-        fn intern(&mut self, name: &str) -> Symbol {
+        fn intern(&mut self, _: &str) -> Symbol {
             panic!();
         }
 
@@ -961,7 +955,6 @@ mod tests {
         #[test]
         fn seq_is_eliminated() {
             let mut gen: UuidsImpl = Uuids::new();
-            let t = gen.new_unnamed_temp();
             let expected = vec![Exp(Const(1)), Exp(Const(2))];
             let actual = linearize(Seq(Exp(Const(1)), Exp(Const(2))), &mut gen);
             assert_eq!(expected, actual);
@@ -1116,15 +1109,12 @@ mod tests {
             let done_label = test_helpers::new_unnamed_label(200);
             let mut blocks = vec![
                 Block {
-                    marked: false,
                     stmts: vec![Label(l1), Jump(Name(l3), vec![l3])],
                 },
                 Block {
-                    marked: false,
                     stmts: vec![Label(l2), Jump(Name(l3), vec![l3])],
                 },
                 Block {
-                    marked: false,
                     stmts: vec![Label(l3), Jump(Name(done_label), vec![done_label])],
                 },
             ];
@@ -1152,15 +1142,12 @@ mod tests {
             let mut gen: UuidsImpl = Uuids::new();
             let blocks = vec![
                 Block {
-                    marked: false,
                     stmts: vec![Label(l1), Jump(Name(l3), vec![l3])],
                 },
                 Block {
-                    marked: false,
                     stmts: vec![Label(l2), Jump(Name(l3), vec![l3])],
                 },
                 Block {
-                    marked: false,
                     stmts: vec![Label(l3), Jump(Name(done_label), vec![done_label])],
                 },
             ];
@@ -1182,7 +1169,6 @@ mod tests {
             let done_label = test_helpers::new_unnamed_label(200);
             let mut gen: UuidsImpl = Uuids::new();
             let blocks = vec![Block {
-                marked: false,
                 stmts: vec![Label(l1), Jump(Name(done_label), vec![done_label])],
             }];
             let actual = trace_schedule(blocks, done_label, &mut gen);
@@ -1206,11 +1192,9 @@ mod tests {
             let mut gen: UuidsImpl = Uuids::new();
             let blocks = vec![
                 Block {
-                    marked: false,
                     stmts: vec![Label(l1), Cjump(Ge, Const(0), Const(0), lt, lf)],
                 },
                 Block {
-                    marked: false,
                     stmts: vec![Label(lf), Jump(Name(done_label), vec![done_label])],
                 },
             ];
@@ -1234,11 +1218,9 @@ mod tests {
             let mut gen: UuidsImpl = Uuids::new();
             let blocks = vec![
                 Block {
-                    marked: false,
                     stmts: vec![Label(l1), Cjump(Ge, Const(0), Const(0), lt, lf)],
                 },
                 Block {
-                    marked: false,
                     stmts: vec![Label(lt), Jump(Name(done_label), vec![done_label])],
                 },
             ];
@@ -1264,11 +1246,9 @@ mod tests {
             let ff = test_helpers::new_unnamed_label(1);
             let blocks = vec![
                 Block {
-                    marked: false,
                     stmts: vec![Label(l1), Cjump(Ge, Const(0), Const(0), lt, lf)],
                 },
                 Block {
-                    marked: false,
                     stmts: vec![Label(l2), Jump(Name(done_label), vec![done_label])],
                 },
             ];

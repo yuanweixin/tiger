@@ -110,11 +110,6 @@ impl Codegen for X86Asm {
     fn munch_exp(exp: IrExp, result: &mut Vec<Instr>, gen: &mut dyn Uuids) -> temp::Temp {
         match exp {
             Binop(op, a, b) => {
-                // TODO fix the special case where a is already a register.
-                // because, if dst is already a temporary, this would have the undesirable
-                // side effect of overwriting the temporary. otoh, if dst is some complex
-                // expression, it would have a fresh temporary generated, in which case
-                // it would be safe to simply overwrite it.
                 let instr = match op {
                     Plus => "add 'D0, 'S0",
                     Minus => "sub 'D0, 'S0",
@@ -131,14 +126,21 @@ impl Codegen for X86Asm {
                 };
                 let is_div = matches!(op, IrBinop::Div);
                 // TODO add a test case to cover this of `a` being a temporary.
-                let a_temp =
-                match *a {
+                let a_temp = match *a {
+                    // because, if dst is already a temporary, this would have the undesirable
+                    // side effect of overwriting the temporary. otoh, if dst is some complex
+                    // expression, it would have a fresh temporary generated, in which case
+                    // it would be safe to simply overwrite it.
                     IrExp::Temp(t) => {
                         let fresh = gen.new_unnamed_temp();
-                        result.push(Instr::Move { assem: "mov 'D, 'S", dst: fresh, src: t });
+                        result.push(Instr::Move {
+                            assem: "mov 'D, 'S",
+                            dst: fresh,
+                            src: t,
+                        });
                         fresh
-                    },
-                    _ => Self::munch_exp(*a, result, gen)
+                    }
+                    _ => Self::munch_exp(*a, result, gen),
                 };
 
                 let b_temp = Self::munch_exp(*b, result, gen);
@@ -254,7 +256,7 @@ impl Codegen for X86Asm {
 
                 result.push(Instr::Oper {
                     assem: if is_named_label {
-                        "lea 'D0, 'J0@PLT".into()
+                        "lea 'D0, 'J0@PLT[rip]".into()
                     } else {
                         "lea 'D0, .L'J0[rip]".into()
                     },
@@ -266,7 +268,16 @@ impl Codegen for X86Asm {
                 });
                 t
             }
-            Mem(e) => Self::munch_exp(*e, result, gen),
+            Mem(e) => {
+                let address = Self::munch_exp(*e, result, gen);
+                let result_temp = gen.new_unnamed_temp();
+                result.push(Instr::Move {
+                    assem: "mov 'D, ['S]",
+                    dst: result_temp,
+                    src: address,
+                });
+                result_temp
+            }
             Eseq(..) => panic!("impl bug: Eseq should have been eliminated"),
             Null => {
                 let t = gen.new_unnamed_temp();
@@ -323,7 +334,7 @@ pub mod trivial_reg {
     /// Ordering matters. RAX is listed last because it is used as return register.
     /// The Jump at the end of a basic block would require a register, so we don't want that to
     /// trample the RAX content.
-    const TRIVIAL_REGISTERS: [&str; 3] = [x86_64::RCX, x86_64::RDX, x86_64::RAX, ];
+    const TRIVIAL_REGISTERS: [&str; 3] = [x86_64::RCX, x86_64::RDX, x86_64::RAX];
 
     /// Performs register allocation for a single instruction.
     /// If a machine register is part of the `src` of an instruction (i.e. "use" set of the instruction)

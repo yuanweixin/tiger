@@ -471,10 +471,31 @@ pub fn assignment(dst_ir: TrExp, src_ir: TrExp, gen: &mut dyn Uuids) -> TrExp {
 }
 
 pub fn array_exp<T: Frame>(size_ir: TrExp, init_val_ir: TrExp, gen: &mut dyn Uuids) -> TrExp {
-    Ex(T::external_call(
-        gen.named_label("initArray"),
-        vec![un_ex(size_ir, gen), un_ex(init_val_ir, gen)],
-    ))
+    // allocate size+1 to hold the size.
+    let size_temp = Temp(gen.new_unnamed_temp());
+    let array_temp = Temp(gen.new_unnamed_temp());
+
+    // ok, so the runtime as given makes simplistic assumptions anyway and assumes array
+    // elements are int, which implicitly assumes pointer size is same as int size. so will
+    // just hand wave here as long as it runs on my dev machine.
+    let init_array_exp = Eseq(
+        make_seq(vec![
+            Move(
+                size_temp.clone(),
+                Binop(Plus, Const(1), un_ex(size_ir, gen)),
+            ), // very important, size should only be evaluated ONCE
+            Move(
+                array_temp.clone(),
+                T::external_call(
+                    gen.named_label("initArray"),
+                    vec![size_temp.clone(), un_ex(init_val_ir, gen)],
+                ),
+            ),
+            Move(Mem(array_temp.clone()), size_temp),
+        ]),
+        array_temp,
+    );
+    Ex(init_array_exp)
 }
 
 pub fn let_exp(var_init_irs: Vec<TrExp>, let_body_ir: TrExp, gen: &mut dyn Uuids) -> TrExp {
@@ -756,23 +777,31 @@ pub fn record_field<T: Frame>(lhs_var_ir: TrExp, field_pos: usize, gen: &mut dyn
 
 const INVALID_ARRAY_ACCESS_EXIT_CODE: i32 = -1;
 pub fn subscript_var<T: Frame>(lhs_ir: TrExp, idx_ir: TrExp, gen: &mut dyn Uuids) -> TrExp {
-    // byte offset of idx+1 basically.
-    let idx = Binop(
-        Plus,
-        Const(T::word_size() as i32),
-        Binop(Mul, un_ex(idx_ir, gen), Const(T::word_size() as i32)),
-    );
-    let bad = gen.new_unnamed_label();
+    let bad: temp::Label = gen.new_unnamed_label();
     let upper_check = gen.new_unnamed_label();
     let access = gen.new_unnamed_label();
-    let lhs_unexed = un_ex(lhs_ir, gen);
+
+    let idx_temp = Temp(gen.new_unnamed_temp());
+    let lhs_temp = Temp(gen.new_unnamed_temp());
     Ex(Eseq(
         make_seq(vec![
+            Move(
+                idx_temp.clone(),
+                Binop(
+                    Plus,
+                    Const(T::word_size() as i32),
+                    Binop(Mul, un_ex(idx_ir, gen), Const(T::word_size() as i32)),
+                ),
+            ),
+            Move(
+                lhs_temp.clone(),
+                un_ex(lhs_ir, gen)
+            ),
             // if index < 0, it's bad
-            Cjump(Ge, idx.clone(), Const(0), upper_check, bad),
+            Cjump(Ge, idx_temp.clone(), Const(0), upper_check, bad),
             Label(upper_check),
             // if idx >= size, it's bad
-            Cjump(Lt, idx.clone(), Mem(lhs_unexed.clone()), access, bad),
+            Cjump(Lt, idx_temp.clone(), Mem(lhs_temp.clone()), access, bad),
             Label(bad),
             Exp(T::external_call(
                 gen.named_label("exit"),
@@ -780,7 +809,9 @@ pub fn subscript_var<T: Frame>(lhs_ir: TrExp, idx_ir: TrExp, gen: &mut dyn Uuids
             )),
             Label(access),
         ]),
-        Mem(Binop(Plus, lhs_unexed, idx)),
+        // toy language assumes every array element is int sized.
+        // no need to track element size or alignment adjustments!
+        Mem(Binop(Plus, lhs_temp, idx_temp)),
     ))
 }
 
