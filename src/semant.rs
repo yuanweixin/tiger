@@ -692,10 +692,12 @@ fn trans_exp<T: Frame + 'static>(
             let sym = ctx.intern(var);
             let acc = Level::alloc_local(level.clone(), *escape, ctx.gen);
 
+            // TODO revisit escape for the loop counter. can it escape? obviously can read it in nested.
+            //
             ctx.varfun_env.enter(
                 sym,
                 EnvEntry::VarEntry {
-                    access: acc,
+                    access: acc.clone(),
                     ty: Type::Int,
                     readonly: true,
                 },
@@ -709,7 +711,8 @@ fn trans_exp<T: Frame + 'static>(
                         error_type_check_output()
                     } else {
                         (
-                            translate::for_loop(
+                            translate::for_loop::<T>(
+                                acc.1,
                                 lo_ir,
                                 hi_ir,
                                 body_ir,

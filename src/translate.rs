@@ -497,7 +497,10 @@ pub fn break_stmt(l: temp::Label) -> TrExp {
     Nx(Jump(Name(l), vec![l]))
 }
 
-pub fn for_loop(
+/// the done label of the for loop is passed in because it is used as the point to jump to,
+/// during the recursive translation of the inside of the for loop. we must include it in the ir!
+pub fn for_loop<T: Frame>(
+    var: frame::Access,
     lo_ir: TrExp,
     hi_ir: TrExp,
     body_ir: TrExp,
@@ -510,7 +513,13 @@ pub fn for_loop(
     let test_label = gen.new_unnamed_label();
     let body_label = gen.new_unnamed_label();
     let cont_label = gen.new_unnamed_label();
-    let i = gen.new_unnamed_temp();
+    let i = match var {
+        frame::Access::InReg(t) => Temp(t),
+        frame::Access::InFrame(offset) => {
+            Mem(Binop(Plus, Level::current_frame::<T>(gen), Const(offset)))
+        }
+    };
+
     let limit = gen.new_unnamed_temp();
     // the extra check after `body` avoids overflow where hi=maxint.
     // let var i := lo
@@ -520,16 +529,18 @@ pub fn for_loop(
     //             if i == limit goto done;
     //             i := i + 1)
     Nx(make_seq(vec![
-        Move(Temp(i), un_ex(lo_ir, gen)),
+        Move(i.clone(), un_ex(lo_ir, gen)),
         Move(Temp(limit), un_ex(hi_ir, gen)),
         Label(test_label),
-        Cjump(Le, Temp(i), Temp(limit), body_label, for_done_label),
+        Cjump(Le, i.clone(), Temp(limit), body_label, for_done_label),
         Label(body_label),
         un_nx(body_ir, gen),
-        Cjump(Eq, Temp(i), Temp(limit), for_done_label, cont_label),
+        Cjump(Eq, i.clone(), Temp(limit), for_done_label, cont_label),
         Label(cont_label),
-        Move(Temp(i), Binop(Plus, Temp(i), Const(1))),
+        // TODO this seems to be a great pattern to match for the `inc` instruction.
+        Move(i.clone(), Binop(Plus, i, Const(1))),
         Jump(Name(test_label), vec![test_label]),
+        Label(for_done_label),
     ]))
 }
 
@@ -777,7 +788,6 @@ pub fn add_int_return_value<T: Frame>(ir: TrExp, gen: &mut dyn Uuids) -> TrExp {
     let expr = un_ex(ir, gen);
     Nx(Move(Temp(T::return_value_register(gen)), expr))
 }
-
 
 pub fn add_zero_return_value<T: Frame>(ir: TrExp, gen: &mut dyn Uuids) -> TrExp {
     let stm = un_nx(ir, gen);

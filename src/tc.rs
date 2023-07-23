@@ -30,7 +30,7 @@ use crate::{
 lrlex_mod!("tiger.l");
 lrpar_mod!("tiger.y");
 
-const DEBUG_TRIVIAL_REG_ALLOCATION: bool = true;
+pub const DEBUG_END_TO_END: bool = true;
 struct OptOpt {
     opt_name: &'static str,
     desc: &'static str,
@@ -191,7 +191,6 @@ fn opt_opts() -> HashMap<&'static str, OptOpt> {
     res
 }
 
-
 fn run_on_file(opts: &dyn CompilerOptions) -> Result<util::ReturnCode, Box<dyn Error>> {
     let fpath = opts.file();
     if let None = fpath {
@@ -246,27 +245,52 @@ fn run_on_file(opts: &dyn CompilerOptions) -> Result<util::ReturnCode, Box<dyn E
         match frag {
             frame::Frag::String(label, s) => {
                 // TODO this has to be output to the final asm.
-                if DEBUG_TRIVIAL_REG_ALLOCATION {
+                if DEBUG_END_TO_END {
                     println!("{}", x86_64_Frame::string(label, s.as_str()));
                 }
                 writeln!(bout, "{}", x86_64_Frame::string(label, s.as_str()))?;
             }
             frame::Frag::Proc { body, frame } => {
-                if DEBUG_TRIVIAL_REG_ALLOCATION {
-                    println!("\n### IR BEGIN###{:#?}\n### IR END ###", body);
+                if DEBUG_END_TO_END {
+                    println!(
+                        "\n### function {} IR BEGIN###{:#?}\n### IR END ###",
+                        frame.borrow().name().resolve_named_label(&gen),
+                        body
+                    );
                 }
                 let mut assems = Vec::new();
                 let linearized = canon::linearize(body, &mut gen);
+                if DEBUG_END_TO_END {
+                    println!(
+                        "\n### function {} linearized BEGIN###{:#?}\n### linearized END ###",
+                        frame.borrow().name().resolve_named_label(&gen),
+                        linearized
+                    );
+                }
                 let (blist, done_label) = canon::basic_blocks(linearized, &mut gen);
-                let trace = canon::trace_schedule(blist, done_label, &mut gen);
+                if DEBUG_END_TO_END {
+                    println!(
+                        "\n### function {} blist BEGIN###{:#?}\n### blist END ###",
+                        frame.borrow().name().resolve_named_label(&gen),
+                        blist
+                    );
+                }
 
+                let trace = canon::trace_schedule(blist, done_label, &mut gen);
+                if DEBUG_END_TO_END {
+                    println!(
+                        "\n### function {} trace BEGIN###{:#?}\n### trace END ###",
+                        frame.borrow().name().resolve_named_label(&gen),
+                        trace
+                    );
+                }
                 // the trivial allocator could have been done as a single pass over the
                 // finished list of instr. but it's done here inside each fragment so we
                 // still have access to the IrStm that leads to the blocks of asm. this is
                 // for sanity and ease of debugging by printing out the strings.
                 let mut temp_offset = trivial_reg::TempOffset::new();
                 for stm in trace.into_iter() {
-                    if DEBUG_TRIVIAL_REG_ALLOCATION {
+                    if DEBUG_END_TO_END {
                         println!("\n{:?}", stm);
                     }
                     // IrStm -> Vec<InStr>
@@ -281,7 +305,7 @@ fn run_on_file(opts: &dyn CompilerOptions) -> Result<util::ReturnCode, Box<dyn E
                     // This maps each Instr to 1 or more InStr.
                     if !opts.register_allocation_enabled() {
                         for instr in trivial_reg_alloc_input {
-                            if DEBUG_TRIVIAL_REG_ALLOCATION {
+                            if DEBUG_END_TO_END {
                                 println!("#{}", instr.format(&tm, true, &mut gen));
                             }
                             // this extra temporary is used to aid debugging.
@@ -295,7 +319,7 @@ fn run_on_file(opts: &dyn CompilerOptions) -> Result<util::ReturnCode, Box<dyn E
                                 &mut temp_offset,
                             );
                             for ins in generated {
-                                if DEBUG_TRIVIAL_REG_ALLOCATION {
+                                if DEBUG_END_TO_END {
                                     println!("{}", ins.format(&tm, true, &mut gen));
                                 }
                                 assems.push(ins);
