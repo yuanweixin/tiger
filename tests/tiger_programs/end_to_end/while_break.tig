@@ -1,0 +1,7 @@
+let
+    var k := 0
+in
+    while k < 42 do
+        (k := k + 1);
+    k
+end

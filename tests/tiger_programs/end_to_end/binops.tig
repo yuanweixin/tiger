@@ -1,6 +1,6 @@
 let
-    var a := 1
-    var b := 1
+    var a := 22
+    var b := 20
 in
-    (a+b) * a / b
+    (a+b) * a / a
 end
