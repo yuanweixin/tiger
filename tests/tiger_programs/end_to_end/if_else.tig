@@ -1,0 +1,15 @@
+let
+    var i := 77
+in
+    if i = 77 then
+        i := 44
+    else
+        i := 0
+    ;
+    if i = 45 then
+        i := 24
+    else
+        i := 42
+    ;
+    i
+end
