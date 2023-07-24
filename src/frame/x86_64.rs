@@ -198,7 +198,7 @@ impl Frame for x86_64_Frame {
         let function_name = self.name.resolve_named_label(gen);
         let prologue = if self.num_locals > 0 {
             format!(
-                "{}:\n.{}_prologue:\n\tpush rbp\n\tmov rbp, rsp\n\tsub rsp, {}\n\tjmp .L{}",
+                "{}:\n.{}_prologue:\n\tpushq %rbp\n\tmovq %rsp, %rbp\n\tsubq ${}, %rsp\n\tjmp .L{}",
                 function_name,
                 function_name,
                 self.num_locals * WORD_SIZE,

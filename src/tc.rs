@@ -344,18 +344,6 @@ fn run_on_file(opts: &dyn CompilerOptions) -> Result<util::ReturnCode, Box<dyn E
         };
     }
 
-    // TODO [2 days 7/19, 7/20] trivial register allocation
-    // TODO [1 days 7/19] link it with the runtime - yup full of errors
-    // 1. [1-2 day] get merge.tig and queens.tig to work!
-    // 2. [0.25 day] for test purpose, might want to allow tigermain to return int types. this way output can be checked on cmdline.
-    // 3. [0.5 day] fix up the use and deps in the generated Instr objects for register allocation use.
-    // 4.a [2-3 days] understand
-    // 4.b [2-3 days] implement liveness.
-    // 5.a. [2-3 days] understand register allocation.
-    // 5.b. [2-3 days] impl register allocation
-    // 6. [2 days] figure out how to even test 4, 5
-    // 7. [1+1 days] plug in register allocation.
-    // 8. [0.5 day] fix up the compiler options.
     for (prologue, epilogue, asm, fn_name) in xxx.iter() {
         writeln!(bout, "{}", prologue)?;
         writeln!(bout, ".{}_body:", fn_name)?;

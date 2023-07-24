@@ -1,0 +1,49 @@
+let
+    var c := getchar()
+in
+    print("hello\n");
+    flush();
+    print("called flush(), no crash, probably works\n");
+
+    if ord("") <> -1 then
+        print("ord broken on empty input\n")
+    ;
+    if ord("") = -1 then
+        print("ord works on empty input\n")
+    ;
+    if chr(65) <> "A" then
+        print("chr broken\n")
+    else
+        print("chr works\n")
+    ;
+    if ord("ABC") <> 65 then
+        print("ord broken on nonempty\n")
+    else
+        print("ord works on nonempty\n")
+    ;
+    if size("") <> 0 then
+        print("size broken on empty input\n")
+    else
+        print("size works on empty input\n")
+    ;
+    if size("hello") <> 5 then
+        print("size broken on nonempty\n")
+    else
+        print("size works on nonempty\n")
+    ;
+    if substring("hello", 0, 4) <> "hell" then
+        print("substring OR stringEqual broken\n")
+    else
+        print("substring works\n")
+    ;
+    if concat("hello ", "world") <> "hello world" then
+        print("concat or stringEqual broken\n")
+    else
+        print("concat works\n")
+    ;
+    if not(0) then
+        print("not 0 works\n")
+    ;
+    if not(not(0)) then
+        print("not not 0 works\n")
+end

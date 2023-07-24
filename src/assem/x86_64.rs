@@ -28,7 +28,7 @@ impl Codegen for X86Asm {
                     IrExp::Mem(tgt) => {
                         let dst = Self::munch_exp(*tgt, result, gen);
                         result.push(Instr::Oper {
-                            assem: "mov ['S1], 'S0".into(),
+                            assem: "movq %'S0, %('S1)".into(),
                             dst: Dst::empty(),
                             src: Src(vec![src, dst]),
                             jump: vec![],
@@ -36,7 +36,7 @@ impl Codegen for X86Asm {
                     }
                     IrExp::Temp(x) => {
                         result.push(Instr::Move {
-                            assem: "mov 'D, 'S",
+                            assem: "movq %'S, %'D",
                             dst: x,
                             src,
                         });
@@ -47,7 +47,7 @@ impl Codegen for X86Asm {
             Jump(e, target_labels) => {
                 let t = Self::munch_exp(*e, result, gen);
                 result.push(Instr::Oper {
-                    assem: "jmp 'S0".into(),
+                    assem: "jmp *%'S0".into(),
                     dst: Dst::empty(),
                     src: Src(vec![t]),
                     jump: target_labels,
@@ -57,7 +57,7 @@ impl Codegen for X86Asm {
                 let ta = Self::munch_exp(*a, result, gen);
                 let tb = Self::munch_exp(*b, result, gen);
                 result.push(Instr::Oper {
-                    assem: "cmp 'D0, 'S0".into(),
+                    assem: "cmpq %'S0, %'D0".into(),
                     dst: Dst(vec![ta]),
                     src: Src(vec![tb, ta]),
                     jump: vec![],
@@ -111,18 +111,18 @@ impl Codegen for X86Asm {
         match exp {
             Binop(op, a, b) => {
                 let instr = match op {
-                    Plus => "add 'D0, 'S0",
-                    Minus => "sub 'D0, 'S0",
-                    IrBinop::Mul => "imul 'D0, 'S0",
-                    IrBinop::Div => "mov rdx, 0\nidiv 'S0", // rdx is zero'ed otherwise it complains about "floating point exception"
-                    IrBinop::And => "and 'D0, 'S0",
-                    IrBinop::Or => "or 'D0, 'S0",
+                    Plus => "addq %'S0, %'D0",
+                    Minus => "subq %'S0, %'D0",
+                    IrBinop::Mul => "imulq %'S0, %'D0",
+                    IrBinop::Div => "movq 0, %rdx\nidivq 'S0", // rdx is zero'ed otherwise it complains about "floating point exception"
+                    IrBinop::And => "andq %'S0, %'D0",
+                    IrBinop::Or => "orq %'S0, %'D0",
                     // base tiger language doesn't have these
                     // so presumably they must come from optimizations.
-                    Lshift => "shl 'D0, 'S0", // TODO shl r/m64, imm8; shl r/m64, CL; shl r/m64, 1; masked to 63 bits for the REX instructions
-                    Rshift => "shr 'D0, 'S0", // TODO ditto as above;
-                    ArShift => "sar 'D0, 'S0", // note idiv rounds quotient toward 0, sar rounds quotient toward neg infinity
-                    IrBinop::Xor => "xor 'D0, 'S0",
+                    Lshift => "shlq %'S0, %'D0", // TODO shl r/m64, imm8; shl r/m64, CL; shl r/m64, 1; masked to 63 bits for the REX instructions
+                    Rshift => "shrq %'S0, %'D0", // TODO ditto as above;
+                    ArShift => "sarq %'S0, %'D0", // note idiv rounds quotient toward 0, sar rounds quotient toward neg infinity
+                    IrBinop::Xor => "xorq %'S0, %'D0",
                 };
                 let is_div = matches!(op, IrBinop::Div);
                 // TODO add a test case to cover this of `a` being a temporary.
@@ -134,7 +134,7 @@ impl Codegen for X86Asm {
                     IrExp::Temp(t) => {
                         let fresh = gen.new_unnamed_temp();
                         result.push(Instr::Move {
-                            assem: "mov 'D, 'S",
+                            assem: "movq %'S, %'D",
                             dst: fresh,
                             src: t,
                         });
@@ -175,7 +175,7 @@ impl Codegen for X86Asm {
                     // args after the 6th one go on stack.
                     while i > 5 {
                         result.push(Instr::Oper {
-                            assem: "push 'S0".into(),
+                            assem: "push %'S0".into(),
                             dst: Dst(vec![]),
                             src: Src(vec![arg_regs[i]]),
                             jump: vec![],
@@ -195,7 +195,7 @@ impl Codegen for X86Asm {
                     while i + 1 > 0 {
                         let arg_passing_regs = x86_64::arg_regs(gen);
                         result.push(Instr::Oper {
-                            assem: "mov 'D0, 'S0".into(),
+                            assem: "movq %'S0, %'D0".into(),
                             dst: Dst(vec![arg_passing_regs[i]]),
                             src: Src(vec![arg_regs[i]]),
                             jump: vec![],
@@ -208,7 +208,7 @@ impl Codegen for X86Asm {
                 }
                 // do the call
                 result.push(Instr::Oper {
-                    assem: "call 'S0".into(),
+                    assem: "call *%'S0".into(),
                     dst: Dst(vec![x86_64::named_register(gen, x86_64::RAX)]),
                     src: Src(vec![f_temp]),
                     jump: vec![],
@@ -217,7 +217,7 @@ impl Codegen for X86Asm {
                 // persist the result register.
                 let dest = gen.new_unnamed_temp();
                 result.push(Instr::Oper {
-                    assem: "mov 'D0, 'S0".into(),
+                    assem: "movq %'S0, %'D0".into(),
                     dst: Dst(vec![dest]),
                     src: Src(vec![x86_64::named_register(gen, x86_64::RAX)]),
                     jump: vec![],
@@ -227,7 +227,7 @@ impl Codegen for X86Asm {
                 // passes enough arguments to overflow an i32.
                 if max(0, num_args as i32 - 6) > 0 {
                     result.push(Instr::Oper {
-                        assem: format!("add rsp, {}", x86_64::WORD_SIZE * (num_args - 6)),
+                        assem: format!("addq ${}, %rsp", x86_64::WORD_SIZE * (num_args - 6)),
                         dst: Dst(vec![x86_64::named_register(gen, x86_64::RAX)]),
                         src: Src::empty(),
                         jump: vec![],
@@ -239,7 +239,7 @@ impl Codegen for X86Asm {
             Const(i) => {
                 let t = gen.new_unnamed_temp();
                 result.push(Instr::Oper {
-                    assem: format!("mov  'D0, {}", i),
+                    assem: format!("movq ${}, %'D0", i),
                     dst: Dst(vec![t]),
                     src: Src::empty(),
                     jump: vec![],
@@ -256,9 +256,9 @@ impl Codegen for X86Asm {
 
                 result.push(Instr::Oper {
                     assem: if is_named_label {
-                        "lea 'D0, 'J0@PLT[rip]".into()
+                        "lea 'J0@PLT(%rip), %'D0".into()
                     } else {
-                        "lea 'D0, .L'J0[rip]".into()
+                        "lea .L'J0(%rip), %'D0".into()
                     },
                     dst: Dst(vec![t]),
                     src: Src::empty(),
@@ -272,7 +272,7 @@ impl Codegen for X86Asm {
                 let address = Self::munch_exp(*e, result, gen);
                 let result_temp = gen.new_unnamed_temp();
                 result.push(Instr::Move {
-                    assem: "mov 'D, ['S]",
+                    assem: "movq (%'S), %'D",
                     dst: result_temp,
                     src: address,
                 });
@@ -282,7 +282,7 @@ impl Codegen for X86Asm {
             Null => {
                 let t = gen.new_unnamed_temp();
                 result.push(Instr::Oper {
-                    assem: "mov 'D0, 0".into(),
+                    assem: "movq 0, %'D0".into(),
                     dst: Dst(vec![t]),
                     src: Src::empty(),
                     jump: vec![],
@@ -430,7 +430,7 @@ pub mod trivial_reg {
                     debug_assert!(x == src, "impl bug");
                     let src_offset = temp_to_offset.get_or_allocate(frame.clone(), src, gen);
                     output.push(Instr::Oper {
-                        assem: format!("mov 'D0, [rbp + {}]", src_offset),
+                        assem: format!("movq {}(%rbp), %'D0", src_offset),
                         dst: Dst(vec![*colors.get(&x).unwrap()]),
                         src: Src::empty(),
                         jump: vec![],
@@ -450,7 +450,7 @@ pub mod trivial_reg {
                     let dst_offset = temp_to_offset.get_or_allocate(frame.clone(), dst, gen);
 
                     output.push(Instr::Oper {
-                        assem: format!("mov [rbp + {}], 'S0", dst_offset),
+                        assem: format!("movq %'S0, {}(%rbp)", dst_offset),
                         dst: Dst::empty(),
                         src: Src(vec![*colors.get(&x).unwrap()]),
                         jump: vec![],
@@ -467,7 +467,7 @@ pub mod trivial_reg {
                     for ref s in srcs.iter() {
                         let src_offset = temp_to_offset.get_or_allocate(frame.clone(), **s, gen);
                         output.push(Instr::Oper {
-                            assem: format!("mov 'D0, [rbp + {}]", src_offset),
+                            assem: format!("movq {}(%rbp), %'D0", src_offset),
                             dst: Dst(vec![*colors.get(s).unwrap()]),
                             src: Src::empty(),
                             jump: vec![],
@@ -496,7 +496,7 @@ pub mod trivial_reg {
                     for d in dsts.iter() {
                         let dst_offset = temp_to_offset.get_or_allocate(frame.clone(), *d, gen);
                         output.push(Instr::Oper {
-                            assem: format!("mov [rbp + {}], 'S0", dst_offset),
+                            assem: format!("movq %'S0, {}(%rbp)", dst_offset),
                             dst: Dst::empty(),
                             src: Src(vec![*colors.get(&d).unwrap()]),
                             jump: vec![],

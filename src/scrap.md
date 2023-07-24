@@ -243,3 +243,5 @@ link to gold author long ass writeup about linkers
 https://www.technovelty.org/linux/plt-and-got-the-key-to-code-sharing-and-dynamic-libraries.html
 dive into how plt works in shared libraries
 
+https://stackoverflow.com/questions/76681795/gnu-as-escape-symbol-names-in-intel-syntax
+as is a piece of shit and now forced to use the annoying att syntax. fuck att and its legacy.

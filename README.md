@@ -11,10 +11,24 @@
 - [ ] 11 Register allocation
 - [ ] 12 Checkpoint
 
+[done][2 days 7/19, 7/20] trivial register allocation
+[done][1 days 7/19] link it with the runtime - yup full of errors
+[done][0.25 day 7/23] for test purpose, might want to allow tigermain to return int types. this way output can be checked on cmdline.
+[3 days] experiment on building out the end to end test harness
+    * need isolation of toolchain (as, linker, rust, python versions)
+    * test case expressed as running the tiger compiler on test files  (for each file in test dir, run tiger compiler on it, then take the output, and compare it against the expected output. also consider capturing the stdout and stderr so that the total expected output can be compared. the driver of these tests can be done in rust or a lang with much higher sn ratio e.g. python).
+[1-2 day] get merge.tig and queens.tig to work!
+[0.5 day] fix up the use and deps in the generated Instr objects for register allocation use.
+[2-3 days] understand liveness
+[2-3 days] implement liveness.
+[2-3 days] understand register allocation.
+[2-3 days] impl register allocation
+[1+1 days] plug in register allocation.
+[0.5 day] fix up the compiler options.
+
+
 # Task list
 Use a standard error format <line>:<column> error:<description>
-
--O option to disable optimizations
 
 --irgen dump the ir into a file
 
