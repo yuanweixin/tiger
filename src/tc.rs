@@ -273,7 +273,7 @@ fn run_on_file(opts: &dyn CompilerOptions) -> Result<util::ReturnCode, Box<dyn E
                         linearized
                     );
                 }
-                let (blist, done_label) = canon::basic_blocks(linearized, &mut gen);
+                let (blist, start_label, done_label) = canon::basic_blocks(linearized, &mut gen);
                 if DEBUG_END_TO_END {
                     println!(
                         "\n### function {} blist BEGIN###{:#?}\n### blist END ###",
@@ -282,7 +282,7 @@ fn run_on_file(opts: &dyn CompilerOptions) -> Result<util::ReturnCode, Box<dyn E
                     );
                 }
 
-                let trace = canon::trace_schedule(blist, done_label, &mut gen);
+                let trace = canon::trace_schedule(blist, done_label.0, &mut gen);
                 if DEBUG_END_TO_END {
                     println!(
                         "\n### function {} trace BEGIN###{:#?}\n### trace END ###",
@@ -338,7 +338,7 @@ fn run_on_file(opts: &dyn CompilerOptions) -> Result<util::ReturnCode, Box<dyn E
 
                 let s = String::from(frame.borrow().name().resolve_named_label(&gen));
                 frame.borrow().proc_entry_exit2(&mut assems, &mut gen);
-                let (prologue, epilogue) = frame.borrow().proc_entry_exit3(&assems, &mut gen);
+                let (prologue, epilogue) = frame.borrow().proc_entry_exit3(&assems, &mut gen, start_label.0);
                 xxx.push((prologue, epilogue, assems, s));
             }
         };
@@ -356,7 +356,6 @@ fn run_on_file(opts: &dyn CompilerOptions) -> Result<util::ReturnCode, Box<dyn E
     // 6. [2 days] figure out how to even test 4, 5
     // 7. [1+1 days] plug in register allocation.
     // 8. [0.5 day] fix up the compiler options.
-    writeln!(bout, "{}", x86_64_Frame::asm_file_prologue())?;
     for (prologue, epilogue, asm, fn_name) in xxx.iter() {
         writeln!(bout, "{}", prologue)?;
         writeln!(bout, ".{}_body:", fn_name)?;

@@ -7,7 +7,7 @@ use crate::{
     temp::{Label, Temp},
 };
 
-use std::{cell::RefCell, fmt::Debug, rc::Rc};
+use std::{cell::RefCell, fmt::Debug, rc::Rc, io::{Write, BufWriter}};
 
 pub type FrameRef = Rc<RefCell<dyn Frame>>;
 
@@ -51,8 +51,6 @@ pub trait Frame: Debug {
     where
         Self: Sized;
 
-    fn asm_file_prologue() -> &'static str where Self: Sized;
-
     /// Handle call arguments and callee saved registers.
     /// This is part of the code of a function body.
     /// 1. moving call arguments into the abstract registers or memory locations in the callee.
@@ -68,7 +66,7 @@ pub trait Frame: Debug {
     fn proc_entry_exit2(&self, instrs: &mut Vec<Instr>, gen: &mut dyn Uuids);
 
     /// Creates the prologue and epilogue assembly language.
-    fn proc_entry_exit3(&self, instrs: &Vec<Instr>, gen: &mut dyn Uuids) -> (Prologue, Epilogue);
+    fn proc_entry_exit3(&self, instrs: &Vec<Instr>, gen: &mut dyn Uuids, sl: temp::Label) -> (Prologue, Epilogue);
 
     // since we don't use global state to track the symbol table, temporaries, labels,
     // will need to pass this in and grab it each time. each frame implementation shall

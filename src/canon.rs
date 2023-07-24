@@ -255,9 +255,7 @@ pub struct Block {
 
 impl Block {
     fn new() -> Self {
-        Self {
-            stmts: Vec::new(),
-        }
+        Self { stmts: Vec::new() }
     }
 
     fn label(&self) -> temp::Label {
@@ -301,10 +299,16 @@ fn validate_block(this_block: &Block) {
     );
 }
 
+/// Helps differentiate what kind of label it is
+pub struct DoneLabel(pub temp::Label);
+/// Helps differentiate what kind of label it is
+pub struct StartLabel(pub temp::Label);
+
 pub fn basic_blocks(
     stmts: Vec<IrStm>,
     gen: &mut dyn Uuids,
-) -> (HashMap<temp::Label, Block>, temp::Label) {
+) -> (HashMap<temp::Label, Block>, StartLabel, DoneLabel) {
+    debug_assert!(stmts.len() > 0);
     // according to Appel (p180), this basic blocks function is applied to each function body in turn.
     // the "epilogue" will not be part of this body, but will eventually follow the last statement.
     //
@@ -320,17 +324,24 @@ pub fn basic_blocks(
     let mut blist = HashMap::new();
     let mut this_block = Block::new();
     let done_label = gen.new_unnamed_label();
-
+    let mut start_label = None;
     let mut iter = stmts.into_iter().peekable();
     while iter.len() > 0 {
         // add the start label.
         match iter.peek() {
             None => {}
-            Some(Label(..)) => {
-                this_block.push(iter.next().unwrap());
+            Some(Label(lbl)) => {
+                if start_label.is_none() {
+                    start_label = Some(*lbl);
+                }
+                let l = iter.next().unwrap();
+                this_block.push(l);
             }
             Some(_) => {
                 let l = gen.new_unnamed_label();
+                if start_label.is_none() {
+                    start_label = Some(l);
+                }
                 this_block.push(Label(l));
             }
         }
@@ -378,7 +389,7 @@ pub fn basic_blocks(
             debug_assert!(iter.len() == 0); // sanity check
         }
     }
-    (blist, done_label)
+    (blist, StartLabel(start_label.unwrap()), DoneLabel(done_label))
 }
 
 fn invert_cjump(
@@ -977,14 +988,15 @@ mod tests {
             let t = test_helpers::new_unnamed_temp(1);
             let stmts = vec![Move(Temp(t), Const(1))];
             let mut gen: UuidsImpl = Uuids::new();
-            let (blk_map, end_lbl) = basic_blocks(stmts, &mut gen);
+            let (blk_map, start_lbl, end_lbl) = basic_blocks(stmts, &mut gen);
             assert_eq!(1, blk_map.len());
             let (lbl, blk) = blk_map.into_iter().next().unwrap();
+            assert_eq!(lbl, start_lbl.0);
             assert_eq!(
                 vec![
                     Label(lbl),
                     Move(Temp(t), Const(1)),
-                    Jump(Name(end_lbl), vec![end_lbl])
+                    Jump(Name(end_lbl.0), vec![end_lbl.0])
                 ],
                 blk.stmts
             );
@@ -995,7 +1007,7 @@ mod tests {
             let lbl = test_helpers::new_unnamed_label(1);
             let stmts = vec![Jump(Name(lbl), vec![lbl]), Jump(Name(lbl), vec![lbl])];
             let mut gen: UuidsImpl = Uuids::new();
-            let (blk_map, _) = basic_blocks(stmts, &mut gen);
+            let (blk_map, _, _) = basic_blocks(stmts, &mut gen);
             assert_eq!(2, blk_map.len());
             for (blk_lbl, blk) in blk_map {
                 assert_eq!(vec![Label(blk_lbl), Jump(Name(lbl), vec![lbl])], blk.stmts);
@@ -1011,7 +1023,7 @@ mod tests {
                 Cjump(Ge, Const(1), Const(1), l1, l2),
             ];
             let mut gen: UuidsImpl = Uuids::new();
-            let (blk_map, _) = basic_blocks(stmts, &mut gen);
+            let (blk_map, _, _) = basic_blocks(stmts, &mut gen);
             assert_eq!(2, blk_map.len());
             for (blk_lbl, blk) in blk_map {
                 assert_eq!(
@@ -1055,7 +1067,7 @@ mod tests {
                 Exp(Const(3)),
                 // jump insert to end label expected
             ];
-            let (blk_map, end_lbl) = basic_blocks(input, &mut gen);
+            let (blk_map, start_lbl, end_lbl) = basic_blocks(input, &mut gen);
             assert_eq!(5, blk_map.len());
 
             assert_eq!(
@@ -1068,6 +1080,8 @@ mod tests {
             );
 
             let tmp_lbl = test_helpers::new_unnamed_label(2);
+            // this should also be the start block.
+            assert_eq!(start_lbl.0, tmp_lbl);
             assert_eq!(
                 vec![
                     Label(tmp_lbl),
@@ -1089,7 +1103,7 @@ mod tests {
                 vec![
                     Label(tmp_lbl),
                     Exp(Const(3)),
-                    Jump(Name(end_lbl), vec![end_lbl])
+                    Jump(Name(end_lbl.0), vec![end_lbl.0])
                 ],
                 blk_map.get(&tmp_lbl).unwrap().stmts
             );
@@ -1097,9 +1111,8 @@ mod tests {
     }
 
     mod trace {
-        use crate::temp::UuidsImpl;
-
         use super::*;
+        use crate::temp::UuidsImpl;
 
         #[test]
         fn blist_vec_test() {

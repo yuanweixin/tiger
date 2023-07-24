@@ -90,13 +90,6 @@ pub fn special_regs(gen: &mut dyn Uuids) -> Vec<temp::Temp> {
 }
 
 impl Frame for x86_64_Frame {
-    fn asm_file_prologue() -> &'static str
-    where
-        Self: Sized,
-    {
-        ".intel_syntax noprefix"
-    }
-
     fn registers() -> &'static [Register]
     where
         Self: Sized,
@@ -200,14 +193,19 @@ impl Frame for x86_64_Frame {
         &self,
         instrs: &Vec<crate::assem::Instr>,
         gen: &mut dyn Uuids,
+        sl: temp::Label
     ) -> (super::Prologue, super::Epilogue) {
         let function_name = self.name.resolve_named_label(gen);
         let prologue = if self.num_locals > 0 {
             format!(
-                "{}:\n.{}_prologue:\n\tpush rbp\n\tmov rbp, rsp\n\tsub rsp, {}",
+                "{}:\n.{}_prologue:\n\tpush rbp\n\tmov rbp, rsp\n\tsub rsp, {}\n\tjmp .L{}",
                 function_name,
                 function_name,
-                self.num_locals * WORD_SIZE
+                self.num_locals * WORD_SIZE,
+                match sl {
+                    temp::Label::Named(..) => panic!("impl bug"),
+                    temp::Label::Unnamed(id) => id
+                }
             )
         } else {
             format!(
@@ -218,9 +216,8 @@ impl Frame for x86_64_Frame {
 
         let epilogue = if self.num_locals > 0 {
             format!(
-                ".{}_epilogue:\n\tadd rsp, {}\n\tpop rbp\n\tret\n\t.globl {}\n\t.type {}, @function",
+                ".{}_epilogue:\n\tleave\n\tret\n\t.globl {}\n\t.type {}, @function",
                 function_name,
-                self.num_locals * WORD_SIZE,
                 function_name,
                 function_name,
             )

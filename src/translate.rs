@@ -388,9 +388,9 @@ pub fn int_exp(i: TigerInt) -> TrExp {
 pub fn string_exp<T: Frame>(s: &str, gen: &mut dyn Uuids, frags: &mut Vec<frame::Frag>) -> TrExp {
     let mut is_new = false;
     let string_label = frags
-        .iter()
+    .iter()
         .find(|frag| match frag {
-            frame::Frag::String(_, s) => s.as_str() == s,
+            frame::Frag::String(_, sss) => sss.as_str() == s,
             _ => false,
         })
         .map(|frag| match frag {
@@ -402,7 +402,9 @@ pub fn string_exp<T: Frame>(s: &str, gen: &mut dyn Uuids, frags: &mut Vec<frame:
             gen.new_unnamed_label()
         });
 
+    println!("string_exp s={}", s);
     if is_new {
+        println!("is_new, adding string fragment s={}", s);
         frags.push(frame::Frag::String(string_label, String::from(s)));
     }
 
@@ -896,13 +898,6 @@ mod tests {
     const RV: &str = "rv";
 
     impl Frame for TestFrame {
-        fn asm_file_prologue() -> &'static str
-        where
-            Self: Sized,
-        {
-            unreachable!()
-        }
-
         fn return_value_register(gen: &mut dyn Uuids) -> temp::Temp
         where
             Self: Sized,
@@ -964,6 +959,7 @@ mod tests {
             &self,
             _: &Vec<crate::assem::Instr>,
             _: &mut dyn Uuids,
+            _: temp::Label
         ) -> (frame::Prologue, frame::Epilogue) {
             unreachable!()
         }

@@ -1464,13 +1464,6 @@ mod tests {
     const RV: &str = "rv";
 
     impl Frame for TestFrame {
-        fn asm_file_prologue() -> &'static str
-        where
-            Self: Sized,
-        {
-            unreachable!();
-        }
-
         fn return_value_register(gen: &mut dyn Uuids) -> temp::Temp
         where
             Self: Sized,
@@ -1533,6 +1526,7 @@ mod tests {
             &self,
             _: &Vec<crate::assem::Instr>,
             _: &mut dyn Uuids,
+            _: temp::Label
         ) -> (frame::Prologue, frame::Epilogue) {
             unreachable!()
         }
