@@ -238,6 +238,9 @@ fn run_on_file(opts: &dyn CompilerOptions) -> Result<util::ReturnCode, Box<dyn E
     let tm = gen.to_temp_map(x86_64_Frame::registers());
     if DEBUG_END_TO_END {
         println!("named temp map {:?}", tm);
+        for nl in gen.named_labels.iter() {
+            println!("label: {:?} -> {}", nl, nl.resolve_named_label(&gen));
+        }
     }
     let mut xxx = Vec::new();
     let output_path = PathBuf::from(opts.file().unwrap()).with_extension("s");

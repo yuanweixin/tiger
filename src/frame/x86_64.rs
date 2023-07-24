@@ -90,7 +90,10 @@ pub fn special_regs(gen: &mut dyn Uuids) -> Vec<temp::Temp> {
 }
 
 impl Frame for x86_64_Frame {
-    fn asm_file_prologue() -> &'static str where Self: Sized {
+    fn asm_file_prologue() -> &'static str
+    where
+        Self: Sized,
+    {
         ".intel_syntax noprefix"
     }
 
@@ -132,7 +135,7 @@ impl Frame for x86_64_Frame {
             temp::Label::Named(_) => panic!("impl bug: string should not have named label"),
             temp::Label::Unnamed(id) => id,
         };
-        format!(".L{}:\n\t.string {}", id, s)
+        format!(".L{}:\n\t.string \"{}\"", id, s)
     }
 
     fn frame_pointer(gen: &mut dyn Uuids) -> temp::Temp
@@ -198,7 +201,7 @@ impl Frame for x86_64_Frame {
         instrs: &Vec<crate::assem::Instr>,
         gen: &mut dyn Uuids,
     ) -> (super::Prologue, super::Epilogue) {
-        let function_name =                 self.name.resolve_named_label(gen);
+        let function_name = self.name.resolve_named_label(gen);
         let prologue = if self.num_locals > 0 {
             format!(
                 "{}:\n.{}_prologue:\n\tpush rbp\n\tmov rbp, rsp\n\tsub rsp, {}",
@@ -209,8 +212,7 @@ impl Frame for x86_64_Frame {
         } else {
             format!(
                 "{}:\n.{}_prologue:\n\tpush rbp\n\tmov rbp, rsp",
-                function_name,
-                function_name,
+                function_name, function_name,
             )
         };
 
@@ -223,10 +225,7 @@ impl Frame for x86_64_Frame {
                 function_name,
             )
         } else {
-            format!(
-                ".{}_epilogue:\n\tpop rbp\n\tret",
-                function_name,
-            )
+            format!(".{}_epilogue:\n\tpop rbp\n\tret", function_name,)
         };
         return (prologue, epilogue);
     }
@@ -255,7 +254,11 @@ impl Frame for x86_64_Frame {
         // create the moves.
         let mut moves = Vec::new();
         if formals.len() > 0 {
-            moves.push(IrStm::Label(gen.named_label(".move_arguments")));
+            let name_str = name.resolve_named_label(gen);
+            // this is for debug purpose.
+            moves.push(IrStm::Label(
+                gen.named_label(format!("_{}_move_arguments", name_str).as_str()),
+            ));
         }
         for (i, f) in formals.iter().enumerate() {
             if i < ARG_REGS.len() {

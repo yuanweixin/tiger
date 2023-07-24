@@ -331,9 +331,12 @@ fn trans_exp<T: Frame + 'static>(
         Exp::IntExp(i) => (translate::int_exp(*i), Type::Int),
         Exp::VarExp(v) => trans_var::<T>(ctx, level.clone(), v, break_label),
         Exp::StringExp(s, _) => {
+            // sanity check; in tiger.l String is a regex that start and ends with '"'
             let x = &ctx.input[s.start()..s.end()];
+            debug_assert!(x.starts_with("\""));
+            debug_assert!(x.ends_with("\""));
             (
-                translate::string_exp(x, ctx.gen, &mut ctx.frags),
+                translate::string_exp::<T>(&x[1..x.len()-1], ctx.gen, &mut ctx.frags),
                 Type::String,
             )
         }

@@ -1,3 +1,4 @@
+use std::collections::HashSet;
 use std::num::NonZeroUsize;
 use std::{
     collections::HashMap,
@@ -74,6 +75,7 @@ pub struct UuidsImpl {
     next_id: NonZeroUsize,
     pool: Interner,
     name_temp: SymbolTable<Temp>,
+    pub named_labels: HashSet<Label> // this exists purely for debug so we could print out the mappings.
 }
 
 impl Debug for Temp {
@@ -118,6 +120,7 @@ impl Uuids for UuidsImpl {
             next_id: NonZeroUsize::MIN,
             pool: Interner::new(),
             name_temp: SymbolTable::empty(),
+            named_labels: HashSet::new()
         }
     }
 
@@ -156,6 +159,7 @@ impl Uuids for UuidsImpl {
     }
     fn named_label(&mut self, s: &str) -> Label {
         let sym = self.pool.intern(s);
+        self.named_labels.insert(Label::Named(sym));
         Label::Named(sym)
     }
 }

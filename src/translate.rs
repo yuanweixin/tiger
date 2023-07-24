@@ -17,6 +17,7 @@ use crate::{
     temp,
     temp::Uuids,
 };
+use std::string;
 use std::{cell::RefCell, rc::Rc};
 
 macro_rules! new_frame {
@@ -276,6 +277,7 @@ pub fn string_cmp<T: Frame>(
                     vec![un_ex(lhs, gen), un_ex(rhs, gen)],
                 ),
             ),
+            // flips the value.
             Binop(Xor, Temp(r), Const(1)),
         ))
     }
@@ -383,19 +385,32 @@ pub fn int_exp(i: TigerInt) -> TrExp {
     Ex(Const(i))
 }
 
-pub fn string_exp(s: &str, gen: &mut dyn Uuids, frags: &mut Vec<frame::Frag>) -> TrExp {
-    for frag in frags.iter() {
-        match frag {
-            frame::Frag::String(label, ..) => {
-                return Ex(Name(*label));
-            }
-            _ => {}
-        }
+pub fn string_exp<T: Frame>(s: &str, gen: &mut dyn Uuids, frags: &mut Vec<frame::Frag>) -> TrExp {
+    let mut is_new = false;
+    let string_label = frags
+        .iter()
+        .find(|frag| match frag {
+            frame::Frag::String(_, s) => s.as_str() == s,
+            _ => false,
+        })
+        .map(|frag| match frag {
+            frame::Frag::String(label, _) => *label,
+            _ => unreachable!(),
+        })
+        .unwrap_or_else(|| {
+            is_new = true;
+            gen.new_unnamed_label()
+        });
+
+    if is_new {
+        frags.push(frame::Frag::String(string_label, String::from(s)));
     }
-    let l = gen.new_unnamed_label();
-    let new_frag = frame::Frag::String(l, String::from(s));
-    frags.push(new_frag);
-    Ex(Name(l))
+
+    // call the runtime function to create and create the string.
+    Ex(T::external_call(
+        gen.named_label("newString"),
+        vec![Const(s.len() as i32), Name(string_label)],
+    ))
 }
 
 pub fn record_exp<T: Frame>(site_irs: Vec<TrExp>, gen: &mut dyn Uuids) -> TrExp {
@@ -793,10 +808,7 @@ pub fn subscript_var<T: Frame>(lhs_ir: TrExp, idx_ir: TrExp, gen: &mut dyn Uuids
                     Binop(Mul, un_ex(idx_ir, gen), Const(T::word_size() as i32)),
                 ),
             ),
-            Move(
-                lhs_temp.clone(),
-                un_ex(lhs_ir, gen)
-            ),
+            Move(lhs_temp.clone(), un_ex(lhs_ir, gen)),
             // if index < 0, it's bad
             Cjump(Ge, idx_temp.clone(), Const(0), upper_check, bad),
             Label(upper_check),
