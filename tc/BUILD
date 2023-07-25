@@ -32,3 +32,12 @@ rust_binary(
     proc_macro_deps = all_crate_deps(proc_macro = True),
     deps = all_crate_deps(normal = True) + [":build_script"]
 )
+
+# it would:
+# take the tc binary
+# take the python test files
+# take the runtime.c compiled into assembly using whatever cc is configured
+# take runtime.s, the result of running tc <file> with <given options>, generate a.out
+# run a.out and collect its stdout, stderr, and int return code.
+# compare against expected.
+# essentially run pytest on that logic.
