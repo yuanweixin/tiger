@@ -17,7 +17,7 @@
 [3 days] experiment on building out the end to end test harness
     * add rules_py to workspace and test out
     x add rules_rust to WS
-    * convert project to build using bazel
+    x convert project to build using bazel
     * be able to bazel test the existing tests
     * add stubs for the python e2e test harness, capturing stdout and return code
     * figure out how to invoke the assembler on this thing
