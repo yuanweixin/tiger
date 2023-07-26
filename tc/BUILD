@@ -52,7 +52,8 @@ filegroup(
 )
 
 # https://stackoverflow.com/questions/53472993/how-do-i-make-a-bazel-sh-binary-target-depend-on-other-binary-targets
-
+# https://bazel.build/reference/be/make-variables#predefined_label_variables
+# `location`, `locations` are consider deprecated so use the more "modern" rootpath(s)
 sh_test(
     name = "e2e_test",
     srcs = ["tests/run_e2e_test.sh"],
