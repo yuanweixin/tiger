@@ -1,6 +1,7 @@
 load("@crate_index//:defs.bzl", "aliases", "all_crate_deps")
 load("@rules_rust//rust:defs.bzl", "rust_library", "rust_binary", "rust_test")
 load("@rules_rust//cargo:defs.bzl", "cargo_build_script")
+load("@rules_cc//cc:defs.bzl", "cc_library", "cc_binary")
 
 
 # This will run the build script from the root of the workspace, and
@@ -24,6 +25,7 @@ cargo_build_script(
     deps = all_crate_deps(build = True)
 )
 
+# build tc compiler.
 rust_binary(
     name = "tc",
     srcs = glob(["**/*.rs"]),
@@ -33,11 +35,17 @@ rust_binary(
     deps = all_crate_deps(normal = True) + [":build_script"]
 )
 
-# it would:
-# take the tc binary
-# take the python test files
-# take the runtime.c compiled into assembly using whatever cc is configured
-# take runtime.s, the result of running tc <file> with <given options>, generate a.out
-# run a.out and collect its stdout, stderr, and int return code.
-# compare against expected.
-# essentially run pytest on that logic.
+# steps
+# use tc compiler to build the tiger program asm, then use the cc toolchain to create exe.
+# run the exe on a target machine
+# collect the output and compare against expected.
+cc_library(
+    name = "runtime",
+    srcs = ["src/runtime.c"]
+)
+
+# aspects to check
+# 1. wall clock time of run of final program
+# 2. size of the program
+
+
