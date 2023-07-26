@@ -128,7 +128,8 @@ impl Frame for x86_64_Frame {
             temp::Label::Named(_) => panic!("impl bug: string should not have named label"),
             temp::Label::Unnamed(id) => id,
         };
-        format!(".L{}:\n\t.string \"{}\"", id, s)
+        assert!(s.is_ascii(), "tiger only supports ascii strings");
+        format!(".L{}:\n\t.long {}\n\t.string \"{}\"", id, s.chars().count(), s)
     }
 
     fn frame_pointer(gen: &mut dyn Uuids) -> temp::Temp
