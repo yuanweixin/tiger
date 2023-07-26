@@ -41,9 +41,23 @@ rust_binary(
 # collect the output and compare against expected.
 cc_library(
     name = "runtime",
-    srcs = ["src/runtime.c"]
+    srcs = ["src/runtime.c"],
+    linkstatic = 1
 )
 
+filegroup(
+    name="e2etestinputs",
+    srcs = glob(["tests/tiger_programs/end_to_end/*.tig"])
+)
+
+# https://stackoverflow.com/questions/53472993/how-do-i-make-a-bazel-sh-binary-target-depend-on-other-binary-targets
+
+sh_binary(
+    name = "binops",
+    srcs = ["tests/compile_tiger.sh"],
+    data = [":tc", ":runtime", ":e2etestinputs"],
+    args = ["$(execpath :tc)", "$(execpath :runtime)", "$(execpaths :e2etestinputs)"]
+)
 # aspects to check
 # 1. wall clock time of run of final program
 # 2. size of the program
