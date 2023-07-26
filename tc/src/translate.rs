@@ -402,9 +402,7 @@ pub fn string_exp<T: Frame>(s: &str, gen: &mut dyn Uuids, frags: &mut Vec<frame:
             gen.new_unnamed_label()
         });
 
-    println!("string_exp s={}", s);
     if is_new {
-        println!("is_new, adding string fragment s={}", s);
         frags.push(frame::Frag::String(string_label, String::from(s)));
     }
 

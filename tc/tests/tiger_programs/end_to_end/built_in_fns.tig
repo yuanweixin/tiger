@@ -1,5 +1,5 @@
 let
-    var c := getchar()
+    var c := getChar()
 in
     print("hello\n");
     flush();
