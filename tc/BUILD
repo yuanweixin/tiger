@@ -42,6 +42,7 @@ rust_binary(
 cc_library(
     name = "runtime",
     srcs = ["src/runtime.c"],
+    copts = ["-fPIE"],
     linkstatic = 1
 )
 
@@ -52,11 +53,11 @@ filegroup(
 
 # https://stackoverflow.com/questions/53472993/how-do-i-make-a-bazel-sh-binary-target-depend-on-other-binary-targets
 
-sh_binary(
+sh_test(
     name = "binops",
     srcs = ["tests/compile_tiger.sh"],
     data = [":tc", ":runtime", ":e2etestinputs"],
-    args = ["$(execpath :tc)", "$(execpath :runtime)", "$(execpaths :e2etestinputs)"]
+    args = ["$(rootpath :tc)", "$(rootpath :runtime)", "$(rootpaths :e2etestinputs)"]
 )
 # aspects to check
 # 1. wall clock time of run of final program

@@ -28,7 +28,7 @@ impl Codegen for X86Asm {
                     IrExp::Mem(tgt) => {
                         let dst = Self::munch_exp(*tgt, result, gen);
                         result.push(Instr::Oper {
-                            assem: "movq %'S0, %('S1)".into(),
+                            assem: "movq %'S0, (%'S1)".into(),
                             dst: Dst::empty(),
                             src: Src(vec![src, dst]),
                             jump: vec![],
@@ -114,7 +114,7 @@ impl Codegen for X86Asm {
                     Plus => "addq %'S0, %'D0",
                     Minus => "subq %'S0, %'D0",
                     IrBinop::Mul => "imulq %'S0, %'D0",
-                    IrBinop::Div => "movq 0, %rdx\nidivq 'S0", // rdx is zero'ed otherwise it complains about "floating point exception"
+                    IrBinop::Div => "movq 0, %rdx\nidivq %'S0", // rdx is zero'ed otherwise it complains about "floating point exception"
                     IrBinop::And => "andq %'S0, %'D0",
                     IrBinop::Or => "orq %'S0, %'D0",
                     // base tiger language doesn't have these
