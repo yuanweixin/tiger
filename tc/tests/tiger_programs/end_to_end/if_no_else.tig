@@ -1,7 +1,0 @@
-let
-    var i := 43
-in
-    if i = 43 then
-        i := 42;
-    i
-end

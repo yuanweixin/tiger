@@ -4,12 +4,10 @@ in
     if i = 77 then
         i := 44
     else
-        i := 0
+        i := 45
     ;
-    if i = 45 then
-        i := 24
-    else
-        i := 42
+    if i = 44 then
+        i := 0
     ;
     i
 end

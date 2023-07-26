@@ -1,9 +1,8 @@
 let
     type list = {first: int, rest: list}
-    var l := list{first=1, rest=nil}
+    var l := list{first=42, rest=nil}
     var m : list := nil
-    var n := list{first=2, rest=list{first=39, rest=nil}}
+    var n := list{first=2, rest=list{first=40, rest=nil}}
 in
-    /* 1 + 2 + 39 = 42 */
-    l.first + n.first + n.rest.first
+    l.first - n.first - n.rest.first
 end

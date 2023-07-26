@@ -1,7 +1,7 @@
 let
-    var k := 0
+    var k := 42
 in
-    while k < 42 do
-        (k := k + 1);
+    while k > 0 do
+        (k := k - 1);
     k
 end
