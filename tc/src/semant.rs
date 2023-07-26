@@ -110,7 +110,7 @@ impl<'a> TypeCheckingContext<'a> {
         res.begin_scope();
         top_level_fn!("print", T, res, vec![Type::String], gen, Type::Unit);
         top_level_fn!("flush", T, res, Vec::<Type>::new(), gen, Type::Unit);
-        top_level_fn!("getchar", T, res, Vec::<Type>::new(), gen, Type::String);
+        top_level_fn!("getChar", T, res, Vec::<Type>::new(), gen, Type::String);
         top_level_fn!("ord", T, res, vec![Type::String], gen, Type::Int);
         top_level_fn!("chr", T, res, vec![Type::Int], gen, Type::String);
         top_level_fn!("size", T, res, vec![Type::String], gen, Type::Int);
@@ -330,13 +330,20 @@ fn trans_exp<T: Frame + 'static>(
         Exp::NilExp => (translate::nil_exp(), Type::Nil),
         Exp::IntExp(i) => (translate::int_exp(*i), Type::Int),
         Exp::VarExp(v) => trans_var::<T>(ctx, level.clone(), v, break_label),
-        Exp::StringExp(s, _) => {
+        Exp::StringExp(s, pos) => {
             // sanity check; in tiger.l String is a regex that start and ends with '"'
-            let x = &ctx.input[s.start()..s.end()];
+            let mut x = &ctx.input[s.start()..s.end()];
+            // the string from the lexer should contain the start and end quotes.
             debug_assert!(x.starts_with("\""));
             debug_assert!(x.ends_with("\""));
+            x = x.trim_start_matches("\"");
+            x = x.trim_end_matches("\"");
+            if ! x.is_ascii() {
+                ctx.flag_error_with_msg(pos, "tiger only supports ascii strings");
+                return error_type_check_output();
+            }
             (
-                translate::string_exp::<T>(&x[1..x.len()-1], ctx.gen, &mut ctx.frags),
+                translate::string_exp::<T>(&x, ctx.gen, &mut ctx.frags),
                 Type::String,
             )
         }
@@ -1731,7 +1738,7 @@ mod tests {
     in
         print("die");
         flush();
-        getchar();
+        getChar();
         ord("");
         chr(0);
         size("");

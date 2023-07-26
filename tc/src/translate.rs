@@ -406,11 +406,7 @@ pub fn string_exp<T: Frame>(s: &str, gen: &mut dyn Uuids, frags: &mut Vec<frame:
         frags.push(frame::Frag::String(string_label, String::from(s)));
     }
 
-    // call the runtime function to create and create the string.
-    Ex(T::external_call(
-        gen.named_label("newString"),
-        vec![Const(s.len() as i32), Name(string_label)],
-    ))
+    Ex(Name(string_label))
 }
 
 pub fn record_exp<T: Frame>(site_irs: Vec<TrExp>, gen: &mut dyn Uuids) -> TrExp {
