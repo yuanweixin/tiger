@@ -114,7 +114,7 @@ impl Codegen for X86Asm {
                     Plus => "addq %'S0, %'D0",
                     Minus => "subq %'S0, %'D0",
                     IrBinop::Mul => "imulq %'S0, %'D0",
-                    IrBinop::Div => "movq 0, %rdx\nidivq %'S0", // rdx is zero'ed otherwise it complains about "floating point exception"
+                    IrBinop::Div => "movq $0, %rdx\n\tidivq %'S0", // rdx is zero'ed otherwise it complains about "floating point exception"
                     IrBinop::And => "andq %'S0, %'D0",
                     IrBinop::Or => "orq %'S0, %'D0",
                     // base tiger language doesn't have these
@@ -282,7 +282,7 @@ impl Codegen for X86Asm {
             Null => {
                 let t = gen.new_unnamed_temp();
                 result.push(Instr::Oper {
-                    assem: "movq 0, %'D0".into(),
+                    assem: "movq $0, %'D0".into(),
                     dst: Dst(vec![t]),
                     src: Src::empty(),
                     jump: vec![],
