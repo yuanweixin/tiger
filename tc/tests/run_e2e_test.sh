@@ -28,8 +28,8 @@ do
     echo "Linking with runtime: "$asm_name
     gcc -fPIE $RUNTIME $asm_name
 
-    echo "Invoking the final program..."
-    ./a.out
+    echo "Invoking the final program with timeout..."
+    timeout 5s ./a.out
 
     echo "Succeeded for :"$tig
 
