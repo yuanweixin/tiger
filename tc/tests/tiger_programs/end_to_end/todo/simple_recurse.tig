@@ -1,0 +1,15 @@
+let
+    function x(i: int) : int =
+        (for j := 0 to i-1 do
+            print("j")
+        ;
+        print("\n")
+        ;
+        if i = 0 then
+            0
+        else
+            x(i-1)
+        )
+in
+    x(2)
+end

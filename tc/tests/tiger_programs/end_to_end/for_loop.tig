@@ -1,7 +1,10 @@
 let
-    var k := 42
+    var k := 43
 in
     for i := 0 to 41 do
+      k := k - 1
+    ;
+    for i := 0 to 0 do
       k := k - 1
     ;
     k

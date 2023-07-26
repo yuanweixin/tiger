@@ -1,7 +1,18 @@
 let
     var k := 42
+    var j := 0
 in
     while k > 0 do
         (k := k - 1);
-    k
+    while j < 1000 do
+        (if j = 42 then
+            break
+        ;
+        j := j + 1
+        )
+    ;
+    if k = 0 & j = 42 then
+        0
+    else
+        1
 end

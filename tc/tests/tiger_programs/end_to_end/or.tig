@@ -1,0 +1,7 @@
+let
+in
+    if 1 = 0 | 2 = 2 then
+        0
+    else
+        1
+end
