@@ -55,6 +55,8 @@ void flush()
 struct string consts[256];
 struct string empty = {0, ""};
 
+extern int tigermain();
+
 int main()
 {
     int i;
@@ -63,7 +65,7 @@ int main()
         consts[i].length = 1;
         consts[i].chars[0] = i;
     }
-    return tigermain(0 /* static link!? */);
+    return tigermain();
 }
 
 int ord(struct string *s)
@@ -132,9 +134,10 @@ int not(int i)
     return !i;
 }
 
-#undef getchar
-
-struct string *getchar()
+// uses capital C to avoid conflicting with stdio function.
+// do not dig the pascal case, wtf this is C, should be snake casing.
+// but using pascal to be consistent with rest of the file.
+struct string *getChar()
 {
     int i = getc(stdin);
     if (i == EOF)
