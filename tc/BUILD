@@ -54,8 +54,8 @@ filegroup(
 # https://stackoverflow.com/questions/53472993/how-do-i-make-a-bazel-sh-binary-target-depend-on-other-binary-targets
 
 sh_test(
-    name = "binops",
-    srcs = ["tests/compile_tiger.sh"],
+    name = "e2e_test",
+    srcs = ["tests/run_e2e_test.sh"],
     data = [":tc", ":runtime", ":e2etestinputs"],
     args = ["$(rootpath :tc)", "$(rootpath :runtime)", "$(rootpaths :e2etestinputs)"]
 )
