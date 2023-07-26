@@ -30,7 +30,7 @@ use crate::{
 lrlex_mod!("tiger.l");
 lrpar_mod!("tiger.y");
 
-pub const DEBUG_END_TO_END: bool = false;
+pub const DEBUG_END_TO_END: bool = true;
 struct OptOpt {
     opt_name: &'static str,
     desc: &'static str,
