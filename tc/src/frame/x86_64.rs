@@ -163,15 +163,25 @@ impl Frame for x86_64_Frame {
         // hence have no cost in the end.
 
         // move callee save registers and the return address registers.
-        for name in CALLEE_SAVES.iter().chain([RAX].iter()) {
+        let mut temporaries = Vec::with_capacity(CALLEE_SAVES.len() + 1);
+        for name in CALLEE_SAVES.iter() {
             let t = gen.new_unnamed_temp();
+            temporaries.push(t);
             let named_r = gen.named_temp(name);
             moves.push(Move(IrExp::Temp(t), IrExp::Temp(named_r)));
         }
         if let Some(ref formals_move) = self.formals_move {
             moves.push(formals_move.clone());
         }
+
         moves.push(body);
+
+        // restore the registers saved above after executing function body.
+        for (name, t) in CALLEE_SAVES.iter().zip(temporaries) {
+            let named_r = gen.named_temp(name);
+            moves.push(Move(IrExp::Temp(named_r), IrExp::Temp(t)));
+        }
+
         translate::make_seq(moves)
     }
 
