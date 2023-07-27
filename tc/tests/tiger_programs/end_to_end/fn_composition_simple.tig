@@ -1,0 +1,16 @@
+let
+
+ function x() : int =
+    24
+
+ function y(i:int) : int =
+    25 + i
+
+ function z(i:int) : int =
+    26 + i
+ in
+    if z(y(x())) = 75 then
+        0
+    else
+        1
+end

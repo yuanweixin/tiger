@@ -1,0 +1,22 @@
+let
+
+ type list = {first: int, rest: list}
+
+ function x() : list =
+    list{first=1, rest=nil}
+
+ function y(l: list) : list =
+    list{first=l.first+1, rest=nil}
+
+ function z(l: list) : list =
+    list{first=l.first+1, rest=nil}
+
+ var lst : list := nil
+ in
+    lst := z(y(x()));
+    if lst.first = 3 & lst.rest=nil then
+        0
+    else
+        1
+end
+
