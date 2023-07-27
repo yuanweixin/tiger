@@ -1,0 +1,12 @@
+let
+    var j := 2
+    function x(i: int) =
+        if i = 0 then
+            ()
+        else
+            (j := j - 1;
+            x(i-1))
+in
+    (x(2);
+    j)
+end

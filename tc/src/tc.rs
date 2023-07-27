@@ -30,7 +30,7 @@ use crate::{
 lrlex_mod!("tiger.l");
 lrpar_mod!("tiger.y");
 
-pub const DEBUG_END_TO_END: bool = true;
+pub const DEBUG_END_TO_END: bool = false;
 struct OptOpt {
     opt_name: &'static str,
     desc: &'static str,
@@ -297,7 +297,7 @@ fn run_on_file(opts: &dyn CompilerOptions) -> Result<util::ReturnCode, Box<dyn E
                 let mut temp_offset = trivial_reg::TempOffset::new();
                 for stm in trace.into_iter() {
                     if DEBUG_END_TO_END {
-                        println!("\n{:?}", stm);
+                        println!("\n!!{:?}", stm);
                     }
                     // IrStm -> Vec<InStr>
                     let mut trivial_reg_alloc_input = Vec::new();
@@ -444,6 +444,7 @@ mod tests {
 
         for path in paths {
             let fname = path.to_str().map(|x| String::from(x));
+            println!("running on file: {}", fname.as_ref().unwrap());
             let opts = TestOpts {
                 file: fname.as_ref(),
                 ..TestOpts::default()

@@ -129,7 +129,12 @@ impl Frame for x86_64_Frame {
             temp::Label::Unnamed(id) => id,
         };
         assert!(s.is_ascii(), "tiger only supports ascii strings");
-        format!(".L{}:\n\t.long {}\n\t.string \"{}\"", id, s.chars().count(), s)
+        format!(
+            ".L{}:\n\t.long {}\n\t.string \"{}\"",
+            id,
+            s.chars().count(),
+            s
+        )
     }
 
     fn frame_pointer(gen: &mut dyn Uuids) -> temp::Temp
@@ -148,34 +153,27 @@ impl Frame for x86_64_Frame {
 
     fn proc_entry_exit1(&mut self, body: IrStm, can_spill: bool, gen: &mut dyn Uuids) -> IrStm {
         let mut moves = Vec::new();
-        // TODO add these callee save stuff later.
-        // if can_spill {
-        //     todo!()
-        // } else {
-        //     moves.push(IrStm::Label(gen.named_label(".callee_save")));
-        //     // move callee save registers and the return address registers.
-        //     for name in CALLEE_SAVES.iter().chain([RAX].iter()) {
-        //         let acc = self.alloc_local(true, gen);
-        //         match acc {
-        //             Access::InFrame(offset) => {
-        //                 moves.push(Move(
-        //                     Mem(Binop(
-        //                         IrBinop::Plus,
-        //                         IrExp::Const(offset),
-        //                         IrExp::Temp(Self::frame_pointer(gen)),
-        //                     )),
-        //                     IrExp::Temp(gen.named_temp(name)),
-        //                 ));
-        //             }
-        //             Access::InReg(..) => panic!("impl bug: expected InFrame for local"),
-        //         }
-        //     }
-        //     if let Some(ref formals_move) = self.formals_move {
-        //         moves.push(formals_move.clone());
-        //     }
+        // TODO remove the can_spill flag completely.
+        // trivial register allocation = spill everything.
+        // once graph coloring is implemented, that will also spill when needed.
+        // hence, don't need to handle the non-spill case described in Appel
+        // where you pessimistically move all callee-save + rv registers to frame.
+        //
+        // for the spill case, you just make a bunch of MOVE(fresh_temp, reg) for
+        // each reg in { callee_saves } + { rv's }. then hope it gets coalesced and
+        // hence have no cost in the end.
+
+        // move callee save registers and the return address registers.
+        for name in CALLEE_SAVES.iter().chain([RAX].iter()) {
+            let t = gen.new_unnamed_temp();
+            let named_r = gen.named_temp(name);
+            moves.push(Move(IrExp::Temp(t), IrExp::Temp(named_r)));
+        }
+        if let Some(ref formals_move) = self.formals_move {
+            moves.push(formals_move.clone());
+        }
         moves.push(body);
         translate::make_seq(moves)
-        // }
     }
 
     fn proc_entry_exit2(&self, instrs: &mut Vec<crate::assem::Instr>, gen: &mut dyn Uuids) {
@@ -192,9 +190,9 @@ impl Frame for x86_64_Frame {
 
     fn proc_entry_exit3(
         &self,
-        instrs: &Vec<crate::assem::Instr>,
+        instrs: &Vec<crate::assem::Instr>, // TODO what is this even used for if we just output strings anyway?
         gen: &mut dyn Uuids,
-        sl: temp::Label
+        start_label: temp::Label,
     ) -> (super::Prologue, super::Epilogue) {
         let function_name = self.name.resolve_named_label(gen);
         let prologue = if self.num_locals > 0 {
@@ -203,9 +201,9 @@ impl Frame for x86_64_Frame {
                 function_name,
                 function_name,
                 self.num_locals * WORD_SIZE,
-                match sl {
+                match start_label {
                     temp::Label::Named(..) => panic!("impl bug"),
-                    temp::Label::Unnamed(id) => id
+                    temp::Label::Unnamed(id) => id,
                 }
             )
         } else {
@@ -218,9 +216,7 @@ impl Frame for x86_64_Frame {
         let epilogue = if self.num_locals > 0 {
             format!(
                 ".{}_epilogue:\n\tleave\n\tret\n\t.globl {}\n\t.type {}, @function",
-                function_name,
-                function_name,
-                function_name,
+                function_name, function_name, function_name,
             )
         } else {
             format!(".{}_epilogue:\n\tpop rbp\n\tret", function_name,)
@@ -230,23 +226,38 @@ impl Frame for x86_64_Frame {
 
     fn new(name: Label, formals_escapes: Vec<Escapes>, gen: &mut dyn Uuids) -> Self {
         let mut formals = Vec::with_capacity(formals_escapes.len());
-
-        // if it's part of the first 6 args, it is InReg, unless it escapes.
-        // everything else is InFrame.
-        let mut in_frame_offset = 0;
-
+        let mut num_locals = 0;
+        let mut positive_frame_offset = 0;
         for (i, escape) in formals_escapes.iter().enumerate() {
+            // this is where it interacts with the calling convention.
+            // for system V, the first 6 args will go into registers.
+            // but, for escaped vars, we want that to be on the stack.
+            // let i be arg position (start at 1 for purpose of this note)
+            // if i > 6, calling convention puts it on stack, which is consistent
+            // with escapes (meaning, caller will put it on the stack for us).
+            //
+            // if i < 6, calling convention puts it in a register. it is to be
+            // assigned a temporary if it does not escape. but if it escapes, need
+            // to stick it onto the stack. the caller could allocate the space as
+            // one of the arguments, or we could allocate in the stack. however if
+            // we rely on the caller, then we would actually break the sys v convention
+            // and would actually be inventing our own calling convention (albeit
+            // more optimal because we don't have to copy to a register only to copy
+            // it back to a memory location) and break compatibility with, say, non-tiger
+            // code that might call into our function. therefore, we will allocate
+            // local variable to hold the value of arguments where, i < 6 and escape=true.
             if i < ARG_REGS.len() {
                 if *escape {
-                    formals.push(Access::InFrame(in_frame_offset));
-                    in_frame_offset += WORD_SIZE as i32;
+                    let negative_frame_offset = ((num_locals + 1) * WORD_SIZE) as i32 * -1;
+                    formals.push(Access::InFrame(negative_frame_offset));
+                    num_locals += 1;
                 } else {
                     let t = gen.new_unnamed_temp();
                     formals.push(Access::InReg(t));
                 }
             } else {
-                formals.push(Access::InFrame(in_frame_offset));
-                in_frame_offset += WORD_SIZE as i32;
+                formals.push(Access::InFrame(positive_frame_offset));
+                positive_frame_offset += WORD_SIZE as i32;
             }
         }
         // create the moves.
@@ -296,7 +307,7 @@ impl Frame for x86_64_Frame {
                 // this happens with the top level pre-defined fns and tigermain.
                 None
             },
-            num_locals: 0,
+            num_locals,
         }
     }
 
