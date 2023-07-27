@@ -1,7 +1,8 @@
 let
-     function fib(i: int) : int =
+    var res := 0
+    function fib(i: int) : int =
         if i = 0 then
-            1
+            0
         else if i = 1 then
             1
         else
