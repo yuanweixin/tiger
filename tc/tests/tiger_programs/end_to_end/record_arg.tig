@@ -1,0 +1,21 @@
+let
+
+ type list = {first: int, rest: list}
+ var input := list{first=10, rest=list{first=20, rest=nil}}
+
+ function sum_list(l : list) : int =
+    if l=nil then
+        0
+    else
+        l.first + sum_list(l.rest)
+
+  /* BODY OF MAIN PROGRAM */
+ in
+    (
+     if sum_list(input) = 30 then
+        0
+     else
+        1
+    )
+end
+

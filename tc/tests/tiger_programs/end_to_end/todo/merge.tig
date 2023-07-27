@@ -23,11 +23,12 @@ let
    if l=nil then print("\n")
    else (printint(l.first); print(" "); printlist(l.rest))
 
-   var list1 := list{first=5, rest=list{first=3, rest=list{first=1, rest=nil}}}
-   var list2 := list{first=4, rest=list{first=2, rest=nil}}
+   var list1 := list{first=3, rest=list{first=2, rest=list{first=1, rest=nil}}}
+   var list2 := list{first=1, rest=list{first=4, rest=nil}}
 
   /* BODY OF MAIN PROGRAM */
  in
-    printlist(merge(list1,list2))
+   /* expect: [1, 3, 2, 1, 4]     merge(list1,list2) */
+   printlist(merge(list1, nil))
 end
 
