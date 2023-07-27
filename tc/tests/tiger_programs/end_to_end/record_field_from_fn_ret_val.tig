@@ -1,0 +1,40 @@
+let
+
+ type list = {first: int, rest: list}
+ var lst : list := nil
+
+ function make_list(i: int) : list =
+    if i <= 0 then
+        nil
+    else
+        list{first=i,rest=make_list(i-1)}
+
+ function printint(i: int) =
+  let function f(i:int) = if i>0
+	     then (f(i/10); print(chr(i-i/10*10+ord("0"))))
+   in if i<0 then (print("-"); f(-i))
+      else if i>0 then f(i)
+      else print("0")
+  end
+
+ function printlist(l: list) =
+   if l=nil then print("\n")
+   else (printint(l.first); print(" "); printlist(l.rest))
+
+ function lists_eq(l1: list, l2: list) : int =
+    if l1 = nil & l2 <> nil then
+        0
+    else if l2 = nil & l1 <> nil then
+        0
+    else if l1.first <> l2.first then
+        0
+    else
+        lists_eq(l1.rest, l2.rest)
+
+  /* BODY OF MAIN PROGRAM */
+ in
+    lst := make_list(100);
+    printlist(lst);
+    lists_eq(lst, lst)
+end
+
