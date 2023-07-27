@@ -53,7 +53,6 @@ pub struct TypeCheckingContext<'a> {
     input: &'a str,
     gen: &'a mut dyn Uuids,
     frags: Vec<frame::Frag>,
-    can_spill: bool, // whether register allocator can spill, affects how we handle callee save registers
 }
 
 macro_rules! top_level_fn {
@@ -73,7 +72,7 @@ macro_rules! top_level_fn {
 }
 
 impl<'a> TypeCheckingContext<'a> {
-    fn new<T: Frame + 'static>(input: &'a str, gen: &'a mut dyn Uuids, can_spill: bool) -> Self {
+    fn new<T: Frame + 'static>(input: &'a str, gen: &'a mut dyn Uuids) -> Self {
         let type_env = Self::base_env_type_env(gen);
         let varfun_env = TypeCheckingContext::base_varfun_env::<T>(gen);
         Self {
@@ -84,7 +83,6 @@ impl<'a> TypeCheckingContext<'a> {
             input,
             gen,
             frags: Vec::new(),
-            can_spill,
         }
     }
 
@@ -338,7 +336,7 @@ fn trans_exp<T: Frame + 'static>(
             debug_assert!(x.ends_with("\""));
             x = x.trim_start_matches("\"");
             x = x.trim_end_matches("\"");
-            if ! x.is_ascii() {
+            if !x.is_ascii() {
                 ctx.flag_error_with_msg(pos, "tiger only supports ascii strings");
                 return error_type_check_output();
             }
@@ -405,7 +403,6 @@ fn trans_exp<T: Frame + 'static>(
                         if ctx.has_error() {
                             error_type_check_output()
                         } else {
-
                             (
                                 translate::call_exp::<T>(
                                     label,
@@ -1166,7 +1163,6 @@ fn trans_dec<T: Frame + 'static>(
                                 fun_body_ir,
                                 &mut ctx.frags,
                                 ctx.gen,
-                                ctx.can_spill,
                             );
                         }
                     }
@@ -1403,9 +1399,8 @@ pub fn translate<T: Frame + 'static>(
     input: &str,
     ast: &mut Exp,
     gen: &mut dyn Uuids,
-    can_spill: bool,
 ) -> Result<Vec<frame::Frag>, ()> {
-    let mut ctx = TypeCheckingContext::new::<T>(input, gen, can_spill);
+    let mut ctx = TypeCheckingContext::new::<T>(input, gen);
 
     escape::find_escapes(&mut ctx, ast);
 
@@ -1429,7 +1424,6 @@ pub fn translate<T: Frame + 'static>(
                 tigermain_return_val_ir,
                 &mut ctx.frags,
                 ctx.gen,
-                can_spill,
             );
         }
     }
@@ -1521,7 +1515,7 @@ mod tests {
             temp::test_helpers::new_unnamed_temp(1)
         }
 
-        fn proc_entry_exit1(&mut self, x: IrStm, _: bool, _: &mut dyn Uuids) -> IrStm {
+        fn proc_entry_exit1(&mut self, x: IrStm, _: &mut dyn Uuids) -> IrStm {
             // just don't add stuff to the body for test purpose.
             x
         }
@@ -1534,7 +1528,7 @@ mod tests {
             &self,
             _: &Vec<crate::assem::Instr>,
             _: &mut dyn Uuids,
-            _: temp::Label
+            _: temp::Label,
         ) -> (frame::Prologue, frame::Epilogue) {
             unreachable!()
         }
@@ -1574,7 +1568,7 @@ mod tests {
         let mut gen: UuidsImpl = Uuids::new();
 
         let result = panic::catch_unwind(move || {
-            let res = super::translate::<TestFrame>(input, &mut ast, &mut gen, false);
+            let res = super::translate::<TestFrame>(input, &mut ast, &mut gen);
             match (is_good, res) {
                 (false, Ok(..)) => {
                     panic!(

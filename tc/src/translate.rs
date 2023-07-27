@@ -842,7 +842,6 @@ pub fn proc_entry_exit<T: Frame>(
     body: TrExp,
     frags: &mut Vec<frame::Frag>,
     gen: &mut dyn Uuids,
-    can_spill: bool,
 ) {
     match &*level.borrow() {
         Level::Top => panic!("impl bug, proc_entry_exit cannot be used on Top level"),
@@ -856,7 +855,7 @@ pub fn proc_entry_exit<T: Frame>(
             let augmented =
                 frame
                     .borrow_mut()
-                    .proc_entry_exit1(un_nx(body_with_return, gen), can_spill, gen);
+                    .proc_entry_exit1(un_nx(body_with_return, gen), gen);
 
             frags.push(frame::Frag::Proc {
                 body: augmented,
@@ -941,7 +940,7 @@ mod tests {
             g.named_temp(FP)
         }
 
-        fn proc_entry_exit1(&mut self, _: IrStm, _: bool, _: &mut dyn Uuids) -> IrStm {
+        fn proc_entry_exit1(&mut self, _: IrStm, _: &mut dyn Uuids) -> IrStm {
             unreachable!()
         }
 

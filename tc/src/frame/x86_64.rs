@@ -151,9 +151,8 @@ impl Frame for x86_64_Frame {
         gen.named_temp(RAX)
     }
 
-    fn proc_entry_exit1(&mut self, body: IrStm, can_spill: bool, gen: &mut dyn Uuids) -> IrStm {
+    fn proc_entry_exit1(&mut self, body: IrStm, gen: &mut dyn Uuids) -> IrStm {
         let mut moves = Vec::new();
-        // TODO remove the can_spill flag completely.
         // trivial register allocation = spill everything.
         // once graph coloring is implemented, that will also spill when needed.
         // hence, don't need to handle the non-spill case described in Appel

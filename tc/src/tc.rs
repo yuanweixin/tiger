@@ -220,14 +220,10 @@ fn run_on_file(opts: &dyn CompilerOptions) -> Result<util::ReturnCode, Box<dyn E
 
     let mut gen: UuidsImpl = Uuids::new();
 
-    // TODO later this is false iff we -O0, or we -O<some non-register alloc> and never enable register allocation
-    let can_spill = false;
-
     let frags = semant::translate::<x86_64_Frame>(
         input.as_ref().unwrap(),
         &mut ast_opt.unwrap().unwrap(),
         &mut gen,
-        can_spill,
     );
 
     if frags.is_err() {
