@@ -12,8 +12,8 @@ use crate::{
     temp::Uuids,
 };
 
-use std::collections::{HashMap, VecDeque};
 use core::slice::Iter;
+use std::collections::{HashMap, VecDeque};
 
 #[inline]
 fn nop(nop_marker_label: temp::Label) -> IrStm {
@@ -294,7 +294,6 @@ impl Block {
     }
 }
 
-#[cfg(debug_assertions)]
 fn validate_block(this_block: &Block) {
     debug_assert!(this_block.len() > 0);
     debug_assert!(matches!(this_block.stmts[0], Label(..)));
@@ -356,9 +355,10 @@ pub fn basic_blocks(
                 IrStm::Jump(..) | IrStm::Cjump(..) => {
                     // clean end of block
                     this_block.push(iter.next().unwrap());
-                    if cfg!(debug_assertions) {
-                        validate_block(&this_block);
-                    }
+
+                    #[cfg(debug_assertions)]
+                    validate_block(&this_block);
+
                     blist.insert(this_block.label(), this_block);
                     this_block = Block::new();
                     break;
@@ -366,9 +366,10 @@ pub fn basic_blocks(
                 Label(l) => {
                     // need to make up a jump to the label of the next block
                     this_block.push(Jump(Name(*l), vec![*l]));
-                    if cfg!(debug_assertions) {
-                        validate_block(&this_block);
-                    }
+
+                    #[cfg(debug_assertions)]
+                    validate_block(&this_block);
+
                     blist.insert(this_block.label(), this_block);
                     this_block = Block::new();
                     break;
@@ -385,16 +386,21 @@ pub fn basic_blocks(
         // did we run out of stmts before encountering Jump or Cjump? If so add a end label.
         if this_block.len() > 0 {
             this_block.push(Jump(Name(done_label), vec![done_label]));
-            if cfg!(debug_assertions) {
-                validate_block(&this_block);
-            }
+
+            #[cfg(debug_assertions)]
+            validate_block(&this_block);
+
             blist.insert(this_block.label(), this_block);
             this_block = Block::new(); // need this to satisfy borrow checker.
 
             debug_assert!(iter.len() == 0); // sanity check
         }
     }
-    (blist, StartLabel(start_label.unwrap()), DoneLabel(done_label))
+    (
+        blist,
+        StartLabel(start_label.unwrap()),
+        DoneLabel(done_label),
+    )
 }
 
 fn invert_cjump(

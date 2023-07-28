@@ -136,7 +136,7 @@ impl<'a> TypeCheckingContext<'a> {
     fn flag_error_with_msg(&mut self, pos: &LineCol, msg: &str) {
         self.has_err = true;
         println!(
-            "line:{} col:{} {}",
+            "line:{},col:{} error: {}",
             pos.start_line(),
             pos.start_column(),
             msg

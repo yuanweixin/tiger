@@ -1,3 +1,9 @@
+# About
+
+Implementation of the tiger language described in "modern compiler implementation in ML", using rust.
+
+Currently x86_64 programs can be generated. However there are no optimizations applied. Trivial register allocation is used to color registers, resulting in very bloated and inefficient assembly where every instruction reads and writes to memory.
+
 # Progress
 - [x] 2 Lexical analysis
 - [x] 3 Parsing
@@ -20,9 +26,9 @@
     x current tests will just be run with cargo test, because i am not gonna write out a bunch of rust_library targets for no reason
 [done][0.5 day] fix up the use and deps in the generated Instr objects for register allocation use. (no time spent as this should not work for trivial register allocation if we forgot to specify a source. at any rate, can revisit when implementing register allocation)
 [done][0.25 days 7/26] get all the e2e tests to work (not merge.tig or queens.tig as those are the big ones)
-[2 day 7/27, 7/28] get merge.tig and queens.tig to work
-[0.5 day] constant folding, and have it respect flags.
+[done][2 day 7/27, 7/28] get merge.tig and queens.tig to work
 [1 day] implement non-trivial instruction selection, ensure e2e tests continue to pass
+[0.5 day] constant folding, and have it respect flags.
 [1 day] break from touching any code.
 [2-3 days] understand liveness
 [2-3 days] implement liveness.
@@ -31,47 +37,21 @@
 [1+1 days] plug in register allocation.
 [0.5 day] fix up the compiler options.
 
+# Build
+```
+cargo build --release
+```
 
-# Task list
-Use a standard error format <line>:<column> error:<description>
+# How to run tests
 
---irgen dump the ir into a file
-
-build irrun to interpret the ir, should be good for debugging.
-
---irrun run and interpret the ir using the irrun subprogram.
-
-bring in the runtime lib.
-
---target <linux|windows|macos>, only linux be supported.
-
---report-opts output the list of optimizations supported by compiler.
-
---optir <phase> : output the ir of <phase>. phase minimally supports [begin|final]. in file_<phase>.ir, where `file` is name of the input file.
-
---optcfg TODO
-
--d <path> where to place generated assembly files.
-
--O<opt>: enable optimization <opt>. option can be repeated. if this is specified then other optimizations are off.
-
-    <opt> can be:
-    – cf: Constant folding
-    – reg: Register allocation
-    – mc: Move coalescing (and register allocation)
-    – cse: Common subexpression elimination
-    – alg: Algebraic optimizations (identities and reassociation)
-    – copy: Copy propagation
-    – dce: Dead code elimination
-    – inl: Inlining
-    – sr: Strength reduction
-    – lu: Loop unrolling
-    – licm: Loop-invariant code motion
-    – pre: Partial redundancy elimination
-    – cp: Constant propagation
-    – vn: Local value numbering
-    – sa: Stack-allocate non-escaping records and arrays
-
+## end to end tests
+```
+bazel test //tc::e2e_test
+```
+## unit tests
+```
+cargo test
+```
 # Other topics
 - [ ] Dataflow analysis
 - [ ] Loop optimization
