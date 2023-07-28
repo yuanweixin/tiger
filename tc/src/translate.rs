@@ -388,7 +388,7 @@ pub fn int_exp(i: TigerInt) -> TrExp {
 pub fn string_exp<T: Frame>(s: &str, gen: &mut dyn Uuids, frags: &mut Vec<frame::Frag>) -> TrExp {
     let mut is_new = false;
     let string_label = frags
-    .iter()
+        .iter()
         .find(|frag| match frag {
             frame::Frag::String(_, sss) => sss.as_str() == s,
             _ => false,
@@ -493,16 +493,15 @@ pub fn array_exp<T: Frame>(size_ir: TrExp, init_val_ir: TrExp, gen: &mut dyn Uui
         make_seq(vec![
             Move(
                 size_temp.clone(),
-                Binop(Plus, Const(1), un_ex(size_ir, gen)),
-            ), // very important, size should only be evaluated ONCE
+                un_ex(size_ir, gen), // evaluate size_ir once.
+            ),
             Move(
                 array_temp.clone(),
                 T::external_call(
                     gen.named_label("initArray"),
-                    vec![size_temp.clone(), un_ex(init_val_ir, gen)],
+                    vec![size_temp, un_ex(init_val_ir, gen)],
                 ),
             ),
-            Move(Mem(array_temp.clone()), size_temp),
         ]),
         array_temp,
     );
@@ -798,11 +797,7 @@ pub fn subscript_var<T: Frame>(lhs_ir: TrExp, idx_ir: TrExp, gen: &mut dyn Uuids
         make_seq(vec![
             Move(
                 idx_temp.clone(),
-                Binop(
-                    Plus,
-                    Const(T::word_size() as i32),
-                    Binop(Mul, un_ex(idx_ir, gen), Const(T::word_size() as i32)),
-                ),
+                un_ex(idx_ir, gen), // evaluate the idx once.
             ),
             Move(lhs_temp.clone(), un_ex(lhs_ir, gen)),
             // if index < 0, it's bad
@@ -817,9 +812,15 @@ pub fn subscript_var<T: Frame>(lhs_ir: TrExp, idx_ir: TrExp, gen: &mut dyn Uuids
             )),
             Label(access),
         ]),
-        // toy language assumes every array element is int sized.
-        // no need to track element size or alignment adjustments!
-        Mem(Binop(Plus, lhs_temp, idx_temp)),
+        Mem(Binop(
+            Plus,
+            lhs_temp,
+            Binop(
+                Plus,
+                Const(T::word_size() as i32), // offset the size which is stored as first word.
+                Binop(Mul, idx_temp, Const(T::word_size() as i32)),
+            ),
+        )),
     ))
 }
 
@@ -852,10 +853,9 @@ pub fn proc_entry_exit<T: Frame>(
             } else {
                 body
             };
-            let augmented =
-                frame
-                    .borrow_mut()
-                    .proc_entry_exit1(un_nx(body_with_return, gen), gen);
+            let augmented = frame
+                .borrow_mut()
+                .proc_entry_exit1(un_nx(body_with_return, gen), gen);
 
             frags.push(frame::Frag::Proc {
                 body: augmented,
@@ -952,7 +952,7 @@ mod tests {
             &self,
             _: &Vec<crate::assem::Instr>,
             _: &mut dyn Uuids,
-            _: temp::Label
+            _: temp::Label,
         ) -> (frame::Prologue, frame::Epilogue) {
             unreachable!()
         }

@@ -27,7 +27,7 @@ initArray(size_t size, int64_t init)
         exit(-1);
     }
     int64_t *a = (int64_t *)malloc(size * sizeof(int64_t) + sizeof(int64_t));
-    for (i = 0; i < size; i++)
+    for (i = 1; i <= size; i++)
         a[i] = init;
     a[0] = size;
     return a;

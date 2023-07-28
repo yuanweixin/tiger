@@ -1,0 +1,46 @@
+/* A program to solve the 8-queens problem */
+
+let
+    var N := 8
+    type intArray = array of int
+
+    function printint(i: int) =
+    let function f(i:int) = if i>0
+            then (f(i/10); print(chr(i-i/10*10+ord("0"))))
+    in if i<0 then (print("-"); f(-i))
+        else if i>0 then f(i)
+        else print("0")
+    end
+
+    function new_array() : intArray =
+        intArray[ N ] of 42
+
+    function update_array(arr: intArray) =
+        for i := 0 to N-1 do
+            arr[i] := i + 1
+
+    function sum_array(arr: intArray) : int =
+        let
+            var res := 0
+        in
+            (for i := 0 to N-1 do
+                res := res + i
+            ;
+            res)
+        end
+
+    function print_array(arr: intArray) =
+        (print("[");
+        for i := 0 to N-1 do
+            (printint(arr[i]);
+             print(",")
+            );
+        print("]")
+        )
+in
+    let
+        var arr := new_array()
+    in
+        (print_array(arr))
+    end
+end
