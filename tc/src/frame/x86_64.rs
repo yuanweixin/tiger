@@ -122,7 +122,7 @@ impl Frame for x86_64_Frame {
         };
         assert!(s.is_ascii(), "tiger only supports ascii strings");
         format!(
-            ".L{}:\n\t.long {}\n\t.string \"{}\"",
+            ".L{}:\n\t.quad {}\n\t.string \"{}\"",
             id,
             s.chars().count(),
             s
