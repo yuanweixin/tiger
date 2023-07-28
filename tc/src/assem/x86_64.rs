@@ -170,6 +170,19 @@ impl Codegen for X86Asm {
                     arg_regs.push(Self::munch_exp(arg_exp, result, gen));
                 }
 
+                let mut caller_save_temps = Vec::new();
+                for reg_name in frame::x86_64::CALLER_SAVES {
+                    // will move to temporaries; it will spill in trivial register allocation, and
+                    // hope that the actual register allocator will coalesce.
+                    let t = gen.new_unnamed_temp();
+                    caller_save_temps.push(t);
+                    result.push(Instr::Move {
+                        assem: "mov %'S, %'D",
+                        dst: t,
+                        src: gen.named_temp(reg_name),
+                    });
+                }
+
                 if num_args > 0 {
                     let mut i = arg_regs.len() - 1;
                     // args after the 6th one go on stack.
@@ -183,7 +196,7 @@ impl Codegen for X86Asm {
                         i -= 1;
                     }
 
-                    // note about the use of rax, rdx as return value registers.
+                    // a note about the use of rax, rdx as return value registers.
                     // tiger lang only has reference types or plain int types, so only need to implement the m=1 case.
                     // let m = number of return values.
                     // for m=1, rax holds return value.
@@ -223,13 +236,22 @@ impl Codegen for X86Asm {
                     jump: vec![],
                 });
 
+                // restore caller save registers.
+                for (reg_name, t) in frame::x86_64::CALLER_SAVES.iter().zip(caller_save_temps) {
+                    result.push(Instr::Move {
+                        assem: "mov %'S, %'D",
+                        src: t,
+                        dst: gen.named_temp(reg_name),
+                    });
+                }
+
                 // don't think we'd ever get to a point where someone
                 // passes enough arguments to overflow an i32.
                 if max(0, num_args as i32 - 6) > 0 {
                     result.push(Instr::Oper {
-                        assem: format!("addq ${}, %rsp", x86_64::WORD_SIZE * (num_args - 6)),
-                        dst: Dst(vec![x86_64::named_register(gen, x86_64::RAX)]),
-                        src: Src::empty(),
+                        assem: format!("addq ${}, %'D0", x86_64::WORD_SIZE * (num_args - 6)),
+                        dst: Dst(vec![x86_64::named_register(gen, x86_64::RSP)]),
+                        src: Src(vec![x86_64::named_register(gen, x86_64::RSP)]),
                         jump: vec![],
                     });
                 }
@@ -334,7 +356,7 @@ pub mod trivial_reg {
     /// Ordering matters. RAX is listed last because it is used as return register.
     /// The Jump at the end of a basic block would require a register, so we don't want that to
     /// trample the RAX content.
-    const TRIVIAL_REGISTERS: [&str; 3] = [x86_64::RCX, x86_64::RDX, x86_64::RAX];
+    const TRIVIAL_REGISTERS: [&str; 3] = [x86_64::R10, x86_64::R11, x86_64::RAX];
 
     /// Performs register allocation for a single instruction.
     /// If a machine register is part of the `src` of an instruction (i.e. "use" set of the instruction)
@@ -368,6 +390,12 @@ pub mod trivial_reg {
         if matches!(input, Instr::Label { .. }) {
             output.push(input);
             return;
+        }
+
+        if cfg!(debug_assertions) {
+            for name in TRIVIAL_REGISTERS {
+                assert!(!frame::x86_64::ARG_REGS.contains(&name), "ARG_REGS and TRIVIAL_REGISTERS overlap, which could result in clobbering of args during trivial register allocation!");
+            }
         }
 
         // eliminate candidates that shows up in the source because they are the instruction's

@@ -61,9 +61,9 @@ pub const ARG_REGS: &[&str] = &[RDI, RSI, RDX, RCX, R8, R9];
 // implement special registers such as FP, SP.
 pub const SPECIAL_REGS: &[&str] = &[RSP, RBP];
 
-pub const CALLEE_SAVES: &[&str] = &[RBP, RSP, RBX, R12, R13, R14, R15];
+pub const CALLEE_SAVES: &[&str] = &[RBX, R12, R13, R14, R15];
 
-pub const CALLER_SAVES: &[&str] = &[RAX, RCX, RDX, RSI, RDI, R8, R9, R10, R11];
+pub const CALLER_SAVES: &[&str] = &[RAX, R10, R11];
 
 #[inline]
 pub fn named_register(gen: &mut dyn Uuids, name: &'static str) -> temp::Temp {
@@ -159,17 +159,18 @@ impl Frame for x86_64_Frame {
         // where you pessimistically move all callee-save + rv registers to frame.
         //
         // for the spill case, you just make a bunch of MOVE(fresh_temp, reg) for
-        // each reg in { callee_saves } + { rv's }. then hope it gets coalesced and
+        // each reg in { callee_saves } then hope it gets coalesced and
         // hence have no cost in the end.
 
         // move callee save registers and the return address registers.
-        let mut temporaries = Vec::with_capacity(CALLEE_SAVES.len() + 1);
+        let mut temporaries = Vec::with_capacity(CALLEE_SAVES.len());
         for name in CALLEE_SAVES.iter() {
             let t = gen.new_unnamed_temp();
             temporaries.push(t);
             let named_r = gen.named_temp(name);
             moves.push(Move(IrExp::Temp(t), IrExp::Temp(named_r)));
         }
+
         if let Some(ref formals_move) = self.formals_move {
             moves.push(formals_move.clone());
         }
@@ -211,7 +212,8 @@ impl Frame for x86_64_Frame {
                 function_name,
                 self.num_locals * WORD_SIZE,
                 match start_label {
-                    temp::Label::Named(..) => panic!("impl bug"),
+                    lab @ temp::Label::Named(..) =>
+                        panic!("impl bug, got named label {}", lab.resolve_named_label(gen)),
                     temp::Label::Unnamed(id) => id,
                 }
             )
@@ -273,10 +275,6 @@ impl Frame for x86_64_Frame {
         let mut moves = Vec::new();
         if formals.len() > 0 {
             let name_str = name.resolve_named_label(gen);
-            // this is for debug purpose.
-            moves.push(IrStm::Label(
-                gen.named_label(format!("_{}_move_arguments", name_str).as_str()),
-            ));
         }
         for (i, f) in formals.iter().enumerate() {
             if i < ARG_REGS.len() {
