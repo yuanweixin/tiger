@@ -30,7 +30,7 @@ use crate::{
 lrlex_mod!("tiger.l");
 lrpar_mod!("tiger.y");
 
-pub const DEBUG_END_TO_END: bool = false;
+pub const DEBUG_END_TO_END: bool = true;
 struct OptOpt {
     opt_name: &'static str,
     desc: &'static str,
@@ -41,10 +41,42 @@ trait CompilerOptions {
     fn constant_folding_enabled(&self) -> bool;
     fn register_allocation_enabled(&self) -> bool;
     fn report_opts(&self) -> bool;
+    fn dump_ir_raw(&self) -> bool;
+    fn dump_ir_linearized(&self) -> bool;
+    fn dump_ir_blocklist(&self) -> bool;
+    fn dump_ir_trace(&self) -> bool;
+    fn dump_codegen(&self) -> bool;
     fn file(&self) -> Option<&String>;
 }
 
 impl CompilerOptions for ArgMatches {
+    fn dump_ir_linearized(&self) -> bool {
+        self.get_one::<String>("dumpir")
+            .map(|x| x == "linearized")
+            .unwrap_or(false)
+    }
+
+    fn dump_ir_blocklist(&self) -> bool {
+        self.get_one::<String>("dumpir")
+            .map(|x: &String| x == "block")
+            .unwrap_or(false)
+    }
+    fn dump_ir_trace(&self) -> bool {
+        self.get_one::<String>("dumpir")
+            .map(|x: &String| x == "trace")
+            .unwrap_or(false)
+    }
+
+    fn dump_ir_raw(&self) -> bool {
+        self.get_one::<String>("dumpir")
+            .map(|x: &String| x == "raw")
+            .unwrap_or(false)
+    }
+
+    fn dump_codegen(&self) -> bool {
+        self.get_one("dumpcodegen").map(|x| *x).unwrap_or(false)
+    }
+
     // todo get the rest of them
     fn optimizations_disabled(&self) -> bool {
         return true;
@@ -191,6 +223,14 @@ fn opt_opts() -> HashMap<&'static str, OptOpt> {
     res
 }
 
+
+fn dump_temp_map(gen: &UuidsImpl, tm: &temp::TempMap) {
+    println!("named temp map {:?}", tm);
+    for nl in gen.named_labels.iter() {
+        println!("label: {:?} -> {}", nl, nl.resolve_named_label(gen));
+    }
+}
+
 fn run_on_file(opts: &dyn CompilerOptions) -> Result<util::ReturnCode, Box<dyn Error>> {
     let fpath = opts.file();
     if let None = fpath {
@@ -232,28 +272,26 @@ fn run_on_file(opts: &dyn CompilerOptions) -> Result<util::ReturnCode, Box<dyn E
     }
 
     let tm = gen.to_temp_map(x86_64_Frame::registers());
-    if DEBUG_END_TO_END {
-        println!("named temp map {:?}", tm);
-        for nl in gen.named_labels.iter() {
-            println!("label: {:?} -> {}", nl, nl.resolve_named_label(&gen));
-        }
-    }
     let mut xxx = Vec::new();
     let output_path = PathBuf::from(opts.file().unwrap()).with_extension("s");
     let outf = File::create(output_path)?;
     let mut bout = BufWriter::new(outf);
 
+    // just dump the temp map once!
+    if opts.dump_codegen() || opts.dump_ir_blocklist() || opts.dump_ir_linearized() || opts.dump_ir_raw() || opts.dump_ir_trace() {
+        dump_temp_map(&gen, &tm);
+    }
+
     for frag in frags.unwrap().into_iter() {
         match frag {
             frame::Frag::String(label, s) => {
-                // TODO this has to be output to the final asm.
-                if DEBUG_END_TO_END {
+                if opts.dump_codegen() {
                     println!("{}", x86_64_Frame::string(label, s.as_str()));
                 }
                 writeln!(bout, "{}", x86_64_Frame::string(label, s.as_str()))?;
             }
             frame::Frag::Proc { body, frame } => {
-                if DEBUG_END_TO_END {
+                if opts.dump_ir_raw() {
                     println!(
                         "\n### function {} IR BEGIN###{:#?}\n### IR END ###",
                         frame.borrow().name().resolve_named_label(&gen),
@@ -262,7 +300,7 @@ fn run_on_file(opts: &dyn CompilerOptions) -> Result<util::ReturnCode, Box<dyn E
                 }
                 let mut assems = Vec::new();
                 let linearized = canon::linearize(body, &mut gen);
-                if DEBUG_END_TO_END {
+                if opts.dump_ir_linearized() {
                     println!(
                         "\n### function {} linearized BEGIN###{:#?}\n### linearized END ###",
                         frame.borrow().name().resolve_named_label(&gen),
@@ -270,7 +308,7 @@ fn run_on_file(opts: &dyn CompilerOptions) -> Result<util::ReturnCode, Box<dyn E
                     );
                 }
                 let (blist, start_label, done_label) = canon::basic_blocks(linearized, &mut gen);
-                if DEBUG_END_TO_END {
+                if opts.dump_ir_blocklist() {
                     println!(
                         "\n### function {} blist BEGIN###{:#?}\n### blist END ###",
                         frame.borrow().name().resolve_named_label(&gen),
@@ -279,7 +317,7 @@ fn run_on_file(opts: &dyn CompilerOptions) -> Result<util::ReturnCode, Box<dyn E
                 }
 
                 let trace = canon::trace_schedule(blist, done_label.0, &mut gen);
-                if DEBUG_END_TO_END {
+                if opts.dump_ir_trace() {
                     println!(
                         "\n### function {} trace BEGIN###{:#?}\n### trace END ###",
                         frame.borrow().name().resolve_named_label(&gen),
@@ -292,7 +330,7 @@ fn run_on_file(opts: &dyn CompilerOptions) -> Result<util::ReturnCode, Box<dyn E
                 // for sanity and ease of debugging by printing out the strings.
                 let mut temp_offset = trivial_reg::TempOffset::new();
                 for stm in trace.into_iter() {
-                    if DEBUG_END_TO_END {
+                    if opts.dump_codegen() {
                         println!("\n!!{:?}", stm);
                     }
                     // IrStm -> Vec<InStr>
@@ -307,7 +345,7 @@ fn run_on_file(opts: &dyn CompilerOptions) -> Result<util::ReturnCode, Box<dyn E
                     // This maps each Instr to 1 or more InStr.
                     if !opts.register_allocation_enabled() {
                         for instr in trivial_reg_alloc_input {
-                            if DEBUG_END_TO_END {
+                            if opts.dump_codegen() {
                                 println!("#!{}", instr.format(&tm, true, &mut gen));
                             }
                             // this extra temporary is used to aid debugging.
@@ -321,7 +359,7 @@ fn run_on_file(opts: &dyn CompilerOptions) -> Result<util::ReturnCode, Box<dyn E
                                 &mut temp_offset,
                             );
                             for ins in generated {
-                                if DEBUG_END_TO_END {
+                                if opts.dump_codegen() {
                                     println!("{}", ins.format(&tm, true, &mut gen));
                                 }
                                 assems.push(ins);
@@ -334,7 +372,10 @@ fn run_on_file(opts: &dyn CompilerOptions) -> Result<util::ReturnCode, Box<dyn E
 
                 let s = String::from(frame.borrow().name().resolve_named_label(&gen));
                 frame.borrow().proc_entry_exit2(&mut assems, &mut gen);
-                let (prologue, epilogue) = frame.borrow().proc_entry_exit3(&assems, &mut gen, start_label.0);
+                let (prologue, epilogue) =
+                    frame
+                        .borrow()
+                        .proc_entry_exit3(&assems, &mut gen, start_label.0);
                 xxx.push((prologue, epilogue, assems, s));
             }
         };
@@ -362,13 +403,12 @@ fn run_on_file(opts: &dyn CompilerOptions) -> Result<util::ReturnCode, Box<dyn E
 
     Result::Ok(util::ReturnCode::Ok)
 }
-
 fn main() -> Result<(), Box<dyn Error>> {
     let matches = command!()
         .arg(Arg::new("file"))
-        .arg(arg!(--irgen "dump the ir, after constant folding (if enabled), to file named <basename>.ir").required(false))
         .arg(arg!(--"report-opts" "output the list of optimizations supported by compiler"))
-        .arg(arg!(--optir <phase> "output the ir after <phase>, where <phase> can be initial|final"))
+        .arg(arg!(--dumpir <phase> "output the ir after <phase>, where <phase> can be raw|linearized|block|trace"))
+        .arg(arg!(--dumpcodegen "output the chunks of asm generated along with the ir they correspond to, useful for debugging the codegen phase"))
         .arg(arg!(-O<opt> "enable optimization <opt>, can be specified multiple times. other optimizations are disabled unless enabled. <opt> is the list of optimizations output from --report-opts. -O0 means disable all optimizations.").action(ArgAction::Append))
         .get_matches();
 
@@ -415,6 +455,21 @@ mod tests {
     }
 
     impl<'a> CompilerOptions for TestOpts<'a> {
+        fn dump_codegen(&self) -> bool {
+            false
+        }
+        fn dump_ir_linearized(&self) -> bool {
+            false
+        }
+        fn dump_ir_blocklist(&self) -> bool {
+            false
+        }
+        fn dump_ir_trace(&self) -> bool {
+            false
+        }
+        fn dump_ir_raw(&self) -> bool {
+            false
+        }
         fn optimizations_disabled(&self) -> bool {
             self.optimizations_disabled
         }
