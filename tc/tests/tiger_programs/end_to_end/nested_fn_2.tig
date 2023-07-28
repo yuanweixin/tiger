@@ -1,0 +1,12 @@
+let
+    function f(i: int) : int =
+       if i <= 0 then
+         0
+       else
+         i + f(i-1)
+in
+    if f(10) = 55 then
+        0
+    else
+        1
+end
