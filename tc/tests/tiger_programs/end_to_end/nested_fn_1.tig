@@ -1,0 +1,26 @@
+let
+    /* call parent deep inside it */
+    function f(i: int) : int =
+        let
+            function ff() : int =
+                let
+                    function fff() : int =
+                        (print("fff\n");
+                        1 + f(0))
+                in
+                    (print("ff\n");
+                    2 + fff())
+                end
+        in
+            if i <> 0 then
+                ff()
+            else
+                (print("f\n");
+                 3)
+        end
+in
+    if f(1) = 6 then
+        0
+    else
+        1
+end
