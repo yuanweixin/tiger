@@ -29,6 +29,6 @@ let
   /* BODY OF MAIN PROGRAM */
  in
    /* expect: [1, 3, 2, 1, 4]     merge(list1,list2) */
-   printlist(merge(list1, nil))
+   printlist(merge(list1, list2))
 end
 
