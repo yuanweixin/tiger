@@ -296,11 +296,10 @@ fn run_on_file(opts: &dyn CompilerOptions) -> Result<util::ReturnCode, Box<dyn E
             }
             frame::Frag::Proc { body, frame } => {
                 if opts.dump_ir_raw() {
-                    // TODO this needs some newlines.
                     println!(
                         "\n### function {} IR BEGIN###{}\n### IR END ###",
                         frame.borrow().name().resolve_named_label(&gen),
-                        body.debug_to_string(&tm, &gen)
+                        body.debug_to_string(&tm, &gen, true)
                     );
                 }
                 let mut assems = Vec::new();
@@ -311,7 +310,7 @@ fn run_on_file(opts: &dyn CompilerOptions) -> Result<util::ReturnCode, Box<dyn E
                         frame.borrow().name().resolve_named_label(&gen),
                         linearized
                             .iter()
-                            .map(|stm| stm.debug_to_string(&tm, &gen))
+                            .map(|stm| stm.debug_to_string(&tm, &gen, false))
                             .collect::<Vec<_>>()
                     );
                 }
@@ -323,7 +322,7 @@ fn run_on_file(opts: &dyn CompilerOptions) -> Result<util::ReturnCode, Box<dyn E
                             (
                                 k.debug_to_string(&gen),
                                 v.iter()
-                                    .map(|stm| stm.debug_to_string(&tm, &gen))
+                                    .map(|stm| stm.debug_to_string(&tm, &gen, false))
                                     .collect::<Vec<_>>(),
                             )
                         })
@@ -342,7 +341,7 @@ fn run_on_file(opts: &dyn CompilerOptions) -> Result<util::ReturnCode, Box<dyn E
                         frame.borrow().name().resolve_named_label(&gen),
                         trace
                             .iter()
-                            .map(|stm| stm.debug_to_string(&tm, &gen))
+                            .map(|stm| stm.debug_to_string(&tm, &gen, false))
                             .collect::<Vec<_>>()
                     );
                 }
@@ -353,7 +352,7 @@ fn run_on_file(opts: &dyn CompilerOptions) -> Result<util::ReturnCode, Box<dyn E
                 let mut temp_offset = trivial_reg::TempOffset::new();
                 for stm in trace.into_iter() {
                     if opts.dump_codegen() {
-                        println!("\n!!{:?}", stm.debug_to_string(&tm, &gen));
+                        println!("\n!!{:?}", stm.debug_to_string(&tm, &gen, false));
                     }
 
                     // IrStm -> Vec<InStr>

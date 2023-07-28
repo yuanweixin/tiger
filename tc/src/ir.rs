@@ -24,9 +24,15 @@ pub enum IrStm {
 }
 
 impl IrExp {
-    pub fn debug_to_string(&self, tm: &TempMap, gen: &dyn Uuids) -> String {
-        match self {
-            IrExp::Null => String::from("Null"),
+    fn debug_to_string_helper(
+        &self,
+        tm: &TempMap,
+        gen: &dyn Uuids,
+        pretty: bool,
+        indent: usize,
+    ) -> String {
+        let base_str = match self {
+            IrExp::Null => return String::from("Null"),
             IrExp::Const(i) => format!("{}", i),
             IrExp::Name(l) => format!("{}", l.debug_to_string(gen)),
             IrExp::Temp(t) => format!("{}", t.debug_to_string(tm)),
@@ -34,54 +40,109 @@ impl IrExp {
                 format!(
                     "Binop({:?}, {}, {})",
                     b,
-                    e1.debug_to_string(tm, gen),
-                    e2.debug_to_string(tm, gen)
+                    e1.debug_to_string_helper(tm, gen, pretty, indent + 1),
+                    e2.debug_to_string_helper(tm, gen, pretty, indent + 1)
                 )
             }
-            IrExp::Mem(e) => format!("Mem({})", e.debug_to_string(tm, gen)),
-            IrExp::Call(e, args) => format!(
-                "Call({}, {:?})",
-                e.debug_to_string(tm, gen),
-                args.iter()
-                    .map(|arg| arg.debug_to_string(tm, gen))
-                    .collect::<Vec<_>>()
+            IrExp::Mem(e) => format!(
+                "Mem({})",
+                e.debug_to_string_helper(tm, gen, pretty, indent + 1)
             ),
+            IrExp::Call(e, args) => {
+                let mut buf = String::new();
+                buf.push_str(
+                    format!(
+                        "Call({}, [",
+                        e.debug_to_string_helper(tm, gen, pretty, indent + 1)
+                    )
+                    .as_str(),
+                );
+                for arg in args {
+                    buf.push_str(
+                        &arg.debug_to_string_helper(tm, gen, pretty, indent + 1)
+                            .as_str(),
+                    );
+                }
+                buf.push_str(format!("\n{}])", "  ".repeat(indent)).as_str());
+                buf
+            }
             IrExp::Eseq(s, e) => format!(
                 "Eseq({}, {})",
-                s.debug_to_string(tm, gen),
-                e.debug_to_string(tm, gen)
+                s.debug_to_string_helper(tm, gen, pretty, indent + 1),
+                e.debug_to_string_helper(tm, gen, pretty, indent + 1)
             ),
+        };
+        if pretty {
+            let newline_tab = if pretty {
+                format!("\n{}", "  ".repeat(indent))
+            } else {
+                String::new()
+            };
+            format!("{}{}", newline_tab, base_str)
+        } else {
+            base_str
         }
+    }
+
+    pub fn debug_to_string(&self, tm: &TempMap, gen: &dyn Uuids, pretty: bool) -> String {
+        self.debug_to_string_helper(tm, gen, pretty, 0)
     }
 }
 
 impl IrStm {
-    pub fn debug_to_string(&self, tm: &TempMap, gen: &dyn Uuids) -> String {
-        match self {
+    fn debug_to_string_helper(
+        &self,
+        tm: &TempMap,
+        gen: &dyn Uuids,
+        pretty: bool,
+        indent: usize,
+    ) -> String {
+        let base_str = match self {
             IrStm::Move(a, b) => {
-                format!("Move({}, {})", a.debug_to_string(tm, gen), b.debug_to_string(tm, gen))
+                format!(
+                    "Move({}, {})",
+                    a.debug_to_string_helper(tm, gen, pretty, indent + 1),
+                    b.debug_to_string_helper(tm, gen, pretty, indent + 1)
+                )
             }
-            IrStm::Exp(a) => format!("Exp({})", a.debug_to_string(tm, gen)),
+            IrStm::Exp(a) => format!(
+                "Exp({})",
+                a.debug_to_string_helper(tm, gen, pretty, indent + 1)
+            ),
             IrStm::Jump(a, l) => format!(
                 "Jump({}, {:?})",
-                a.debug_to_string(tm, gen),
+                a.debug_to_string_helper(tm, gen, pretty, indent + 1),
                 l.iter().map(|l| l.debug_to_string(gen)).collect::<Vec<_>>()
             ),
             IrStm::Cjump(r, a, b, t, f) => format!(
                 "Cjump({:?}, {}, {}, {:?}, {:?})",
                 r,
-                a.debug_to_string(tm, gen),
-                b.debug_to_string(tm, gen),
+                a.debug_to_string_helper(tm, gen, pretty, indent + 1),
+                b.debug_to_string_helper(tm, gen, pretty, indent + 1),
                 t.debug_to_string(gen),
                 f.debug_to_string(gen)
             ),
             IrStm::Seq(a, b) => format!(
                 "Seq({}, {})",
-                a.debug_to_string(tm, gen),
-                b.debug_to_string(tm, gen)
+                a.debug_to_string_helper(tm, gen, pretty, indent + 1),
+                b.debug_to_string_helper(tm, gen, pretty, indent + 1)
             ),
-            IrStm::Label(l) => format!("{}", l.debug_to_string(gen)),
+            IrStm::Label(l) => return format!("{}", l.debug_to_string(gen)),
+        };
+        if pretty {
+            let newline_tab = if pretty {
+                format!("\n{}", "  ".repeat(indent))
+            } else {
+                String::new()
+            };
+            format!("{}{}", newline_tab, base_str)
+        } else {
+            base_str
         }
+    }
+
+    pub fn debug_to_string(&self, tm: &TempMap, gen: &dyn Uuids, pretty: bool) -> String {
+        self.debug_to_string_helper(tm, gen, pretty, 0)
     }
 }
 
