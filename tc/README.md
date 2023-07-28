@@ -20,7 +20,8 @@
     x current tests will just be run with cargo test, because i am not gonna write out a bunch of rust_library targets for no reason
 [done][0.5 day] fix up the use and deps in the generated Instr objects for register allocation use. (no time spent as this should not work for trivial register allocation if we forgot to specify a source. at any rate, can revisit when implementing register allocation)
 [done][0.25 days 7/26] get all the e2e tests to work (not merge.tig or queens.tig as those are the big ones)
-[1-2 day] get merge.tig and queens.tig to work
+[2 day 7/27, 7/28] get merge.tig and queens.tig to work
+[0.5 day] constant folding, and have it respect flags.
 [1 day] implement non-trivial instruction selection, ensure e2e tests continue to pass
 [1 day] break from touching any code.
 [2-3 days] understand liveness

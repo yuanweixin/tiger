@@ -589,25 +589,25 @@ mod tests {
 
     impl Uuids for UuidForTest {
         fn to_temp_map(&mut self, _: &[&'static str]) -> temp::TempMap {
-            todo!()
+            unreachable!()
         }
 
         fn new() -> Self {
-            panic!();
+            unreachable!();
         }
 
         fn named_temp(&mut self, _: &str) -> temp::Temp {
-            panic!();
+            unreachable!();
         }
 
         #[inline]
         fn resolve(&self, _: &Symbol) -> Option<&str> {
-            panic!();
+            unreachable!();
         }
 
         #[inline]
         fn intern(&mut self, _: &str) -> Symbol {
-            panic!();
+            unreachable!();
         }
 
         fn new_unnamed_temp(&mut self) -> temp::Temp {
@@ -631,7 +631,7 @@ mod tests {
         }
 
         fn named_label(&mut self, _: &str) -> Label {
-            panic!();
+            unreachable!();
         }
     }
 
