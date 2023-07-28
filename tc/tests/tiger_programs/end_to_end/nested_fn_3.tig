@@ -1,0 +1,21 @@
+let
+    function f(i: int) : int =
+       if i <= 0 then
+         0
+       else
+         i + f(i-1)
+
+    function g() : int =
+      let
+        function gg() : int =
+          (print("gg\n");
+          f(10))
+      in
+        gg()
+      end
+in
+    if g() = 55 then
+        0
+    else
+        1
+end
