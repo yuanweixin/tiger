@@ -62,6 +62,7 @@ impl IrExp {
                         &arg.debug_to_string_helper(tm, gen, pretty, indent + 1)
                             .as_str(),
                     );
+                    buf.push_str(",");
                 }
                 buf.push_str(format!("\n{}])", "  ".repeat(indent)).as_str());
                 buf
