@@ -1,7 +1,3 @@
-use core::num;
-
-use itertools::Itertools;
-
 use crate::{
     assem::{Dst, Instr, Src},
     frame::{Access, Escapes, Frame, Register},
@@ -75,10 +71,6 @@ pub fn callee_saves(gen: &mut dyn Uuids) -> Vec<temp::Temp> {
         .iter()
         .map(|name| gen.named_temp(name))
         .collect()
-}
-
-pub fn caller_saves(gen: &mut dyn Uuids) -> Vec<temp::Temp> {
-    CALLER_SAVES.iter().map(|reg| gen.named_temp(reg)).collect()
 }
 
 pub fn arg_regs(gen: &mut dyn Uuids) -> Vec<temp::Temp> {
@@ -238,7 +230,11 @@ impl Frame for x86_64_Frame {
     fn new(name: Label, formals_escapes: Vec<Escapes>, gen: &mut dyn Uuids) -> Self {
         let mut formals = Vec::with_capacity(formals_escapes.len());
         let mut num_locals = 0;
-        let mut positive_frame_offset = 0;
+
+        // note: we are using the call instruction, which will push rip onto the stack.
+        // since we also using rbp as frame pointer, upon entry we save it onto the stack.
+        // therefore the correct offset is 2 words.
+        let mut positive_frame_offset = 2*WORD_SIZE as i32;
         for (i, escape) in formals_escapes.iter().enumerate() {
             // this is where it interacts with the calling convention.
             // for system V, the first 6 args will go into registers.
@@ -273,9 +269,6 @@ impl Frame for x86_64_Frame {
         }
         // create the moves.
         let mut moves = Vec::new();
-        if formals.len() > 0 {
-            let name_str = name.resolve_named_label(gen);
-        }
         for (i, f) in formals.iter().enumerate() {
             if i < ARG_REGS.len() {
                 // these need to be moved from the arg register into whatever location

@@ -189,7 +189,7 @@ impl Codegen for X86Asm {
                     while i > 5 {
                         result.push(Instr::Oper {
                             assem: "push %'S0".into(),
-                            dst: Dst(vec![]),
+                            dst: Dst(vec![gen.named_temp(frame::x86_64::RSP)]),
                             src: Src(vec![arg_regs[i]]),
                             jump: vec![],
                         });

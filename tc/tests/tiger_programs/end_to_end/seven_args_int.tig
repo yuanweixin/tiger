@@ -1,0 +1,46 @@
+let
+    function printint(i: int) =
+        let function f(i:int) = if i>0
+                then (f(i/10); print(chr(i-i/10*10+ord("0"))))
+        in (if i<0 then (print("-"); f(-i))
+            else if i>0 then f(i)
+            else print("0");
+            print("\n"))
+        end
+
+    function seven(a:int, b:int, c:int, d:int, e:int, f:int, g:int) : int =
+        a+b+c+d+e+f+g
+
+    function six(a:int, b:int, c:int, d:int, e:int, f:int) : int =
+        a+b+c+d+e+f
+
+    function five(a:int, b:int, c:int, d:int, e:int) : int =
+        a+b+c+d+e
+
+    function four(a:int, b:int, c:int, d:int) : int =
+        a+b+c+d
+
+    function three(a:int, b:int, c:int) : int =
+        a+b+c
+
+    function two(a:int, b:int) : int =
+        a+b
+
+    function one(a:int) : int =
+        a
+in
+    (printint(one(1));
+    printint(two(1,2));
+    printint(three(1,2,3));
+    printint(four(1,2,3,4));
+    printint(five(1,2,3,4,5));
+    printint(six(1,2,3,4,5,6));
+    printint(seven(1,2,3,4,5,6,7));
+
+    if seven(1,2,3,4,5,6,7)=28 then
+        0
+    else
+        (printint(seven(1,2,3,4,5,6,7));
+        1)
+    )
+end
