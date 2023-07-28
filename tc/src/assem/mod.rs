@@ -136,11 +136,11 @@ impl Instr {
                 res.push_str(s)
             } else {
                 if relaxed {
-                    res.push_str(t.to_string().as_str())
+                    res.push_str(ToString::to_string(&t).as_str())
                 } else {
                     panic!(
                         "impl bug: unable to find a register assignment for temp {}",
-                        t.to_string()
+                        ToString::to_string(&t)
                     );
                 }
             }

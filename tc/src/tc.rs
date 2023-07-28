@@ -223,7 +223,6 @@ fn opt_opts() -> HashMap<&'static str, OptOpt> {
     res
 }
 
-
 fn dump_temp_map(gen: &UuidsImpl, tm: &temp::TempMap) {
     println!("named temp map {:?}", tm);
     for nl in gen.named_labels.iter() {
@@ -272,13 +271,18 @@ fn run_on_file(opts: &dyn CompilerOptions) -> Result<util::ReturnCode, Box<dyn E
     }
 
     let tm = gen.to_temp_map(x86_64_Frame::registers());
-    let mut xxx = Vec::new();
+    let mut prologue_epilogue_instrs_fn = Vec::new();
     let output_path = PathBuf::from(opts.file().unwrap()).with_extension("s");
     let outf = File::create(output_path)?;
     let mut bout = BufWriter::new(outf);
 
     // just dump the temp map once!
-    if opts.dump_codegen() || opts.dump_ir_blocklist() || opts.dump_ir_linearized() || opts.dump_ir_raw() || opts.dump_ir_trace() {
+    if opts.dump_codegen()
+        || opts.dump_ir_blocklist()
+        || opts.dump_ir_linearized()
+        || opts.dump_ir_raw()
+        || opts.dump_ir_trace()
+    {
         dump_temp_map(&gen, &tm);
     }
 
@@ -292,10 +296,11 @@ fn run_on_file(opts: &dyn CompilerOptions) -> Result<util::ReturnCode, Box<dyn E
             }
             frame::Frag::Proc { body, frame } => {
                 if opts.dump_ir_raw() {
+                    // TODO this needs some newlines.
                     println!(
-                        "\n### function {} IR BEGIN###{:#?}\n### IR END ###",
+                        "\n### function {} IR BEGIN###{}\n### IR END ###",
                         frame.borrow().name().resolve_named_label(&gen),
-                        body
+                        body.debug_to_string(&tm, &gen)
                     );
                 }
                 let mut assems = Vec::new();
@@ -305,14 +310,28 @@ fn run_on_file(opts: &dyn CompilerOptions) -> Result<util::ReturnCode, Box<dyn E
                         "\n### function {} linearized BEGIN###{:#?}\n### linearized END ###",
                         frame.borrow().name().resolve_named_label(&gen),
                         linearized
+                            .iter()
+                            .map(|stm| stm.debug_to_string(&tm, &gen))
+                            .collect::<Vec<_>>()
                     );
                 }
                 let (blist, start_label, done_label) = canon::basic_blocks(linearized, &mut gen);
                 if opts.dump_ir_blocklist() {
+                    let blist_formatted = blist
+                        .iter()
+                        .map(|(k, v)| {
+                            (
+                                k.debug_to_string(&gen),
+                                v.iter()
+                                    .map(|stm| stm.debug_to_string(&tm, &gen))
+                                    .collect::<Vec<_>>(),
+                            )
+                        })
+                        .collect::<Vec<_>>();
                     println!(
                         "\n### function {} blist BEGIN###{:#?}\n### blist END ###",
                         frame.borrow().name().resolve_named_label(&gen),
-                        blist
+                        blist_formatted
                     );
                 }
 
@@ -322,6 +341,9 @@ fn run_on_file(opts: &dyn CompilerOptions) -> Result<util::ReturnCode, Box<dyn E
                         "\n### function {} trace BEGIN###{:#?}\n### trace END ###",
                         frame.borrow().name().resolve_named_label(&gen),
                         trace
+                            .iter()
+                            .map(|stm| stm.debug_to_string(&tm, &gen))
+                            .collect::<Vec<_>>()
                     );
                 }
                 // the trivial allocator could have been done as a single pass over the
@@ -331,8 +353,9 @@ fn run_on_file(opts: &dyn CompilerOptions) -> Result<util::ReturnCode, Box<dyn E
                 let mut temp_offset = trivial_reg::TempOffset::new();
                 for stm in trace.into_iter() {
                     if opts.dump_codegen() {
-                        println!("\n!!{:?}", stm);
+                        println!("\n!!{:?}", stm.debug_to_string(&tm, &gen));
                     }
+
                     // IrStm -> Vec<InStr>
                     let mut trivial_reg_alloc_input = Vec::new();
                     assem::x86_64::X86Asm::code_gen_frame(
@@ -376,12 +399,12 @@ fn run_on_file(opts: &dyn CompilerOptions) -> Result<util::ReturnCode, Box<dyn E
                     frame
                         .borrow()
                         .proc_entry_exit3(&assems, &mut gen, start_label.0);
-                xxx.push((prologue, epilogue, assems, s));
+                prologue_epilogue_instrs_fn.push((prologue, epilogue, assems, s));
             }
         };
     }
 
-    for (prologue, epilogue, asm, fn_name) in xxx.iter() {
+    for (prologue, epilogue, asm, fn_name) in prologue_epilogue_instrs_fn.iter() {
         writeln!(bout, "{}", prologue)?;
         writeln!(bout, ".{}_body:", fn_name)?;
         for i in asm {

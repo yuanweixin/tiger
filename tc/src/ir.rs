@@ -1,6 +1,5 @@
 // appel's tree ir language
-use crate::int_types::TigerInt;
-use crate::temp;
+use crate::{int_types::TigerInt, temp, temp::TempMap, Uuids};
 
 #[derive(Hash, Eq, PartialEq, Debug, Clone)]
 pub enum IrExp {
@@ -22,6 +21,68 @@ pub enum IrStm {
     Cjump(IrRelop, Box<IrExp>, Box<IrExp>, temp::Label, temp::Label),
     Seq(Box<IrStm>, Box<IrStm>),
     Label(temp::Label),
+}
+
+impl IrExp {
+    pub fn debug_to_string(&self, tm: &TempMap, gen: &dyn Uuids) -> String {
+        match self {
+            IrExp::Null => String::from("Null"),
+            IrExp::Const(i) => format!("{}", i),
+            IrExp::Name(l) => format!("{}", l.debug_to_string(gen)),
+            IrExp::Temp(t) => format!("{}", t.debug_to_string(tm)),
+            IrExp::Binop(b, e1, e2) => {
+                format!(
+                    "Binop({:?}, {}, {})",
+                    b,
+                    e1.debug_to_string(tm, gen),
+                    e2.debug_to_string(tm, gen)
+                )
+            }
+            IrExp::Mem(e) => format!("Mem({})", e.debug_to_string(tm, gen)),
+            IrExp::Call(e, args) => format!(
+                "Call({}, {:?})",
+                e.debug_to_string(tm, gen),
+                args.iter()
+                    .map(|arg| arg.debug_to_string(tm, gen))
+                    .collect::<Vec<_>>()
+            ),
+            IrExp::Eseq(s, e) => format!(
+                "Eseq({}, {})",
+                s.debug_to_string(tm, gen),
+                e.debug_to_string(tm, gen)
+            ),
+        }
+    }
+}
+
+impl IrStm {
+    pub fn debug_to_string(&self, tm: &TempMap, gen: &dyn Uuids) -> String {
+        match self {
+            IrStm::Move(a, b) => {
+                format!("Move({}, {})", a.debug_to_string(tm, gen), b.debug_to_string(tm, gen))
+            }
+            IrStm::Exp(a) => format!("Exp({})", a.debug_to_string(tm, gen)),
+            IrStm::Jump(a, l) => format!(
+                "Jump({}, {:?})",
+                a.debug_to_string(tm, gen),
+                l.iter().map(|l| l.debug_to_string(gen)).collect::<Vec<_>>()
+            ),
+            IrStm::Cjump(r, a, b, t, f) => format!(
+                "Cjump({:?}, {}, {}, {:?}, {:?})",
+                r,
+                a.debug_to_string(tm, gen),
+                b.debug_to_string(tm, gen),
+                t.debug_to_string(gen),
+                f.debug_to_string(gen)
+            ),
+            IrStm::Seq(a, b) => format!(
+                "Seq({}, {})",
+                a.debug_to_string(tm, gen),
+                b.debug_to_string(tm, gen)
+            ),
+            IrStm::Label(l) => format!("{}", l.debug_to_string(gen)),
+        }
+    }
 }
 
 #[derive(Hash, Eq, PartialEq, Debug, Clone)]
@@ -100,7 +161,6 @@ pub mod helpers {
     pub fn Cjump(r: IrRelop, a: IrExp, b: IrExp, t: temp::Label, f: temp::Label) -> IrStm {
         IrStm::Cjump(r, Box::new(a), Box::new(b), t, f)
     }
-
 
     #[inline]
     pub fn Seq(a: IrStm, b: IrStm) -> IrStm {

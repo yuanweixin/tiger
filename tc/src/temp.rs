@@ -6,9 +6,11 @@ use std::{
     hash::Hash,
 };
 
-use crate::frame;
-use crate::symbol::{Interner, Symbol};
-use crate::symtab::SymbolTable;
+use crate::{
+    frame,
+    symbol::{Interner, Symbol},
+    symtab::SymbolTable,
+};
 
 // most temp are unnamed, only the registers are named
 // the extra cost is an extra word. otoh this makes it
@@ -25,10 +27,34 @@ pub enum Label {
     Unnamed(NonZeroUsize),
 }
 
+impl Temp {
+    // Need this to properly format named temporaries.
+    pub fn debug_to_string(&self, tm: &TempMap) -> String {
+        if let Some(s) = tm.get(self) {
+            String::from(*s)
+        } else {
+            // fall back to the Debug impl
+            // which should output t123, etc.
+            match self {
+                Temp::Named(..) => unreachable!(), // it's a bug if this happens
+                Temp::Unnamed(id) => format!("_t{}", id)
+            }
+        }
+    }
+}
+
 impl Label {
+    pub fn debug_to_string(&self, gen: &dyn Uuids) -> String {
+        match self {
+            Label::Unnamed(id) => format!(".L{}", id),
+            Label::Named(sym) => format!("{}", gen.resolve(&sym).unwrap()),
+        }
+    }
+
     pub fn resolve_named_label<'a>(&self, gen: &'a dyn Uuids) -> &'a str {
         match self {
             Label::Unnamed(..) => panic!("impl bug: expected named label"),
+
             Label::Named(sym) => gen.resolve(&sym).unwrap(),
         }
     }
@@ -36,7 +62,26 @@ impl Label {
 
 /// The mapping of temporary to strings.
 /// This is used for things like assigning temporaries to actual machine register names.
-pub type TempMap = HashMap<Temp, &'static str>;
+#[derive(Debug)]
+pub struct TempMap(HashMap<Temp, &'static str>);
+
+impl TempMap {
+    pub fn new() -> Self {
+        Self(HashMap::new())
+    }
+
+    pub fn get(&self, t: &Temp) -> Option<&&str> {
+        self.0.get(t)
+    }
+
+    pub fn contains_key(&self, t: &Temp) -> bool {
+        self.0.contains_key(t)
+    }
+
+    pub fn insert(&mut self, t: Temp, v: &'static str) {
+        self.0.insert(t, v);
+    }
+}
 
 pub trait Uuids {
     fn new() -> Self
@@ -75,7 +120,7 @@ pub struct UuidsImpl {
     next_id: NonZeroUsize,
     pool: Interner,
     name_temp: SymbolTable<Temp>,
-    pub named_labels: HashSet<Label> // this exists purely for debug so we could print out the mappings.
+    pub named_labels: HashSet<Label>, // this exists purely for debug so we could print out the mappings.
 }
 
 impl Debug for Temp {
@@ -91,7 +136,7 @@ impl Debug for Label {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Label::Named(s) => f.write_fmt(format_args!("named_label{}", s.to_usize())),
-            Label::Unnamed(id) => f.write_fmt(format_args!("unnamed_label{}", id)),
+            Label::Unnamed(id) => f.write_fmt(format_args!(".L{}", id)),
         }
     }
 }
@@ -120,7 +165,7 @@ impl Uuids for UuidsImpl {
             next_id: NonZeroUsize::MIN,
             pool: Interner::new(),
             name_temp: SymbolTable::empty(),
-            named_labels: HashSet::new()
+            named_labels: HashSet::new(),
         }
     }
 

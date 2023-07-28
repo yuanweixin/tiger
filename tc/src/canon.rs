@@ -13,6 +13,7 @@ use crate::{
 };
 
 use std::collections::{HashMap, VecDeque};
+use core::slice::Iter;
 
 #[inline]
 fn nop(nop_marker_label: temp::Label) -> IrStm {
@@ -286,6 +287,10 @@ impl Block {
     fn len(&self) -> usize {
         // convenience method.
         self.stmts.len()
+    }
+
+    pub fn iter(&self) -> Iter<'_, IrStm> {
+        self.stmts.iter()
     }
 }
 
