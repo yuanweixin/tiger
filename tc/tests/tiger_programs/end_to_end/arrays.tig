@@ -24,7 +24,7 @@ let
             var res := 0
         in
             (for i := 0 to N-1 do
-                res := res + i
+                res := res + arr[i]
             ;
             res)
         end
@@ -41,6 +41,14 @@ in
     let
         var arr := new_array()
     in
-        (print_array(arr))
+        (print_array(arr);
+         update_array(arr);
+         print_array(arr);
+         printint(sum_array(arr));
+         if sum_array(arr) = 36 then
+            0
+         else
+            1
+        )
     end
 end
