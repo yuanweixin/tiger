@@ -10,16 +10,28 @@ let
             print("\n"))
         end
 
+    function sumlist(a: list) : int =
+        if a = nil then
+            0
+        else
+            a.first + sumlist(a.rest)
+
     function records(a:list, b:list, c:list, d:list, e:list, f:list, g:list) : int =
-        a.first+b.first+c.first+d.first+e.first+f.first+g.first
+        sumlist(a)
+        + sumlist(b)
+        + sumlist(c)
+        + sumlist(d)
+        + sumlist(e)
+        + sumlist(f)
+        + sumlist(g)
 in
-    if records(list{first=1,rest=nil},
-            list{first=2,rest=nil},
-            list{first=3,rest=nil},
-            list{first=4,rest=nil},
-            list{first=5,rest=nil},
-            list{first=6,rest=nil},
-            list{first=7,rest=nil}) = 28 then
+    if records(list{first=1,rest=list{first=1, rest=nil}},
+            list{first=2,rest=list{first=1, rest=nil}},
+            list{first=3,rest=list{first=1, rest=nil}},
+            list{first=4,rest=list{first=1, rest=nil}},
+            list{first=5,rest=list{first=1, rest=nil}},
+            list{first=6,rest=list{first=1, rest=nil}},
+            list{first=7,rest=list{first=1, rest=nil}}) = 35 then
         0
     else
         1
