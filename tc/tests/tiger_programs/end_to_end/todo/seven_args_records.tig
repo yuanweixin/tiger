@@ -1,0 +1,26 @@
+let
+    type list = {first: int, rest: list}
+
+    function printint(i: int) =
+        let function f(i:int) = if i>0
+                then (f(i/10); print(chr(i-i/10*10+ord("0"))))
+        in (if i<0 then (print("-"); f(-i))
+            else if i>0 then f(i)
+            else print("0");
+            print("\n"))
+        end
+
+    function records(a:list, b:list, c:list, d:list, e:list, f:list, g:list) : int =
+        a.first+b.first+c.first+d.first+e.first+f.first+g.first
+in
+    if records(list{first=1,rest=nil},
+            list{first=2,rest=nil},
+            list{first=3,rest=nil},
+            list{first=4,rest=nil},
+            list{first=5,rest=nil},
+            list{first=6,rest=nil},
+            list{first=7,rest=nil}) = 28 then
+        0
+    else
+        1
+end

@@ -22,6 +22,8 @@ let
    else (printint(l.first); print(" "); printlist(l.rest))
 
  function lists_eq(l1: list, l2: list) : int =
+    (print("entered lists_eq\n");
+
     if l1 = nil & l2 <> nil then
         0
     else if l2 = nil & l1 <> nil then
@@ -29,8 +31,9 @@ let
     else if l1.first <> l2.first then
         0
     else
+        /* likely culprit is the call's address is corrupt */
         lists_eq(l1.rest, l2.rest)
-
+    )
   /* BODY OF MAIN PROGRAM */
  in
     lst := make_list(100);
