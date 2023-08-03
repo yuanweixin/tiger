@@ -109,7 +109,7 @@ impl Codegen for X86Asm {
     /// Given the IrExp, outputs the abstract register that holds the value.
     fn munch_exp(exp: IrExp, result: &mut Vec<Instr>, gen: &mut dyn Uuids) -> temp::Temp {
         match exp {
-            Binop(op, a, b) => {
+            Binop(op, box a, box b) => {
                 let instr = match op {
                     Plus => "addq %'S0, %'D0",
                     Minus => "subq %'S0, %'D0",
@@ -126,7 +126,7 @@ impl Codegen for X86Asm {
                 };
                 let is_div = matches!(op, IrBinop::Div);
                 // TODO add a test case to cover this of `a` being a temporary.
-                let a_temp = match *a {
+                let a_temp = match a {
                     // because, if dst is already a temporary, this would have the undesirable
                     // side effect of overwriting the temporary. otoh, if dst is some complex
                     // expression, it would have a fresh temporary generated, in which case
@@ -140,10 +140,10 @@ impl Codegen for X86Asm {
                         });
                         fresh
                     }
-                    _ => Self::munch_exp(*a, result, gen),
+                    _ => Self::munch_exp(a, result, gen),
                 };
 
-                let b_temp = Self::munch_exp(*b, result, gen);
+                let b_temp = Self::munch_exp(b, result, gen);
                 result.push(Instr::Oper {
                     assem: instr.into(),
                     dst: Dst(if is_div {
@@ -162,9 +162,9 @@ impl Codegen for X86Asm {
                 });
                 a_temp
             }
-            IrExp::Call(f, args) => {
+            IrExp::Call(box f, args) => {
                 let num_args = args.len();
-                let f_temp = Self::munch_exp(*f, result, gen);
+                let f_temp = Self::munch_exp(f, result, gen);
                 let mut arg_regs = Vec::with_capacity(args.len());
                 for arg_exp in args {
                     arg_regs.push(Self::munch_exp(arg_exp, result, gen));
@@ -290,8 +290,8 @@ impl Codegen for X86Asm {
                 });
                 t
             }
-            Mem(e) => {
-                let address = Self::munch_exp(*e, result, gen);
+            Mem(box e) => {
+                let address = Self::munch_exp(e, result, gen);
                 let result_temp = gen.new_unnamed_temp();
                 result.push(Instr::Move {
                     assem: "movq (%'S), %'D",
