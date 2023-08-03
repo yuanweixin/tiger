@@ -294,6 +294,7 @@ impl Block {
     }
 }
 
+#[cfg(debug_assertions)]
 fn validate_block(this_block: &Block) {
     debug_assert!(this_block.len() > 0);
     debug_assert!(matches!(this_block.stmts[0], Label(..)));

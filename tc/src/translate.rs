@@ -113,7 +113,7 @@ impl Level {
                         if static_link_offset == 0 {
                             Mem(base)
                         } else {
-                            Mem(Binop(Plus, Const(static_link_offset), base))
+                            Mem(Binop(Plus, base, Const(static_link_offset)))
                         }
                     }
                 }
@@ -772,7 +772,7 @@ pub fn simple_var<T: Frame>(
             // this is only possible in the non-nested access.
             Ex(Temp(reg))
         }
-        frame::Access::InFrame(x_offset) => Ex(Mem(Binop(Plus, Const(x_offset), access_expr))),
+        frame::Access::InFrame(x_offset) => Ex(Mem(Binop(Plus, access_expr, Const(x_offset)))),
     }
 }
 
@@ -1044,8 +1044,8 @@ mod tests {
         let actual = lvl.parent_frame(Temp(TestFrame::frame_pointer(&mut gen)));
         let expected = Mem(Binop(
             Plus,
-            Const(8),
             Temp(TestFrame::frame_pointer(&mut gen)),
+            Const(8),
         ));
         assert_eq!(expected, actual);
     }
@@ -1076,8 +1076,8 @@ mod tests {
         // at offset 4, so it is [4 + FP]
         let expected = Ex(Mem(Binop(
             Plus,
-            Const(4),
             Temp(TestFrame::frame_pointer(&mut gen)),
+            Const(4),
         )));
         assert_eq!(expected, actual);
     }
@@ -1090,7 +1090,7 @@ mod tests {
         let var_escapes = true;
         let frame = TestFrame::new(name1, vec![true, var_escapes], &mut gen);
         let var_access = frame.formals()[1].clone();
-        // rust is fucking verbose and type inference sucks
+
         let def_level: LevelRef = Level::Nested {
             parent: Level::Top.into(),
             frame: new_frame!(frame),
@@ -1113,8 +1113,8 @@ mod tests {
         // at offset 4, so it is [4 + [[FP]]]
         let expected = Ex(Mem(Binop(
             Plus,
-            Const(4),
             Mem(Mem(Temp(TestFrame::frame_pointer(&mut gen)))),
+            Const(4),
         )));
         assert_eq!(expected, actual);
     }

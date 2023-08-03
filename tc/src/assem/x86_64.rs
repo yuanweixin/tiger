@@ -15,9 +15,66 @@ use crate::{
 
 pub struct X86Asm;
 
+// precondition: everything expression tree is left associative, verify the input
+// also could write transformer routines to maintain that, but best to just do a precond?
+// or just suck up and write out the patterns. but that's impossible because if we have
+// move([t+x], [t+x]+1) there's 8 different permutations of the arguments. that's a LOT of patterns to deal with.
+// but if we either standardize it, or just ensure it can never show up, then we won't have to worry.
+
+// #[cfg(debug_assertions)]
+// fn validate_left_associativity(e: &IrExp) {
+//     match e {
+//         Binop(op, box Binop(..), box Temp(..)) | Binop(op, box Binop(..), Const(..)) => todo!()
+
+//         _ => {}
+//     }
+// }
+
+// impl IrExp {
+//     // (+ a b) == (+ b a)
+//     // (* a b) == (* b a)
+//     // (- a b) == (+ (* -1 b) a)
+//     fn equals_commutative(e1: &IrExp, e2: &IrExp) -> bool {
+//         match (e1, e2) {
+//             (Binop(Plus, e11, e12), Binop(Plus, e21, e22)) => e11.equals_commutative(e22) && e12 == e21,
+//             (Binop(Mul, e11, e12),
+//             _ => e1 == e2
+//         }
+//     }
+// }
+
+fn match_patterns(stm: IrStm) {
+    match stm {
+        Move(box Temp(t), box Const(0)) => {}
+        Move(box Temp(t), box Const(1)) => {}
+        Move(box Temp(t), box Binop(Plus, box Temp(t2), box Const(1))) if t == t2 => {}
+        // Move(box Mem(box e1), box Const(i)) => {}
+        // Move(box Mem(box e1), box Temp(t)) => {}
+        // Move(box Mem(box e1), box Mem(box e2)) => {},
+        Move(
+            // move [t+x], [t+x] + 1 -> add [t+x], 1
+            box ref x @ Mem(box Binop(Plus, box Temp(_), box Const(_))),
+            box Binop(Plus, box y, box Const(c2)),
+        ) if *x == y => {}
+        // Move(box Mem(), box e) => {},
+        _ => {}
+    }
+}
+
 impl Codegen for X86Asm {
     fn munch_stm(stm: IrStm, result: &mut Vec<Instr>, gen: &mut dyn Uuids) {
         match stm {
+            // Move(box Temp(t), box Const(0)) => {
+            //     result.push(Instr::Oper {
+            //         assem: "xorq %'S0, %'S0".into(),
+            //         dst: Dst(vec![t]),
+            //         src: Src(vec![t]),
+            //         jump: vec![],
+            //     });
+            // }
+            // Move(box Temp(t), box Const(1)) => {}
+            // Move(box Temp(t), box Binop(Plus, box Temp(t2), box Const(1))) if t == t2 => {}
+
             Move(box dst_exp, box src_exp) => {
                 // After canonicalizing, we should only end up with
                 // Move(Mem, _) or Move(Temp, _)
