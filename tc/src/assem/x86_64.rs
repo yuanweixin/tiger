@@ -80,8 +80,22 @@ impl Codegen for X86Asm {
                     jump: vec![],
                 });
             }
-            // Move(box Temp(t), box Binop(Plus, box Temp(t2), box Const(1))) if t == t2 => {}
-
+            Move(
+                // move [t+x], [t+x] + 1 -> add [t+x], 1
+                box Mem(box Binop(Plus, box Temp(t1), box Const(c1))),
+                box Binop(
+                    Plus,
+                    box Mem(box Binop(Plus, box Temp(t2), box Const(c2))),
+                    box Const(1),
+                ),
+            ) if t1 == t2 && c1 == c2 => {
+                result.push(Instr::Oper {
+                    assem: format!("addq $1, {}(%'S0)", c1),
+                    dst: Dst::empty(),
+                    src: Src(vec![t1]),
+                    jump: vec![],
+                });
+            }
             Move(box dst_exp, box src_exp) => {
                 // After canonicalizing, we should only end up with
                 // Move(Mem, _) or Move(Temp, _)
