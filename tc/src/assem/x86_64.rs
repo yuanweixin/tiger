@@ -151,6 +151,22 @@ impl Codegen for X86Asm {
                 });
                 tfresh
             }
+            // todo be more robust and handle the 4 combos.
+            Binop(Plus, box Temp(t1), box Binop(Mul, box Temp(t2), box Const(k)))
+            | Binop(Plus, box Temp(t1), box Binop(Mul, box Const(k), box Temp(t2)))
+            | Binop(Plus, box Binop(Mul, box Temp(t2), box Const(k)), box Temp(t1))
+            | Binop(Plus, box Binop(Mul, box Const(k), box Temp(t2)), box Temp(t1))
+                if [1, 2, 4, 8].contains(&k) =>
+            {
+                let tfresh = gen.new_unnamed_temp();
+                result.push(Instr::Oper {
+                    assem: format!("lea ('S0, 'S1, {}), %'D0", k),
+                    dst: Dst(vec![tfresh]),
+                    src: Src(vec![t1, t2]),
+                    jump: vec![],
+                });
+                tfresh
+            }
             Binop(op, box a, box b) => {
                 let instr = match op {
                     Plus => "addq %'S0, %'D0",
