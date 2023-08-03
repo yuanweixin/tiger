@@ -64,14 +64,14 @@ fn match_patterns(stm: IrStm) {
 impl Codegen for X86Asm {
     fn munch_stm(stm: IrStm, result: &mut Vec<Instr>, gen: &mut dyn Uuids) {
         match stm {
-            // Move(box Temp(t), box Const(0)) => {
-            //     result.push(Instr::Oper {
-            //         assem: "xorq %'S0, %'S0".into(),
-            //         dst: Dst(vec![t]),
-            //         src: Src(vec![t]),
-            //         jump: vec![],
-            //     });
-            // }
+            Move(box Temp(t), box Const(0)) => {
+                result.push(Instr::Oper {
+                    assem: "xorq %'S0, %'S0".into(),
+                    dst: Dst(vec![t]),
+                    src: Src(vec![t]),
+                    jump: vec![],
+                });
+            }
             // Move(box Temp(t), box Const(1)) => {}
             // Move(box Temp(t), box Binop(Plus, box Temp(t2), box Const(1))) if t == t2 => {}
 
