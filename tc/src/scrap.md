@@ -245,3 +245,113 @@ dive into how plt works in shared libraries
 
 https://stackoverflow.com/questions/76681795/gnu-as-escape-symbol-names-in-intel-syntax
 as is a piece of shit and now forced to use the annoying att syntax. fuck att and its legacy.
+
+https://stackoverflow.com/questions/37925143/x86-64-is-imul-faster-than-2x-shl-2x-add/37925245#37925245
+contains links to a better cost model of instructions
+
+https://cs.stackexchange.com/questions/80859/what-is-instruction-throughput-and-instruction-latency
+throughput: how many cycles an instruction ties up the execution unit
+latency: if B depends on A, B needs to wait this many cycles after A starts.
+
+https://www.icsa.inf.ed.ac.uk/cgi-bin/hase/dlx-scb.pl?/depend-t.html,depend-f.html,menu.html
+instruction hazards: due to the instruction taking multiple cycles
+read after write :
+    r3 = r1 * r2
+    r5 = r3 + r2 // r3 is not ready yet!
+write after write
+    r3 = r1 * 3 // this finishes later and clobbers the "later" instruction's output
+    r3 = r2 + 3 // this finishes first
+write after read (manifests when you got instruction issued and waiting in a queue)
+    r3 = r1 / r2  // takes a long time
+    r4 = r3 * r5  // data dep on first instr; on some machine it could be issued before its dep is finished
+    r5 = r0 + r7  // this runs independent of previous two and finishes first, result in race on r5
+
+scoreboard: basically a hardware DAG for book keeping the instruction dependencies.
+
+different types of hazards: data, structural, control
+    data is already described above (RAW, WAW, WAR)
+
+    structural is something like, take 2 instructions I1, I2, say I1 takes multiple clock periods. the conflict comes from both I1, I2 trying to use the same hardware unit in the same cycle.
+
+    control: bad branch prediction, need to act like no side effects.
+
+https://en.wikipedia.org/wiki/Hazard_(computer_architecture)
+out of order execution algorithms
+    scoreboarding
+    tomasulo
+
+https://en.wikipedia.org/wiki/Register_renaming
+logical register maps to multiple physical registers. this avoids false data dependencies from write after write hazards. so basically independent sequences of writes to the same register can be split up by renaming the register.
+
+https://stackoverflow.com/questions/38966919/do-complex-addressing-modes-have-extra-overhead-for-loads-from-memory
+diff microarchitecture have diff perf characteristics (duh!)
+
+https://www.agner.org/optimize/optimizing_assembly.pdf
+good stuff to read, ok maybe not good for the soul but def useful, also makes more sense now that i have messed with assembly for codegen
+
+## llvm instruction selection
+### llvm papers that mention instruction selection
+https://llvm.org/pubs/2008-CGO-DagISel.html
+https://llvm.org/pubs/2007-04-SCOPES-ChainRulePlacement.html
+https://llvm.org/pubs/2008-06-LCTES-ISelUsingSSAGraphs.html
+
+there is a dag-based isel algorithm in use today. but there's also a new design "global isel" that wants to replace the previous. it claims it avoids the dag representation and directly goes to machine ir (mir), and can operate at the function level, instead of only at basic block level.https://www.llvm.org/docs/GlobalISel/index.html#id3
+
+selection dag doc
+https://llvm.org/docs/CodeGenerator.html#instruction-selection-section
+this thing in theory can read from a text file that specifies the machine instruction details (such as dag pattern that instruction matches, the use/defs, and a bunch of target specific parameters) then somehow there is a tablegen tool that would give you the code to manipulate these structure, therefore reducing your need to write more custom c++.
+
+global isel
+https://www.llvm.org/docs/GlobalISel/index.html#id3
+
+so llvm's isel is more sophisticated than the tree-based one implemented here. the tree-based one can only work on one IR-thing at a time, not even basic blocks.
+
+# Questions
+
+is the [t1 + t2 * k + c] faster than a regular multiplication due to the restriction in the value of k to {1,2,4,8}?
+
+# Other
+
+The use of different physical registers for the same logical register
+enables the CPU to make the last three instructions in example 9.1b independent of the first
+three instructions. The CPU must have a lot of physical registers for this mechanism to work
+efficiently. The number of physical registers is different for different microprocessors, but
+you can generally assume that the number is sufficient for quite a lot of instruction
+reordering.
+Partial registers
+Some CPUs can keep different parts of a register separate, while other CPUs always treat a
+register as a whole. If we change example 9.1b so that the second part uses 16-bit registers
+then we have the problem of a false dependence:
+
+; Example 9.1c, False dependence of partial register
+mov eax, [mem1] ; 32 bit memory operand
+imul eax, 6
+mov [mem2], eax
+mov ax, [mem3] ; 16 bit memory operand
+add ax, 2
+mov [mem4], ax
+
+Here the instruction mov ax,[mem3] changes only the lower 16 bits of register eax, while
+the upper 16 bits retain the value they got from the imul instruction. Some CPUs from both
+Intel, AMD and VIA are unable to rename a partial register. The consequence is that the mov
+ax,[mem3] instruction has to wait for the imul instruction to finish because it needs to
+combine the 16 lower bits from [mem3] with the 16 upper bits from the imul instruction.
+Other CPUs are able to split the register into parts in order to avoid the false dependence,
+but this has another disadvantage in case the two parts have to be joined together again.
+Assume, for example, that the code in example 9.1c is followed by PUSH EAX. On some
+processors, this instruction has to wait for the two parts of EAX to retire in order to join them
+together, at the cost of 5-6 clock cycles. Other processors will generate an extra μop for
+joining the two parts of the register together.
+
+These problems are avoided by replacing mov ax,[mem3] with movzx eax,[mem3]. This
+resets the high bits of eax and breaks the dependence on any previous value of eax. In 64-
+bit mode, it is sufficient to write to the 32-bit register because this always resets the upper
+part of a 64-bit register. Thus, movzx eax,[mem3] and movzx rax,[mem3] are doing
+exactly the same thing. The 32-bit version of the instruction is one byte shorter than the 64-
+bit version. *Any use of the high 8-bit registers AH, BH, CH, DH should be avoided because it
+can cause false dependences and less efficient code.*
+
+The flags register can cause similar problems for instructions that modify some of the flag
+bits and leave other bits unchanged. For example, the INC and DEC instructions leave the
+carry flag unchanged but modifies the zero and sign flags
+

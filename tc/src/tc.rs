@@ -1,3 +1,9 @@
+// wtf, is this haskell?
+// also wtf, when are they gonna stablize these basic pattern matching features?
+#![feature(box_patterns)]
+#![feature(if_let_guard)]
+#![feature(let_chains)]
+
 use std::{
     collections::HashMap, env, error::Error, fs, fs::File, io::BufWriter, io::Write, path::PathBuf,
 };

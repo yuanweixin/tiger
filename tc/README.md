@@ -27,7 +27,14 @@ Currently x86_64 programs can be generated. However there are no optimizations a
 [done][0.5 day] fix up the use and deps in the generated Instr objects for register allocation use. (no time spent as this should not work for trivial register allocation if we forgot to specify a source. at any rate, can revisit when implementing register allocation)
 [done][0.25 days 7/26] get all the e2e tests to work (not merge.tig or queens.tig as those are the big ones)
 [done][2 day 7/27, 7/28] get merge.tig and queens.tig to work
-[1 day] implement non-trivial instruction selection, ensure e2e tests continue to pass
+
+non-trivial instruction selection, what is the cost of using complex addressing mode of the form [t1 + t2*k + c]? is there actual speed gain from using this besides a smaller code size (ok so less pressure on code caches is one).
+
+segways into microarchitecture for x86 and understanding the cost of assembly instructions! turtles all the way down.
+
+want to take a bit of time to look through https://www.agner.org/optimize/optimizing_assembly.pdf
+
+[? day] implement non-trivial instruction selection, ensure e2e tests continue to pass
 [0.5 day] constant folding, and have it respect flags.
 [1 day] break from touching any code.
 [2-3 days] understand liveness
