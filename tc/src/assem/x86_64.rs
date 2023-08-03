@@ -221,10 +221,7 @@ impl Codegen for X86Asm {
                 a_temp
             }
             IrExp::Call(box f, args) => {
-                debug_assert!(matches!(f, IrExp::Name(..)));
-
                 let num_args = args.len();
-                let f_temp = Self::munch_exp(f, result, gen);
                 let mut arg_regs = Vec::with_capacity(args.len());
                 for arg_exp in args {
                     arg_regs.push(Self::munch_exp(arg_exp, result, gen));
@@ -281,13 +278,17 @@ impl Codegen for X86Asm {
                         i -= 1;
                     }
                 }
-                // TODO it's always Name(label) for the call so should be able to skip the extra register!
-                result.push(Instr::Oper {
-                    assem: "call *%'S0".into(),
-                    dst: Dst(vec![x86_64::named_register(gen, x86_64::RAX)]),
-                    src: Src(vec![f_temp]),
-                    jump: vec![],
-                });
+                match f {
+                    IrExp::Name(func_label) => {
+                        result.push(Instr::Oper {
+                            assem: format!("call {}@PLT", func_label.resolve_named_label(gen)),
+                            dst: Dst(vec![x86_64::named_register(gen, x86_64::RAX)]),
+                            src: Src::empty(),
+                            jump: vec![],
+                        });
+                    }
+                    _ => unreachable!()
+                }
 
                 // persist the result register.
                 let dest = gen.new_unnamed_temp();
