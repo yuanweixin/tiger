@@ -72,7 +72,14 @@ impl Codegen for X86Asm {
                     jump: vec![],
                 });
             }
-            // Move(box Temp(t), box Const(1)) => {}
+            Move(box Temp(t), box Const(c)) => {
+                result.push(Instr::Oper {
+                    assem: format!("movq ${}, %'D0", c),
+                    dst: Dst(vec![t]),
+                    src: Src::empty(),
+                    jump: vec![],
+                });
+            }
             // Move(box Temp(t), box Binop(Plus, box Temp(t2), box Const(1))) if t == t2 => {}
 
             Move(box dst_exp, box src_exp) => {
