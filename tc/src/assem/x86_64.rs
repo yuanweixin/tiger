@@ -221,6 +221,8 @@ impl Codegen for X86Asm {
                 a_temp
             }
             IrExp::Call(box f, args) => {
+                debug_assert!(matches!(f, IrExp::Name(..)));
+
                 let num_args = args.len();
                 let f_temp = Self::munch_exp(f, result, gen);
                 let mut arg_regs = Vec::with_capacity(args.len());
@@ -245,6 +247,7 @@ impl Codegen for X86Asm {
                     let mut i = arg_regs.len() - 1;
                     // args after the 6th one go on stack.
                     while i > 5 {
+                        // TODO arg[i] could be [t1 + t2*k + c] form
                         result.push(Instr::Oper {
                             assem: "push %'S0".into(),
                             dst: Dst(vec![gen.named_temp(frame::x86_64::RSP)]),
@@ -264,6 +267,7 @@ impl Codegen for X86Asm {
                     // we allocated that space but before pushing arguments, which gives us 1 less register
                     // to pass arguments in (so 5 instead of 6).
                     while i + 1 > 0 {
+                        // TODO arg[i] could be [t1 + t2*k + c] form
                         let arg_passing_regs = x86_64::arg_regs(gen);
                         result.push(Instr::Oper {
                             assem: "movq %'S0, %'D0".into(),
@@ -277,7 +281,7 @@ impl Codegen for X86Asm {
                         i -= 1;
                     }
                 }
-                // do the call
+                // TODO it's always Name(label) for the call so should be able to skip the extra register!
                 result.push(Instr::Oper {
                     assem: "call *%'S0".into(),
                     dst: Dst(vec![x86_64::named_register(gen, x86_64::RAX)]),
