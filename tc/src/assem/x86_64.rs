@@ -18,15 +18,15 @@ pub struct X86Asm;
 impl Codegen for X86Asm {
     fn munch_stm(stm: IrStm, result: &mut Vec<Instr>, gen: &mut dyn Uuids) {
         match stm {
-            Move(dst_exp, src_exp) => {
+            Move(box dst_exp, box src_exp) => {
                 // After canonicalizing, we should only end up with
                 // Move(Mem, _) or Move(Temp, _)
 
-                let src = Self::munch_exp(*src_exp, result, gen);
+                let src = Self::munch_exp(src_exp, result, gen);
 
-                match *dst_exp {
-                    IrExp::Mem(tgt) => {
-                        let dst = Self::munch_exp(*tgt, result, gen);
+                match dst_exp {
+                    IrExp::Mem(box tgt) => {
+                        let dst = Self::munch_exp(tgt, result, gen);
                         result.push(Instr::Oper {
                             assem: "movq %'S0, (%'S1)".into(),
                             dst: Dst::empty(),
@@ -44,8 +44,8 @@ impl Codegen for X86Asm {
                     _ => panic!("impl bug, Move should be to a Temp or Mem"),
                 }
             }
-            Jump(e, target_labels) => {
-                let t = Self::munch_exp(*e, result, gen);
+            Jump(box e, target_labels) => {
+                let t = Self::munch_exp(e, result, gen);
                 result.push(Instr::Oper {
                     assem: "jmp *%'S0".into(),
                     dst: Dst::empty(),
@@ -53,9 +53,9 @@ impl Codegen for X86Asm {
                     jump: target_labels,
                 });
             }
-            Cjump(r, a, b, lt, lf) => {
-                let ta = Self::munch_exp(*a, result, gen);
-                let tb = Self::munch_exp(*b, result, gen);
+            Cjump(r, box a, box b, lt, lf) => {
+                let ta = Self::munch_exp(a, result, gen);
+                let tb = Self::munch_exp(b, result, gen);
                 result.push(Instr::Oper {
                     assem: "cmpq %'S0, %'D0".into(),
                     dst: Dst(vec![ta]),
@@ -87,8 +87,8 @@ impl Codegen for X86Asm {
                     jump: vec![lt, lf],
                 });
             }
-            Exp(e) => {
-                let _ = Self::munch_exp(*e, result, gen);
+            Exp(box e) => {
+                let _ = Self::munch_exp(e, result, gen);
             }
             Label(lab) => match lab {
                 temp::Label::Named(..) => result.push(Instr::Label {
