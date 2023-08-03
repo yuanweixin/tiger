@@ -6,8 +6,16 @@ in
     else
         i := 45
     ;
+    if i then
+        ()
+    ;
     if i = 44 then
         i := 0
+    ;
+    if not(i) then
+        i := 0
+    else
+        i := 1
     ;
     i
 end
