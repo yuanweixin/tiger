@@ -817,8 +817,8 @@ pub fn subscript_var<T: Frame>(lhs_ir: TrExp, idx_ir: TrExp, gen: &mut dyn Uuids
             lhs_temp,
             Binop(
                 Plus,
-                Const(T::word_size() as i32), // offset the size which is stored as first word.
                 Binop(Mul, idx_temp, Const(T::word_size() as i32)),
+                Const(T::word_size() as i32), // offset the size which is stored as first word.
             ),
         )),
     ))
