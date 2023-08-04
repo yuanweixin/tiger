@@ -612,6 +612,9 @@ impl Codegen for X86Asm {
                 let num_args = args.len();
                 let mut arg_regs = Vec::with_capacity(args.len());
 
+                // this would preserve evaluation order.
+                // otherwise, we could just evaluate when we do the push, in reverse order,
+                // in order to take advantage of addressing modes.
                 for arg_exp in args {
                     arg_regs.push(Self::munch_exp(arg_exp, result, gen)?);
                 }
@@ -619,7 +622,7 @@ impl Codegen for X86Asm {
                 let mut caller_save_temps = Vec::new();
                 for reg_name in frame::x86_64::CALLER_SAVES {
                     // will move to temporaries; it will spill in trivial register allocation, and
-                    // hope that the actual register allocator will coalesce.
+                    // we hope that the actual register allocator will coalesce these moves.
                     let t = gen.new_unnamed_temp();
                     caller_save_temps.push(t);
                     result.push(Instr::Move {
@@ -633,7 +636,6 @@ impl Codegen for X86Asm {
                     let mut i = arg_regs.len() - 1;
                     // args after the 6th one go on stack.
                     while i > 5 {
-                        // TODO arg[i] could be [t1 + t2*k + c] form
                         result.push(Instr::Oper {
                             assem: "push %'S0".into(),
                             dst: Dst(vec![gen.named_temp(frame::x86_64::RSP)]),
@@ -653,7 +655,6 @@ impl Codegen for X86Asm {
                     // we allocated that space but before pushing arguments, which gives us 1 less register
                     // to pass arguments in (so 5 instead of 6).
                     while i + 1 > 0 {
-                        // TODO arg[i] could be [t1 + t2*k + c] form
                         let arg_passing_regs = x86_64::arg_regs(gen);
                         result.push(Instr::Oper {
                             assem: "movq %'S0, %'D0".into(),
