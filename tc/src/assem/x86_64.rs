@@ -747,7 +747,7 @@ impl Codegen for X86Asm {
 
     /// The entry point for translating into
     fn code_gen_frame(_: FrameRef, stm: IrStm, instrs: &mut Vec<Instr>, gen: &mut dyn Uuids) {
-        Self::munch_stm(stm, instrs, gen);
+        Self::munch_stm(stm, instrs, gen).unwrap();
     }
 }
 
