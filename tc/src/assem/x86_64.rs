@@ -1,4 +1,4 @@
-use std::{cmp::max, collections::HashMap};
+use std::{cmp::max, collections::HashMap, error::Error, fmt::Write};
 
 use crate::{
     assem::*,
@@ -63,7 +63,7 @@ impl AddressingMode {
         fmt: &mut String,
         result: &mut Vec<Instr>,
         gen: &mut dyn Uuids,
-    ) {
+    ) -> Result<(), Box<dyn Error>> {
         match self {
             Bisd {
                 base,
@@ -73,54 +73,52 @@ impl AddressingMode {
             } => {
                 let next_src = srcs.len();
 
-                let d = disp.map(|x| x.to_string());
                 match (base, index, disp) {
                     (Some(b), None, None) => {
-                        let t = X86Asm::munch_exp(b, result, gen);
-                        fmt.push_str(format!("(%'S{})", next_src).as_str());
+                        let t = X86Asm::munch_exp(b, result, gen)?;
+                        write!(fmt, "(%'S{})", next_src)?;
                         srcs.push(t);
                     }
                     (Some(b), None, Some(d)) => {
-                        let t = X86Asm::munch_exp(b, result, gen);
-                        fmt.push_str(format!("{}(%'S{})", d, next_src).as_str());
+                        let t = X86Asm::munch_exp(b, result, gen)?;
+                        write!(fmt, "{}(%'S{})", d, next_src)?;
                         srcs.push(t);
                     }
                     (Some(b), Some(i), None) => {
-                        let bt = X86Asm::munch_exp(b, result, gen);
-                        let it = X86Asm::munch_exp(i, result, gen);
-                        fmt.push_str(
-                            format!("(%'S{}, %'S{}, {})", next_src, next_src + 1, scale.as_str())
-                                .as_str(),
-                        );
+                        let bt = X86Asm::munch_exp(b, result, gen)?;
+                        let it = X86Asm::munch_exp(i, result, gen)?;
+                        write!(
+                            fmt,
+                            "(%'S{}, %'S{}, {})",
+                            next_src,
+                            next_src + 1,
+                            scale.as_str()
+                        )?;
                         srcs.push(bt);
                         srcs.push(it);
                     }
                     (Some(b), Some(i), Some(d)) => {
-                        let bt = X86Asm::munch_exp(b, result, gen);
-                        let it = X86Asm::munch_exp(i, result, gen);
-                        fmt.push_str(
-                            format!(
-                                "{}(%'S{}, %'S{}, {})",
-                                d,
-                                next_src,
-                                next_src + 1,
-                                scale.as_str()
-                            )
-                            .as_str(),
-                        );
+                        let bt = X86Asm::munch_exp(b, result, gen)?;
+                        let it = X86Asm::munch_exp(i, result, gen)?;
+                        write!(
+                            fmt,
+                            "{}(%'S{}, %'S{}, {})",
+                            d,
+                            next_src,
+                            next_src + 1,
+                            scale.as_str()
+                        )?;
                         srcs.push(bt);
                         srcs.push(it);
                     }
                     (None, Some(i), None) => {
-                        let it = X86Asm::munch_exp(i, result, gen);
-                        fmt.push_str(format!("(, %'S{}, {})", next_src, scale.as_str()).as_str());
+                        let it = X86Asm::munch_exp(i, result, gen)?;
+                        write!(fmt, "(, %'S{}, {})", next_src, scale.as_str())?;
                         srcs.push(it);
                     }
                     (None, Some(i), Some(d)) => {
-                        let it = X86Asm::munch_exp(i, result, gen);
-                        fmt.push_str(
-                            format!("{}(, %'S{}, {})", d, next_src, scale.as_str()).as_str(),
-                        );
+                        let it = X86Asm::munch_exp(i, result, gen)?;
+                        write!(fmt, "{}(, %'S{}, {})", d, next_src, scale.as_str())?;
                         srcs.push(it);
                     }
                     _ => unreachable!(),
@@ -128,6 +126,7 @@ impl AddressingMode {
             }
             _ => {}
         }
+        Ok(())
     }
 
     fn match_addressing_mode(e: IrExp) -> AddressingMode {
@@ -323,7 +322,11 @@ impl AddressingMode {
 }
 
 impl Codegen for X86Asm {
-    fn munch_stm(stm: IrStm, result: &mut Vec<Instr>, gen: &mut dyn Uuids) {
+    fn munch_stm(
+        stm: IrStm,
+        result: &mut Vec<Instr>,
+        gen: &mut dyn Uuids,
+    ) -> Result<(), Box<dyn Error>> {
         match stm {
             Move(box Temp(t), box Const(0)) => {
                 result.push(Instr::Oper {
@@ -398,10 +401,10 @@ impl Codegen for X86Asm {
                 //     _ => panic!("impl bug, Move should be to a Temp or Mem"),
                 // }
 
-                let src = Self::munch_exp(src_exp, result, gen);
+                let src = Self::munch_exp(src_exp, result, gen)?;
                 match dst_exp {
                     IrExp::Mem(box tgt) => {
-                        let dst = Self::munch_exp(tgt, result, gen);
+                        let dst = Self::munch_exp(tgt, result, gen)?;
                         result.push(Instr::Oper {
                             assem: "movq %'S0, (%'S1)".into(),
                             dst: Dst::empty(),
@@ -420,7 +423,7 @@ impl Codegen for X86Asm {
                 }
             }
             Jump(box e, target_labels) => {
-                let t = Self::munch_exp(e, result, gen);
+                let t = Self::munch_exp(e, result, gen)?;
                 result.push(Instr::Oper {
                     assem: "jmp *%'S0".into(),
                     dst: Dst::empty(),
@@ -429,8 +432,8 @@ impl Codegen for X86Asm {
                 });
             }
             Cjump(r, box a, box b, lt, lf) => {
-                let ta = Self::munch_exp(a, result, gen);
-                let tb = Self::munch_exp(b, result, gen);
+                let ta = Self::munch_exp(a, result, gen)?;
+                let tb = Self::munch_exp(b, result, gen)?;
                 result.push(Instr::Oper {
                     assem: "cmpq %'S0, %'D0".into(),
                     dst: Dst(vec![ta]),
@@ -479,11 +482,16 @@ impl Codegen for X86Asm {
                 panic!("impl bug: Seq should have been eliminated");
             }
         }
+        Ok(())
     }
 
     /// Given the IrExp, outputs the abstract register that holds the value.
-    fn munch_exp(exp: IrExp, result: &mut Vec<Instr>, gen: &mut dyn Uuids) -> temp::Temp {
-        match exp {
+    fn munch_exp(
+        exp: IrExp,
+        result: &mut Vec<Instr>,
+        gen: &mut dyn Uuids,
+    ) -> Result<temp::Temp, Box<dyn Error>> {
+        let res = match exp {
             Binop(Plus, box Temp(t1), box Temp(t2)) => {
                 let tfresh = gen.new_unnamed_temp();
                 result.push(Instr::Oper {
@@ -540,10 +548,10 @@ impl Codegen for X86Asm {
                         });
                         fresh
                     }
-                    _ => Self::munch_exp(a, result, gen),
+                    _ => Self::munch_exp(a, result, gen)?,
                 };
 
-                let b_temp = Self::munch_exp(b, result, gen);
+                let b_temp = Self::munch_exp(b, result, gen)?;
                 result.push(Instr::Oper {
                     assem: instr.into(),
                     dst: Dst(if is_div {
@@ -567,7 +575,7 @@ impl Codegen for X86Asm {
                 let mut arg_regs = Vec::with_capacity(args.len());
 
                 for arg_exp in args {
-                    arg_regs.push(Self::munch_exp(arg_exp, result, gen));
+                    arg_regs.push(Self::munch_exp(arg_exp, result, gen)?);
                 }
 
                 let mut caller_save_temps = Vec::new();
@@ -703,7 +711,7 @@ impl Codegen for X86Asm {
                     Bisd { .. } => {
                         let mut fmt = String::new();
                         let mut srcs = Vec::new();
-                        m.consume(&mut srcs, &mut fmt, result, gen);
+                        m.consume(&mut srcs, &mut fmt, result, gen)?;
                         result.push(Instr::Oper {
                             assem: format!("movq {}, %'D0", fmt),
                             dst: Dst(vec![result_temp]),
@@ -712,7 +720,7 @@ impl Codegen for X86Asm {
                         });
                     }
                     NotMem(e) => {
-                        let address = Self::munch_exp(e, result, gen);
+                        let address = Self::munch_exp(e, result, gen)?;
                         result.push(Instr::Move {
                             assem: "movq (%'S), %'D",
                             dst: result_temp,
@@ -733,7 +741,8 @@ impl Codegen for X86Asm {
                 });
                 t
             }
-        }
+        };
+        Ok(res)
     }
 
     /// The entry point for translating into

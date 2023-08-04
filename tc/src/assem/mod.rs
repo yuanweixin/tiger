@@ -6,8 +6,7 @@ use crate::{
     temp::{self, Uuids},
 };
 
-use std::iter::Peekable;
-use std::str::FromStr;
+use std::{error::Error, iter::Peekable, str::FromStr};
 
 #[derive(Debug)]
 pub struct Src(pub Vec<temp::Temp>);
@@ -57,10 +56,18 @@ pub enum Instr {
 
 pub trait Codegen {
     /// Given an IrStm, emits the abstract assembly for it.
-    fn munch_stm(stm: IrStm, result: &mut Vec<Instr>, gen: &mut dyn Uuids);
+    fn munch_stm(
+        stm: IrStm,
+        result: &mut Vec<Instr>,
+        gen: &mut dyn Uuids,
+    ) -> Result<(), Box<dyn Error>>;
 
     /// Given the IrExp, outputs the abstract register that holds the value.
-    fn munch_exp(exp: IrExp, result: &mut Vec<Instr>, gen: &mut dyn Uuids) -> temp::Temp;
+    fn munch_exp(
+        exp: IrExp,
+        result: &mut Vec<Instr>,
+        gen: &mut dyn Uuids,
+    ) -> Result<temp::Temp, Box<dyn Error>>;
 
     /// The entry point for translating into.
     /// The frame argument is only used if we attempt to eliminate the frame pointer.
