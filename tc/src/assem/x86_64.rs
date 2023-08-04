@@ -32,23 +32,105 @@ impl Scale {
             _ => None,
         }
     }
+
+    fn as_str(&self) -> &str {
+        match self {
+            Scale::One => "1",
+            Scale::Two => "2",
+            Scale::Four => "4",
+            Scale::Eight => "8",
+        }
+    }
 }
 // Base-index-scale-displacement
 
-enum AddressingMode<'a> {
+enum AddressingMode {
     Bisd {
-        base: Option<&'a IrExp>,
-        index: Option<&'a IrExp>,
+        base: Option<IrExp>,
+        index: Option<IrExp>,
         scale: Scale,
         disp: Option<i32>,
     },
-    NotMem,
+    NotMem(IrExp),
 }
 
 use AddressingMode::*;
 
-impl<'a> AddressingMode<'a> {
-    fn match_addressing_mode(e: &IrExp) -> AddressingMode {
+impl AddressingMode {
+    fn consume(
+        self,
+        srcs: &mut Vec<temp::Temp>,
+        fmt: &mut String,
+        result: &mut Vec<Instr>,
+        gen: &mut dyn Uuids,
+    ) {
+        match self {
+            Bisd {
+                base,
+                index,
+                scale,
+                disp,
+            } => {
+                let mut next_src = srcs.len();
+
+                let d = disp.map(|x| x.to_string());
+                match (base, index, disp) {
+                    (Some(b), None, None) => {
+                        let t = X86Asm::munch_exp(b, result, gen);
+                        fmt.push_str(format!("(%'S{})", next_src).as_str());
+                        srcs.push(t);
+                    }
+                    (Some(b), None, Some(d)) => {
+                        let t = X86Asm::munch_exp(b, result, gen);
+                        fmt.push_str(format!("{}(%'S{})", d, next_src).as_str());
+                        srcs.push(t);
+                    }
+                    (Some(b), Some(i), None) => {
+                        let bt = X86Asm::munch_exp(b, result, gen);
+                        let it = X86Asm::munch_exp(i, result, gen);
+                        fmt.push_str(
+                            format!("(%'S{}, %'S{}, {})", next_src, next_src + 1, scale.as_str())
+                                .as_str(),
+                        );
+                        srcs.push(bt);
+                        srcs.push(it);
+                    }
+                    (Some(b), Some(i), Some(d)) => {
+                        let bt = X86Asm::munch_exp(b, result, gen);
+                        let it = X86Asm::munch_exp(i, result, gen);
+                        fmt.push_str(
+                            format!(
+                                "{}(%'S{}, %'S{}, {})",
+                                d,
+                                next_src,
+                                next_src + 1,
+                                scale.as_str()
+                            )
+                            .as_str(),
+                        );
+                        srcs.push(bt);
+                        srcs.push(it);
+                    }
+                    (None, Some(i), None) => {
+                        let it = X86Asm::munch_exp(i, result, gen);
+                        fmt.push_str(format!("(, %'S{}, {})", next_src, scale.as_str()).as_str());
+                        srcs.push(it);
+                    }
+                    (None, Some(i), Some(d)) => {
+                        let it = X86Asm::munch_exp(i, result, gen);
+                        fmt.push_str(
+                            format!("{}(, %'S{}, {})", d, next_src, scale.as_str()).as_str(),
+                        );
+                        srcs.push(it);
+                    }
+                    _ => unreachable!(),
+                }
+            }
+            _ => {}
+        }
+    }
+
+    fn match_addressing_mode(e: IrExp) -> AddressingMode {
         match e {
             // ----------------------------------------------t1 + t2 * k + c----------------------------------------------
             // and variations accounting for commutivity and associativity
@@ -188,11 +270,11 @@ impl<'a> AddressingMode<'a> {
                 Plus, // [c + k * e2 + e1 ]
                 box Binop(Plus, box Const(c), box Binop(Mul, box Const(k), box e2)),
                 box e1
-            )) if let Some(scale) = Scale::from(*k) => Bisd {
+            )) if let Some(scale) = Scale::from(k) => Bisd {
                 base : Some(e1),
                 index: Some(e2),
                 scale,
-                disp: Some(*c),
+                disp: Some(c),
             },
 
 
@@ -201,21 +283,21 @@ impl<'a> AddressingMode<'a> {
             | Mem(box Binop(Plus, box Binop(Mul, box Const(k), box e), box Const(c)))
             | Mem(box Binop(Plus, box Const(c), box Binop(Mul, box e, box Const(k))))
             | Mem(box Binop(Plus, box Const(c), box Binop(Mul, box Const(k), box e)))
-            if let Some(scale) = Scale::from(*k)
+            if let Some(scale) = Scale::from(k)
             =>
-                Bisd { base: None, index: Some(e), scale: scale, disp: Some(*c) },
+                Bisd { base: None, index: Some(e), scale: scale, disp: Some(c) },
 
 
             // ----------------------------------------------[e + c]----------------------------------------------
             Mem(box Binop(Plus, box e, box Const(c)))
             | Mem(box Binop(Plus, box Const(c), box e)) =>
-                Bisd { base: Some(e), index: None, scale: Scale::One, disp: Some(*c) },
+                Bisd { base: Some(e), index: None, scale: Scale::One, disp: Some(c) },
 
 
             // ----------------------------------------------[[e * k]----------------------------------------------[
             Mem(box Binop(Mul, box e, box Const(k)))
             | Mem(box Binop(Mul, box Const(k), box e))
-            if let Some(scale) = Scale::from(*k) =>
+            if let Some(scale) = Scale::from(k) =>
                 Bisd { base: None, index: Some(e), scale: scale, disp: None },
 
 
@@ -224,7 +306,7 @@ impl<'a> AddressingMode<'a> {
             | Mem(box Binop(Plus, box e1, box Binop(Mul, box Const(k), box e2)))
             | Mem(box Binop(Plus, box Binop(Mul, box e2, box Const(k)), box e1))
             | Mem(box Binop(Plus, box Binop(Mul, box Const(k), box e2), box e1))
-            if let Some(scale) = Scale::from(*k) =>
+            if let Some(scale) = Scale::from(k) =>
                 Bisd { base: Some(e1), index: Some(e2), scale, disp: None },
 
 
@@ -235,7 +317,7 @@ impl<'a> AddressingMode<'a> {
                 scale: Scale::One,
                 disp: None,
             },
-            _ => NotMem,
+            _ => NotMem(e)
         }
     }
 }
@@ -376,7 +458,6 @@ impl Codegen for X86Asm {
                 });
                 tfresh
             }
-            // todo be more robust and handle the 4 combos.
             Binop(Plus, box Temp(t1), box Binop(Mul, box Temp(t2), box Const(k)))
             | Binop(Plus, box Temp(t1), box Binop(Mul, box Const(k), box Temp(t2)))
             | Binop(Plus, box Binop(Mul, box Temp(t2), box Const(k)), box Temp(t1))
@@ -448,6 +529,7 @@ impl Codegen for X86Asm {
             IrExp::Call(box f, args) => {
                 let num_args = args.len();
                 let mut arg_regs = Vec::with_capacity(args.len());
+
                 for arg_exp in args {
                     arg_regs.push(Self::munch_exp(arg_exp, result, gen));
                 }
@@ -579,13 +661,29 @@ impl Codegen for X86Asm {
                 t
             }
             Mem(box e) => {
-                let address = Self::munch_exp(e, result, gen);
+                let m = AddressingMode::match_addressing_mode(e);
                 let result_temp = gen.new_unnamed_temp();
-                result.push(Instr::Move {
-                    assem: "movq (%'S), %'D",
-                    dst: result_temp,
-                    src: address,
-                });
+                match m {
+                    Bisd { .. } => {
+                        let mut fmt = String::new();
+                        let mut srcs = Vec::new();
+                        m.consume(&mut srcs, &mut fmt, result, gen);
+                        result.push(Instr::Oper {
+                            assem: format!("movq {}, %'D0", fmt),
+                            dst: Dst(vec![result_temp]),
+                            src: Src(srcs),
+                            jump: vec![],
+                        });
+                    }
+                    NotMem(e) => {
+                        let address = Self::munch_exp(e, result, gen);
+                        result.push(Instr::Move {
+                            assem: "movq (%'S), %'D",
+                            dst: result_temp,
+                            src: address,
+                        });
+                    }
+                }
                 result_temp
             }
             Eseq(..) => panic!("impl bug: Eseq should have been eliminated"),
@@ -823,4 +921,9 @@ pub mod trivial_reg {
             Instr::Label { .. } => unreachable!(),
         }
     }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
 }
