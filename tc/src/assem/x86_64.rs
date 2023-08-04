@@ -15,6 +15,55 @@ use crate::{
 
 pub struct X86Asm;
 
+enum Scale {
+    One,
+    Two,
+    Four,
+    Eight,
+}
+// Base-index-scale-displacement
+
+enum AddressingMode<'a> {
+    Bisd {
+        base: Option<&'a IrExp>,
+        index: Option<&'a IrExp>,
+        scale: Scale,
+        disp: Option<i32>,
+    },
+    NotMem
+}
+
+use AddressingMode::*;
+
+impl<'a> AddressingMode<'a> {
+    fn match_addressing_mode(e: &IrExp) -> AddressingMode {
+        match e {
+            // t
+            // c this is bad, lump together with  above
+            // t + c
+            // t * k
+            // t * k + c
+            // t1 + t2 * k
+            // t1 + t2 * k + c
+            // TODO
+            // t1 + t2 * k + c
+
+            // [e + c]
+            Mem(box Binop(Plus, box e, box Const(c)))
+            => NotMem,
+            // [e * k]
+            Mem(box Binop(Mul, box e, box Const(k))) => NotMem,
+            // [e * k + c]
+            Mem(box Binop(Plus, box Binop(Mul, box e, box Const(k)), box Const(c))) => NotMem,
+            // [e1 + e2 * k]
+            Mem(box Binop(Plus, box e1, box Binop(Mul, box e2, box Const(k)))) => NotMem,
+            // [e]
+            Mem(box e) => Bisd { base: Some(e), index: None, scale: Scale::One, disp: None },
+            _ => NotMem
+        }
+    }
+}
+
 impl Codegen for X86Asm {
     fn munch_stm(stm: IrStm, result: &mut Vec<Instr>, gen: &mut dyn Uuids) {
         match stm {
@@ -287,7 +336,7 @@ impl Codegen for X86Asm {
                             jump: vec![],
                         });
                     }
-                    _ => unreachable!()
+                    _ => unreachable!(),
                 }
 
                 // persist the result register.
