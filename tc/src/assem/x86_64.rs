@@ -434,22 +434,21 @@ impl Codegen for X86Asm {
                         // need to do it 2 times. once to move the src into a temporary.
                         let mut fmt = String::new();
                         let mut srcs = Vec::new();
-                        let d0 = gen.new_unnamed_temp();
+                        let src_temp = gen.new_unnamed_temp();
 
                         src.consume_as_source("movq", &mut srcs, &mut fmt, result, gen)?;
 
                         result.push(Instr::Oper {
                             assem: fmt,
-                            dst: Dst(vec![d0]),
+                            dst: Dst(vec![src_temp]),
                             src: Src(srcs),
                             jump: vec![],
                         });
                         // then move the temporary into the dst.
                         fmt = String::new();
                         srcs = Vec::new();
-                        srcs.push(d0); // the temporary holding the value of src
-                        write!(fmt, "movq %'S0, ")?;
-                        dst.consume(&mut srcs, &mut fmt, result, gen)?;
+
+                        dst.consume_as_dst("movq", src_temp, &mut srcs, &mut fmt, result, gen)?;
                         result.push(Instr::Oper {
                             assem: fmt,
                             dst: Dst::empty(),
@@ -750,9 +749,10 @@ impl Codegen for X86Asm {
                     Bisd { .. } => {
                         let mut fmt = String::new();
                         let mut srcs = Vec::new();
-                        m.consume(&mut srcs, &mut fmt, result, gen)?;
+
+                        m.consume_as_source("movq", &mut srcs, &mut fmt, result, gen)?;
                         result.push(Instr::Oper {
-                            assem: format!("movq {}, %'D0", fmt),
+                            assem: fmt,
                             dst: Dst(vec![result_temp]),
                             src: Src(srcs),
                             jump: vec![],
