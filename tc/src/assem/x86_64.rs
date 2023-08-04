@@ -361,87 +361,78 @@ impl Codegen for X86Asm {
                 });
             }
             Move(box dst_exp, box src_exp) => {
-                // precondition: post-canonicalizing, dest of move should be a Mem() or Temp()
-                // TODO fill this in after refactoring the consume method of addressing mode object.
-                match (dst_exp, src_exp) {
-                    // (Mem(dst), Mem(src)) => {}
-                    // (Mem(dst), src) => {}
-                    (Temp(dst), src @ Mem(..)) => {
-                        let addr_mode = AddressingMode::match_addressing_mode(src);
-                        match addr_mode {
-                            Bisd { .. } => {
-                                let mut srcs = Vec::new();
-                                let mut fmt = String::new();
-                                write!(fmt, "movq ")?;
-                                addr_mode.consume(&mut srcs, &mut fmt, result, gen)?;
-                                write!(fmt, ", %'D0")?;
-                                result.push(Instr::Oper {
-                                    assem: fmt,
-                                    dst: Dst(vec![dst]),
-                                    src: Src(srcs),
-                                    jump: vec![],
-                                });
-                            }
-                            NotMem(..) => unreachable!() // since this is already a Mem(..)
-                        }
-                    }
-                    (Temp(dst), src) => {
-                        let st = Self::munch_exp(src, result, gen)?;
+                let addr_mode_dst = AddressingMode::match_addressing_mode(dst_exp);
+                let addr_mode_src = AddressingMode::match_addressing_mode(src_exp);
+                match (addr_mode_dst, addr_mode_src) {
+                    (NotMem(dst), NotMem(src)) => {
+                        let dst = Self::munch_exp(dst, result, gen)?;
+                        let src = Self::munch_exp(src, result, gen)?;
                         result.push(Instr::Move {
                             assem: "movq %'S, %'D",
                             dst,
-                            src: st,
+                            src,
                         });
                     }
-                    // TODO uncomment this when finalized the Mem stuff, right now
-                    // I need the default to map to the original logic to test out the cases
-                    // where dst is a Temp
-                    // _ => panic!("impl bug, Move should be to a Temp or Mem"),
-                    (dst_exp, src_exp) => {
-                        let src = Self::munch_exp(src_exp, result, gen)?;
-                        match dst_exp {
-                            IrExp::Mem(box tgt) => {
-                                let dst = Self::munch_exp(tgt, result, gen)?;
-                                result.push(Instr::Oper {
-                                    assem: "movq %'S0, (%'S1)".into(),
-                                    dst: Dst::empty(),
-                                    src: Src(vec![src, dst]),
-                                    jump: vec![],
-                                });
-                            }
-                            IrExp::Temp(x) => {
-                                result.push(Instr::Move {
-                                    assem: "movq %'S, %'D",
-                                    dst: x,
-                                    src,
-                                });
-                            }
-                            _ => panic!("impl bug, Move should be to a Temp or Mem"),
-                        }
+                    (dst @ Bisd { .. }, NotMem(src)) => {
+                        let mut fmt = String::new();
+                        let mut srcs = Vec::new();
+
+                        let s0 = Self::munch_exp(src, result, gen)?;
+                        srcs.push(s0);
+
+                        write!(fmt, "movq %'S0, ")?;
+                        dst.consume(&mut srcs, &mut fmt, result, gen)?;
+                        result.push(Instr::Oper {
+                            assem: fmt,
+                            dst: Dst::empty(),
+                            src: Src(srcs),
+                            jump: vec![],
+                        });
+                    }
+                    (NotMem(dst), src @ Bisd { .. }) => {
+                        let mut fmt = String::new();
+                        let mut srcs = Vec::new();
+
+                        let d0 = Self::munch_exp(dst, result, gen)?;
+
+                        write!(fmt, "movq ")?;
+                        src.consume(&mut srcs, &mut fmt, result, gen)?;
+                        write!(fmt, ", %'D0")?;
+                        result.push(Instr::Oper {
+                            assem: fmt,
+                            dst: Dst(vec![d0]),
+                            src: Src(srcs),
+                            jump: vec![],
+                        });
+                    }
+                    (dst @ Bisd { .. }, src @ Bisd { .. }) => {
+                        // need to do it 2 times. once to move the src into a temporary.
+                        let mut fmt = String::new();
+                        let mut srcs = Vec::new();
+                        let d0 = gen.new_unnamed_temp();
+                        write!(fmt, "movq ")?;
+                        src.consume(&mut srcs, &mut fmt, result, gen)?;
+                        write!(fmt, ", %'D0")?;
+                        result.push(Instr::Oper {
+                            assem: fmt,
+                            dst: Dst(vec![d0]),
+                            src: Src(srcs),
+                            jump: vec![],
+                        });
+                        // then move the temporary into the dst.
+                        fmt = String::new();
+                        srcs = Vec::new();
+                        srcs.push(d0); // the temporary holding the value of src
+                        write!(fmt, "movq %'S0, ")?;
+                        dst.consume(&mut srcs, &mut fmt, result, gen)?;
+                        result.push(Instr::Oper {
+                            assem: fmt,
+                            dst: Dst::empty(),
+                            src: Src(srcs),
+                            jump: vec![]
+                        });
                     }
                 }
-
-                // TODO delete when done. this is the original naive logic.
-                // let src = Self::munch_exp(src_exp, result, gen)?;
-                // match dst_exp {
-                //     IrExp::Mem(box tgt) => {
-                //         let dst = Self::munch_exp(tgt, result, gen)?;
-                //         result.push(Instr::Oper {
-                //             assem: "movq %'S0, (%'S1)".into(),
-                //             dst: Dst::empty(),
-                //             src: Src(vec![src, dst]),
-                //             jump: vec![],
-                //         });
-                //     }
-                //     IrExp::Temp(x) => {
-                //         result.push(Instr::Move {
-                //             assem: "movq %'S, %'D",
-                //             dst: x,
-                //             src,
-                //         });
-                //     }
-                //     _ => panic!("impl bug, Move should be to a Temp or Mem"),
-                // }
             }
             Jump(box e, target_labels) => {
                 let t = Self::munch_exp(e, result, gen)?;
