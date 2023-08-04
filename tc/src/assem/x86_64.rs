@@ -21,6 +21,18 @@ enum Scale {
     Four,
     Eight,
 }
+
+impl Scale {
+    fn from(value: i32) -> Option<Self> {
+        match value {
+            1 => Some(Scale::One),
+            2 => Some(Scale::Two),
+            4 => Some(Scale::Four),
+            8 => Some(Scale::Eight),
+            _ => None,
+        }
+    }
+}
 // Base-index-scale-displacement
 
 enum AddressingMode<'a> {
@@ -176,27 +188,45 @@ impl<'a> AddressingMode<'a> {
                 Plus, // [c + k * e2 + e1 ]
                 box Binop(Plus, box Const(c), box Binop(Mul, box Const(k), box e2)),
                 box e1
-            )) => NotMem,
+            )) if let Some(scale) = Scale::from(*k) => Bisd {
+                base : Some(e1),
+                index: Some(e2),
+                scale,
+                disp: Some(*c),
+            },
 
-            // ----------------------------------------------[e + c]----------------------------------------------
-            Mem(box Binop(Plus, box e, box Const(c)))
-            | Mem(box Binop(Plus, box Const(c), box e)) => NotMem,
-            // [e * k]
-            Mem(box Binop(Mul, box e, box Const(k))) | Mem(box Binop(Mul, box Const(k), box e)) => {
-                NotMem
-            }
 
             // ----------------------------------------------[e * k + c]----------------------------------------------
             Mem(box Binop(Plus, box Binop(Mul, box e, box Const(k)), box Const(c)))
             | Mem(box Binop(Plus, box Binop(Mul, box Const(k), box e), box Const(c)))
             | Mem(box Binop(Plus, box Const(c), box Binop(Mul, box e, box Const(k))))
-            | Mem(box Binop(Plus, box Const(c), box Binop(Mul, box Const(k), box e))) => NotMem,
+            | Mem(box Binop(Plus, box Const(c), box Binop(Mul, box Const(k), box e)))
+            if let Some(scale) = Scale::from(*k)
+            =>
+                Bisd { base: None, index: Some(e), scale: scale, disp: Some(*c) },
+
+
+            // ----------------------------------------------[e + c]----------------------------------------------
+            Mem(box Binop(Plus, box e, box Const(c)))
+            | Mem(box Binop(Plus, box Const(c), box e)) =>
+                Bisd { base: Some(e), index: None, scale: Scale::One, disp: Some(*c) },
+
+
+            // ----------------------------------------------[[e * k]----------------------------------------------[
+            Mem(box Binop(Mul, box e, box Const(k)))
+            | Mem(box Binop(Mul, box Const(k), box e))
+            if let Some(scale) = Scale::from(*k) =>
+                Bisd { base: None, index: Some(e), scale: scale, disp: None },
+
 
             // ----------------------------------------------[e1 + e2 * k]----------------------------------------------
             Mem(box Binop(Plus, box e1, box Binop(Mul, box e2, box Const(k))))
             | Mem(box Binop(Plus, box e1, box Binop(Mul, box Const(k), box e2)))
             | Mem(box Binop(Plus, box Binop(Mul, box e2, box Const(k)), box e1))
-            | Mem(box Binop(Plus, box Binop(Mul, box Const(k), box e2), box e1)) => NotMem,
+            | Mem(box Binop(Plus, box Binop(Mul, box Const(k), box e2), box e1))
+            if let Some(scale) = Scale::from(*k) =>
+                Bisd { base: Some(e1), index: Some(e2), scale, disp: None },
+
 
             // ----------------------------------------------[e]----------------------------------------------
             Mem(box e) => Bisd {
