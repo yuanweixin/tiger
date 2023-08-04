@@ -363,64 +363,92 @@ impl Codegen for X86Asm {
             Move(box dst_exp, box src_exp) => {
                 // precondition: post-canonicalizing, dest of move should be a Mem() or Temp()
                 // TODO fill this in after refactoring the consume method of addressing mode object.
-                // match (dst_exp, src_exp) {
-                //     (Mem(dst), Mem(src)) => {}
-                //     (Mem(dst), src) => {}
-                //     (Temp(dst), src @ Mem(..)) => {
-                //         let addr_mode = AddressingMode::match_addressing_mode(src);
-                //         match addr_mode {
-                //             Bisd { .. } => {
-                //                 let mut srcs = Vec::new();
-                //                 let mut fmt = String::new();
-                //                 addr_mode.consume(&mut srcs, &mut fmt, result, gen);
-                //                 result.push(Instr::Oper {
-                //                     assem: format!("movq {}, %'D0", fmt).into(),
-                //                     dst: Dst(vec![dst]),
-                //                     src: Src(srcs),
-                //                     jump: vec![],
-                //                 });
-                //             }
-                //             NotMem(src) => {
-                //                 let st = Self::munch_exp(src, result, gen);
-                //                 result.push(Instr::Move {
-                //                     assem: "movq %'S, %'D",
-                //                     dst,
-                //                     src: st,
-                //                 });
-                //             }
-                //         }
+                match (dst_exp, src_exp) {
+                    // (Mem(dst), Mem(src)) => {}
+                    // (Mem(dst), src) => {}
+                    (Temp(dst), src @ Mem(..)) => {
+                        let addr_mode = AddressingMode::match_addressing_mode(src);
+                        match addr_mode {
+                            Bisd { .. } => {
+                                let mut srcs = Vec::new();
+                                let mut fmt = String::new();
+                                write!(fmt, "movq ")?;
+                                addr_mode.consume(&mut srcs, &mut fmt, result, gen)?;
+                                write!(fmt, ", %'D0")?;
+                                result.push(Instr::Oper {
+                                    assem: fmt,
+                                    dst: Dst(vec![dst]),
+                                    src: Src(srcs),
+                                    jump: vec![],
+                                });
+                            }
+                            NotMem(src) => {
+                                let st = Self::munch_exp(src, result, gen)?;
+                                result.push(Instr::Move {
+                                    assem: "movq %'S, %'D",
+                                    dst,
+                                    src: st,
+                                });
+                            }
+                        }
+                    }
+                    (Temp(dst), src) => {
+                        let st = Self::munch_exp(src, result, gen)?;
+                        result.push(Instr::Move {
+                            assem: "movq %'S, %'D",
+                            dst,
+                            src: st,
+                        });
+                    }
+                    // TODO uncomment this when finalized the Mem stuff, right now
+                    // I need the default to map to the original logic to test out the cases
+                    // where dst is a Temp
+                    // _ => panic!("impl bug, Move should be to a Temp or Mem"),
+                    (dst_exp, src_exp) => {
+                        let src = Self::munch_exp(src_exp, result, gen)?;
+                        match dst_exp {
+                            IrExp::Mem(box tgt) => {
+                                let dst = Self::munch_exp(tgt, result, gen)?;
+                                result.push(Instr::Oper {
+                                    assem: "movq %'S0, (%'S1)".into(),
+                                    dst: Dst::empty(),
+                                    src: Src(vec![src, dst]),
+                                    jump: vec![],
+                                });
+                            }
+                            IrExp::Temp(x) => {
+                                result.push(Instr::Move {
+                                    assem: "movq %'S, %'D",
+                                    dst: x,
+                                    src,
+                                });
+                            }
+                            _ => panic!("impl bug, Move should be to a Temp or Mem"),
+                        }
+                    }
+                }
+
+                // TODO delete when done. this is the original naive logic.
+                // let src = Self::munch_exp(src_exp, result, gen)?;
+                // match dst_exp {
+                //     IrExp::Mem(box tgt) => {
+                //         let dst = Self::munch_exp(tgt, result, gen)?;
+                //         result.push(Instr::Oper {
+                //             assem: "movq %'S0, (%'S1)".into(),
+                //             dst: Dst::empty(),
+                //             src: Src(vec![src, dst]),
+                //             jump: vec![],
+                //         });
                 //     }
-                //     (Temp(dst), src) => {
-                //         let st = Self::munch_exp(src, result, gen);
+                //     IrExp::Temp(x) => {
                 //         result.push(Instr::Move {
                 //             assem: "movq %'S, %'D",
-                //             dst,
-                //             src: st,
+                //             dst: x,
+                //             src,
                 //         });
                 //     }
                 //     _ => panic!("impl bug, Move should be to a Temp or Mem"),
                 // }
-
-                let src = Self::munch_exp(src_exp, result, gen)?;
-                match dst_exp {
-                    IrExp::Mem(box tgt) => {
-                        let dst = Self::munch_exp(tgt, result, gen)?;
-                        result.push(Instr::Oper {
-                            assem: "movq %'S0, (%'S1)".into(),
-                            dst: Dst::empty(),
-                            src: Src(vec![src, dst]),
-                            jump: vec![],
-                        });
-                    }
-                    IrExp::Temp(x) => {
-                        result.push(Instr::Move {
-                            assem: "movq %'S, %'D",
-                            dst: x,
-                            src,
-                        });
-                    }
-                    _ => panic!("impl bug, Move should be to a Temp or Mem"),
-                }
             }
             Jump(box e, target_labels) => {
                 let t = Self::munch_exp(e, result, gen)?;
