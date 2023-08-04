@@ -61,7 +61,10 @@ impl<'a> AddressingMode<'a> {
             | Mem(box Binop(Plus, box Const(c), box Binop(Mul, box e, box Const(k))))
             | Mem(box Binop(Plus, box Const(c), box Binop(Mul, box Const(k), box e))) => NotMem,
             // [e1 + e2 * k]
-            Mem(box Binop(Plus, box e1, box Binop(Mul, box e2, box Const(k)))) => NotMem,
+            Mem(box Binop(Plus, box e1, box Binop(Mul, box e2, box Const(k))))
+            | Mem(box Binop(Plus, box e1, box Binop(Mul, box Const(k), box e2)))
+            | Mem(box Binop(Plus, box Binop(Mul, box e2, box Const(k)), box e1))
+            | Mem(box Binop(Plus, box Binop(Mul, box Const(k), box e2), box e1)) => NotMem,
             // [e]
             Mem(box e) => Bisd {
                 base: Some(e),
