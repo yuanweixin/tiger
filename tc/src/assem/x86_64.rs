@@ -30,7 +30,7 @@ enum AddressingMode<'a> {
         scale: Scale,
         disp: Option<i32>,
     },
-    NotMem
+    NotMem,
 }
 
 use AddressingMode::*;
@@ -50,16 +50,26 @@ impl<'a> AddressingMode<'a> {
 
             // [e + c]
             Mem(box Binop(Plus, box e, box Const(c)))
-            => NotMem,
+            | Mem(box Binop(Plus, box Const(c), box e)) => NotMem,
             // [e * k]
-            Mem(box Binop(Mul, box e, box Const(k))) => NotMem,
+            Mem(box Binop(Mul, box e, box Const(k))) | Mem(box Binop(Mul, box Const(k), box e)) => {
+                NotMem
+            }
             // [e * k + c]
-            Mem(box Binop(Plus, box Binop(Mul, box e, box Const(k)), box Const(c))) => NotMem,
+            Mem(box Binop(Plus, box Binop(Mul, box e, box Const(k)), box Const(c)))
+            | Mem(box Binop(Plus, box Binop(Mul, box Const(k), box e), box Const(c)))
+            | Mem(box Binop(Plus, box Const(c), box Binop(Mul, box e, box Const(k))))
+            | Mem(box Binop(Plus, box Const(c), box Binop(Mul, box Const(k), box e))) => NotMem,
             // [e1 + e2 * k]
             Mem(box Binop(Plus, box e1, box Binop(Mul, box e2, box Const(k)))) => NotMem,
             // [e]
-            Mem(box e) => Bisd { base: Some(e), index: None, scale: Scale::One, disp: None },
-            _ => NotMem
+            Mem(box e) => Bisd {
+                base: Some(e),
+                index: None,
+                scale: Scale::One,
+                disp: None,
+            },
+            _ => NotMem,
         }
     }
 }
