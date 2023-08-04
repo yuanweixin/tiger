@@ -57,6 +57,35 @@ enum AddressingMode {
 use AddressingMode::*;
 
 impl AddressingMode {
+    fn consume_as_source(
+        self,
+        oper: &str,
+        srcs: &mut Vec<temp::Temp>,
+        fmt: &mut String,
+        result: &mut Vec<Instr>,
+        gen: &mut dyn Uuids,
+    ) -> Result<(), Box<dyn Error>> {
+        write!(fmt, "{} ", oper)?;
+        self.consume(srcs, fmt, result, gen)?;
+        write!(fmt, ", %'D0")?;
+        Ok(())
+    }
+
+    fn consume_as_dst(
+        self,
+        oper: &str,
+        src: temp::Temp,
+        srcs: &mut Vec<temp::Temp>,
+        fmt: &mut String,
+        result: &mut Vec<Instr>,
+        gen: &mut dyn Uuids,
+    ) -> Result<(), Box<dyn Error>> {
+        srcs.push(src);
+        write!(fmt, "{} %'S0, ", oper)?;
+        self.consume(srcs, fmt, result, gen)?;
+        Ok(())
+    }
+
     fn consume(
         self,
         srcs: &mut Vec<temp::Temp>,
@@ -378,10 +407,8 @@ impl Codegen for X86Asm {
                         let mut srcs = Vec::new();
 
                         let s0 = Self::munch_exp(src, result, gen)?;
-                        srcs.push(s0);
 
-                        write!(fmt, "movq %'S0, ")?;
-                        dst.consume(&mut srcs, &mut fmt, result, gen)?;
+                        dst.consume_as_dst("movq", s0, &mut srcs, &mut fmt, result, gen)?;
                         result.push(Instr::Oper {
                             assem: fmt,
                             dst: Dst::empty(),
@@ -395,9 +422,7 @@ impl Codegen for X86Asm {
 
                         let d0 = Self::munch_exp(dst, result, gen)?;
 
-                        write!(fmt, "movq ")?;
-                        src.consume(&mut srcs, &mut fmt, result, gen)?;
-                        write!(fmt, ", %'D0")?;
+                        src.consume_as_source("movq", &mut srcs, &mut fmt, result, gen)?;
                         result.push(Instr::Oper {
                             assem: fmt,
                             dst: Dst(vec![d0]),
@@ -410,9 +435,9 @@ impl Codegen for X86Asm {
                         let mut fmt = String::new();
                         let mut srcs = Vec::new();
                         let d0 = gen.new_unnamed_temp();
-                        write!(fmt, "movq ")?;
-                        src.consume(&mut srcs, &mut fmt, result, gen)?;
-                        write!(fmt, ", %'D0")?;
+
+                        src.consume_as_source("movq", &mut srcs, &mut fmt, result, gen)?;
+
                         result.push(Instr::Oper {
                             assem: fmt,
                             dst: Dst(vec![d0]),
@@ -429,7 +454,7 @@ impl Codegen for X86Asm {
                             assem: fmt,
                             dst: Dst::empty(),
                             src: Src(srcs),
-                            jump: vec![]
+                            jump: vec![],
                         });
                     }
                 }
@@ -446,6 +471,7 @@ impl Codegen for X86Asm {
             Cjump(r, box a, box b, lt, lf) => {
                 let ta = Self::munch_exp(a, result, gen)?;
                 let tb = Self::munch_exp(b, result, gen)?;
+                // TODO one of these can be a Mem
                 result.push(Instr::Oper {
                     assem: "cmpq %'S0, %'D0".into(),
                     dst: Dst(vec![ta]),
@@ -478,7 +504,7 @@ impl Codegen for X86Asm {
                 });
             }
             Exp(box e) => {
-                let _ = Self::munch_exp(e, result, gen);
+                Self::munch_exp(e, result, gen)?;
             }
             Label(lab) => match lab {
                 temp::Label::Named(..) => result.push(Instr::Label {
@@ -530,9 +556,10 @@ impl Codegen for X86Asm {
                 tfresh
             }
             Binop(op, box a, box b) => {
+                // TODO: if one of these is a mem, could probably handle that.
                 let instr = match op {
-                    Plus => "addq %'S0, %'D0",
-                    Minus => "subq %'S0, %'D0",
+                    Plus => "addq %'S0, %'D0",  // ok
+                    Minus => "subq %'S0, %'D0", // ok
                     IrBinop::Mul => "imulq %'S0, %'D0",
                     IrBinop::Div => "movq $0, %rdx\n\tidivq %'S0", // rdx is zero'ed otherwise it complains about "floating point exception"
                     IrBinop::And => "andq %'S0, %'D0",
