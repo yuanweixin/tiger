@@ -38,34 +38,167 @@ use AddressingMode::*;
 impl<'a> AddressingMode<'a> {
     fn match_addressing_mode(e: &IrExp) -> AddressingMode {
         match e {
-            // t
-            // c this is bad, lump together with  above
-            // t + c
-            // t * k
-            // t * k + c
-            // t1 + t2 * k
-            // t1 + t2 * k + c
-            // TODO
-            // t1 + t2 * k + c
+            // ----------------------------------------------t1 + t2 * k + c----------------------------------------------
+            // and variations accounting for commutivity and associativity
+            Mem(box Binop(
+                // [e1 + (e2 * k + c)]
+                Plus,
+                box e1,
+                box Binop(Plus, box Binop(Mul, box e2, box Const(k)), box Const(c)),
+            ))
+            | Mem(box Binop(
+                // [e1 + (k * e2 + c)]
+                Plus,
+                box e1,
+                box Binop(Plus, box Binop(Mul, box Const(k), box e2), box Const(c)),
+            ))
+            | Mem(box Binop(
+                // [e1 + (c + e2 * k)]
+                Plus,
+                box e1,
+                box Binop(Plus, box Const(c), box Binop(Mul, box e2, box Const(k))),
+            ))
+            | Mem(box Binop(
+                // [e1 + (c + k * e2)]
+                Plus,
+                box e1,
+                box Binop(Plus, box Const(c), box Binop(Mul, box Const(k), box e2)),
+            ))
+            | Mem(box Binop(
+                // [e2 * k + (e1 + c)]
+                Plus,
+                box Binop(Mul, box e2, box Const(k)),
+                box Binop(Plus, box e1, box Const(c)),
+            ))
+            | Mem(box Binop(
+                // [k * e2 + (e1 + c)]
+                Plus,
+                box Binop(Mul, box Const(k), box e2),
+                box Binop(Plus, box e1, box Const(c)),
+            ))
+            | Mem(box Binop(
+                // [e2 * k + (c + e1)]
+                Plus,
+                box Binop(Mul, box e2, box Const(k)),
+                box Binop(Plus, box Const(c), box e1),
+            ))
+            | Mem(box Binop(
+                // [k * e2 + (c + e1)]
+                Plus,
+                box Binop(Mul, box Const(k), box e2),
+                box Binop(Plus, box Const(c), box e1),
+            ))
+            | Mem(box Binop(
+                Plus, // [c + (e1 + e2 * k)]
+                box Const(c),
+                box Binop(Plus, box e1, box Binop(Mul, box e2, box Const(k))),
+            ))
+            | Mem(box Binop(
+                Plus, // [c + (e2 * k + e1)]
+                box Const(c),
+                box Binop(Plus, box Binop(Mul, box e2, box Const(k)), box e1),
+            ))
+            | Mem(box Binop(
+                Plus, // [c + (e1 + k * e2) ]
+                box Const(c),
+                box Binop(Plus, box e1, box Binop(Mul, box Const(k), box e2)),
+            ))
+            | Mem(box Binop(
+                Plus, // [c + (k * e2 + e1) ]
+                box Const(c),
+                box Binop(Plus, box Binop(Mul, box Const(k), box e2), box e1),
+            ))
+            | // ----------------------------------------------associativity----------------------------------------------
+             Mem(box Binop(
+                // [e1 + e2 * k + c]
+                Plus,
+                box e1,
+                box Binop(Plus, box Binop(Mul, box e2, box Const(k)), box Const(c)),
+            ))
+            | Mem(box Binop(
+                // [e1 + k * e2 + c]
+                Plus,
+                box e1,
+                box Binop(Plus, box Binop(Mul, box Const(k), box e2), box Const(c)),
+            ))
+            | Mem(box Binop(
+                // [e1 + c + e2 * k]
+                Plus,
+                box e1,
+                box Binop(Plus, box Const(c), box Binop(Mul, box e2, box Const(k))),
+            ))
+            | Mem(box Binop(
+                // [e1 + c + k * e2]
+                Plus,
+                box e1,
+                box Binop(Plus, box Const(c), box Binop(Mul, box Const(k), box e2)),
+            ))
+            | Mem(box Binop(
+                // [e2 * k + e1 + c]
+                Plus,
+                box Binop(Mul, box e2, box Const(k)),
+                box Binop(Plus, box e1, box Const(c)),
+            ))
+            | Mem(box Binop(
+                // [k * e2 + e1 + c]
+                Plus,
+                box Binop(Mul, box Const(k), box e2),
+                box Binop(Plus, box e1, box Const(c)),
+            ))
+            | Mem(box Binop(
+                // [e2 * k + c + e1]
+                Plus,
+                box Binop(Mul, box e2, box Const(k)),
+                box Binop(Plus, box Const(c), box e1),
+            ))
+            | Mem(box Binop(
+                // [k * e2 + c + e1]
+                Plus,
+                box Binop(Mul, box Const(k), box e2),
+                box Binop(Plus, box Const(c), box e1),
+            ))
+            | Mem(box Binop(
+                Plus, // [c + e1 + e2 * k]
+                box Const(c),
+                box Binop(Plus, box e1, box Binop(Mul, box e2, box Const(k))),
+            ))
+            | Mem(box Binop(
+                Plus, // [c + e2 * k + e1]
+                box Const(c),
+                box Binop(Plus, box Binop(Mul, box e2, box Const(k)), box e1),
+            ))
+            | Mem(box Binop(
+                Plus, // [c + e1 + k * e2 ]
+                box Const(c),
+                box Binop(Plus, box e1, box Binop(Mul, box Const(k), box e2)),
+            ))
+            | Mem(box Binop(
+                Plus, // [c + k * e2 + e1 ]
+                box Const(c),
+                box Binop(Plus, box Binop(Mul, box Const(k), box e2), box e1),
+            )) => NotMem,
 
-            // [e + c]
+            // ----------------------------------------------[e + c]----------------------------------------------
             Mem(box Binop(Plus, box e, box Const(c)))
             | Mem(box Binop(Plus, box Const(c), box e)) => NotMem,
             // [e * k]
             Mem(box Binop(Mul, box e, box Const(k))) | Mem(box Binop(Mul, box Const(k), box e)) => {
                 NotMem
             }
-            // [e * k + c]
+
+            // ----------------------------------------------[e * k + c]----------------------------------------------
             Mem(box Binop(Plus, box Binop(Mul, box e, box Const(k)), box Const(c)))
             | Mem(box Binop(Plus, box Binop(Mul, box Const(k), box e), box Const(c)))
             | Mem(box Binop(Plus, box Const(c), box Binop(Mul, box e, box Const(k))))
             | Mem(box Binop(Plus, box Const(c), box Binop(Mul, box Const(k), box e))) => NotMem,
-            // [e1 + e2 * k]
+
+            // ----------------------------------------------[e1 + e2 * k]----------------------------------------------
             Mem(box Binop(Plus, box e1, box Binop(Mul, box e2, box Const(k))))
             | Mem(box Binop(Plus, box e1, box Binop(Mul, box Const(k), box e2)))
             | Mem(box Binop(Plus, box Binop(Mul, box e2, box Const(k)), box e1))
             | Mem(box Binop(Plus, box Binop(Mul, box Const(k), box e2), box e1)) => NotMem,
-            // [e]
+
+            // ----------------------------------------------[e]----------------------------------------------
             Mem(box e) => Bisd {
                 base: Some(e),
                 index: None,
