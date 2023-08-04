@@ -382,14 +382,7 @@ impl Codegen for X86Asm {
                                     jump: vec![],
                                 });
                             }
-                            NotMem(src) => {
-                                let st = Self::munch_exp(src, result, gen)?;
-                                result.push(Instr::Move {
-                                    assem: "movq %'S, %'D",
-                                    dst,
-                                    src: st,
-                                });
-                            }
+                            NotMem(..) => unreachable!() // since this is already a Mem(..)
                         }
                     }
                     (Temp(dst), src) => {
