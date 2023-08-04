@@ -71,7 +71,7 @@ impl AddressingMode {
                 scale,
                 disp,
             } => {
-                let mut next_src = srcs.len();
+                let next_src = srcs.len();
 
                 let d = disp.map(|x| x.to_string());
                 match (base, index, disp) {
@@ -358,11 +358,47 @@ impl Codegen for X86Asm {
                 });
             }
             Move(box dst_exp, box src_exp) => {
-                // After canonicalizing, we should only end up with
-                // Move(Mem, _) or Move(Temp, _)
+                // precondition: post-canonicalizing, dest of move should be a Mem() or Temp()
+                // TODO fill this in after refactoring the consume method of addressing mode object.
+                // match (dst_exp, src_exp) {
+                //     (Mem(dst), Mem(src)) => {}
+                //     (Mem(dst), src) => {}
+                //     (Temp(dst), src @ Mem(..)) => {
+                //         let addr_mode = AddressingMode::match_addressing_mode(src);
+                //         match addr_mode {
+                //             Bisd { .. } => {
+                //                 let mut srcs = Vec::new();
+                //                 let mut fmt = String::new();
+                //                 addr_mode.consume(&mut srcs, &mut fmt, result, gen);
+                //                 result.push(Instr::Oper {
+                //                     assem: format!("movq {}, %'D0", fmt).into(),
+                //                     dst: Dst(vec![dst]),
+                //                     src: Src(srcs),
+                //                     jump: vec![],
+                //                 });
+                //             }
+                //             NotMem(src) => {
+                //                 let st = Self::munch_exp(src, result, gen);
+                //                 result.push(Instr::Move {
+                //                     assem: "movq %'S, %'D",
+                //                     dst,
+                //                     src: st,
+                //                 });
+                //             }
+                //         }
+                //     }
+                //     (Temp(dst), src) => {
+                //         let st = Self::munch_exp(src, result, gen);
+                //         result.push(Instr::Move {
+                //             assem: "movq %'S, %'D",
+                //             dst,
+                //             src: st,
+                //         });
+                //     }
+                //     _ => panic!("impl bug, Move should be to a Temp or Mem"),
+                // }
 
                 let src = Self::munch_exp(src_exp, result, gen);
-
                 match dst_exp {
                     IrExp::Mem(box tgt) => {
                         let dst = Self::munch_exp(tgt, result, gen);
