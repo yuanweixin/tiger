@@ -548,16 +548,6 @@ impl Codegen for X86Asm {
                     }
                 }
 
-                // let ta = Self::munch_exp(a, result, gen)?;
-                // let tb = Self::munch_exp(b, result, gen)?;
-                // // TODO one of these can be a Mem
-                // result.push(Instr::Oper {
-                //     assem: "cmpq %'S0, %'D0".into(),
-                //     dst: Dst(vec![ta]),
-                //     src: Src(vec![tb, ta]),
-                //     jump: vec![],
-                // });
-
                 let assem = match r {
                     Eq => "je .L'J0",
                     Ne => "jne .L'J0",
