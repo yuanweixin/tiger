@@ -61,14 +61,19 @@ impl AddressingMode {
         self,
         oper: &str,
         srcs: &mut Vec<temp::Temp>,
-        fmt: &mut String,
         result: &mut Vec<Instr>,
         gen: &mut dyn Uuids,
-    ) -> Result<(), Box<dyn Error>> {
+        // no_dst: bool // TODO true for things like `cmpq %a, %b`, where %b refers to a source register.
+    ) -> Result<String, Box<dyn Error>> {
+        let mut fmt = String::new();
         write!(fmt, "{} ", oper)?;
-        self.consume(srcs, fmt, result, gen)?;
-        write!(fmt, ", %'D0")?;
-        Ok(())
+        self.consume(srcs, &mut fmt, result, gen)?;
+        // if no_dst {
+        //     write!(fmt, ", %'S0");
+        // } else {
+            write!(fmt, ", %'D0")?;
+        // }
+        Ok(fmt)
     }
 
     fn consume_as_dst(
@@ -76,14 +81,14 @@ impl AddressingMode {
         oper: &str,
         src: temp::Temp,
         srcs: &mut Vec<temp::Temp>,
-        fmt: &mut String,
         result: &mut Vec<Instr>,
         gen: &mut dyn Uuids,
-    ) -> Result<(), Box<dyn Error>> {
+    ) -> Result<String, Box<dyn Error>> {
+        let mut fmt = String::new();
         srcs.push(src);
         write!(fmt, "{} %'S0, ", oper)?;
-        self.consume(srcs, fmt, result, gen)?;
-        Ok(())
+        self.consume(srcs, &mut fmt, result, gen)?;
+        Ok(fmt)
     }
 
     fn consume(
@@ -403,28 +408,26 @@ impl Codegen for X86Asm {
                         });
                     }
                     (dst @ Bisd { .. }, NotMem(src)) => {
-                        let mut fmt = String::new();
                         let mut srcs = Vec::new();
 
                         let s0 = Self::munch_exp(src, result, gen)?;
 
-                        dst.consume_as_dst("movq", s0, &mut srcs, &mut fmt, result, gen)?;
+                        let assem = dst.consume_as_dst("movq", s0, &mut srcs,  result, gen)?;
                         result.push(Instr::Oper {
-                            assem: fmt,
+                            assem,
                             dst: Dst::empty(),
                             src: Src(srcs),
                             jump: vec![],
                         });
                     }
                     (NotMem(dst), src @ Bisd { .. }) => {
-                        let mut fmt = String::new();
                         let mut srcs = Vec::new();
 
                         let d0 = Self::munch_exp(dst, result, gen)?;
 
-                        src.consume_as_source("movq", &mut srcs, &mut fmt, result, gen)?;
+                        let assem = src.consume_as_source("movq", &mut srcs, result, gen)?;
                         result.push(Instr::Oper {
-                            assem: fmt,
+                            assem,
                             dst: Dst(vec![d0]),
                             src: Src(srcs),
                             jump: vec![],
@@ -436,10 +439,10 @@ impl Codegen for X86Asm {
                         let mut srcs = Vec::new();
                         let src_temp = gen.new_unnamed_temp();
 
-                        src.consume_as_source("movq", &mut srcs, &mut fmt, result, gen)?;
+                        let assem = src.consume_as_source("movq", &mut srcs, result, gen)?;
 
                         result.push(Instr::Oper {
-                            assem: fmt,
+                            assem,
                             dst: Dst(vec![src_temp]),
                             src: Src(srcs),
                             jump: vec![],
@@ -448,7 +451,7 @@ impl Codegen for X86Asm {
                         fmt = String::new();
                         srcs = Vec::new();
 
-                        dst.consume_as_dst("movq", src_temp, &mut srcs, &mut fmt, result, gen)?;
+                        let assem = dst.consume_as_dst("movq", src_temp, &mut srcs,  result, gen)?;
                         result.push(Instr::Oper {
                             assem: fmt,
                             dst: Dst::empty(),
@@ -468,6 +471,49 @@ impl Codegen for X86Asm {
                 });
             }
             Cjump(r, box a, box b, lt, lf) => {
+                // let addr_mode_a = AddressingMode::match_addressing_mode(a);
+                // let addr_mode_b = AddressingMode::match_addressing_mode(b);
+
+                // match (addr_mode_a, addr_mode_b) {
+                //     (NotMem(a), NotMem(b)) => {
+                //         let ta = Self::munch_exp(a, result, gen)?;
+                //         let tb = Self::munch_exp(b, result, gen)?;
+                //         result.push(Instr::Oper {
+                //             assem: "cmpq %'S0, %'S1".into(), // S1-S0, here it is a-b
+                //             dst: Dst::empty(), // status flag is affected but we don't use that as a register.
+                //             src: Src(vec![tb, ta]),
+                //             jump: vec![],
+                //         });
+                //     }
+                //     (a @ Bisd { .. }, b @ Bisd { .. }) => {}
+                //     (a @ Bisd { .. }, NotMem(b)) => {
+                //         let tb = Self::munch_exp(b, result, gen)?;
+
+                //         let mut srcs = Vec::new();
+
+                //         // cmpq %S0, <a>
+                //         let assem = a.consume_as_dst("cmpq", tb, &mut srcs, result, gen)?;
+
+                //         result.push(Instr::Oper {
+                //             assem,
+                //             dst: Dst::empty(),
+                //             src: Src(srcs),
+                //             jump: vec![],
+                //         });
+                //     }
+                //     (NotMem(a), b @ Bisd { .. }) => {
+                //         // cmpq <b>, %S0
+                //         // final forms
+                //         // op [mem], %D0|S0 (D0 if it's a write, S0 if it's a read)
+                //         // op %S0, [mem]
+                //         // only difference is what the dst i
+                //         // let ta = Self::munch_exp(a, result, gen);
+                //         // let mut srcs = Vec::new();
+
+                //         // b.consume_as_source("cmpq", srcs, &mut fmt, result, gen)
+                //     }
+                // }
+
                 let ta = Self::munch_exp(a, result, gen)?;
                 let tb = Self::munch_exp(b, result, gen)?;
                 // TODO one of these can be a Mem
@@ -748,12 +794,11 @@ impl Codegen for X86Asm {
                 let result_temp = gen.new_unnamed_temp();
                 match m {
                     Bisd { .. } => {
-                        let mut fmt = String::new();
                         let mut srcs = Vec::new();
 
-                        m.consume_as_source("movq", &mut srcs, &mut fmt, result, gen)?;
+                        let assem = m.consume_as_source("movq", &mut srcs, result, gen)?;
                         result.push(Instr::Oper {
-                            assem: fmt,
+                            assem,
                             dst: Dst(vec![result_temp]),
                             src: Src(srcs),
                             jump: vec![],
