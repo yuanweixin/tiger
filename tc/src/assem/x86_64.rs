@@ -204,6 +204,7 @@ impl AddressingMode {
     }
 
     fn match_addressing_mode(e: IrExp) -> AddressingMode {
+        // TODO maybe this should panic if input is not some form of Mem.
         match e {
             // ----------------------------------------------t1 + t2 * k + c----------------------------------------------
             // and variations accounting for commutivity and associativity
@@ -435,53 +436,37 @@ impl Codegen for X86Asm {
                 });
             }
             Move(box dst_exp, box src_exp) => {
-                let addr_mode_dst = AddressingMode::match_addressing_mode(dst_exp);
-                let addr_mode_src = AddressingMode::match_addressing_mode(src_exp);
-                match (addr_mode_dst, addr_mode_src) {
-                    (NotMem(dst), NotMem(src)) => {
-                        let dst = Self::munch_exp(dst, result, gen)?;
-                        let src = Self::munch_exp(src, result, gen)?;
-                        result.push(Instr::Move {
-                            assem: "movq %'S, %'D",
-                            dst,
-                            src,
-                        });
-                    }
-                    (dst @ Bisd { .. }, NotMem(src)) => {
-                        let mut srcs = Vec::new();
-                        let s0 = Self::munch_exp(src, result, gen)?;
-                        let assem = dst.consume_as_dst("movq", s0, &mut srcs, result, gen)?;
-                        result.push(Instr::Oper {
-                            assem,
-                            dst: Dst::empty(),
-                            src: Src(srcs),
-                            jump: vec![],
-                        });
-                    }
-                    (NotMem(dst), src @ Bisd { .. }) => {
-                        let mut srcs = Vec::new();
-
-                        let d0 = Self::munch_exp(dst, result, gen)?;
-
-                        let assem = src.consume_as_source("movq", &mut srcs, result, gen, None)?;
-                        result.push(Instr::Oper {
-                            assem,
-                            dst: Dst(vec![d0]),
-                            src: Src(srcs),
-                            jump: vec![],
-                        });
-                    }
-                    (dst @ Bisd { .. }, src @ Bisd { .. }) => {
-                        let src_temp = src.move_into_temporary(result, gen)?;
-                        let mut srcs = Vec::new();
-                        let assem = dst.consume_as_dst("movq", src_temp, &mut srcs, result, gen)?;
-                        result.push(Instr::Oper {
-                            assem,
-                            dst: Dst::empty(),
-                            src: Src(srcs),
-                            jump: vec![],
-                        });
-                    }
+                if matches!(dst_exp, Mem(..)) {
+                    let addr_mode = AddressingMode::match_addressing_mode(dst_exp);
+                    let t_src = Self::munch_exp(src_exp, result, gen)?;
+                    let mut srcs = Vec::new();
+                    let assem = addr_mode.consume_as_dst("movq", t_src, &mut srcs, result, gen)?;
+                    result.push(Instr::Oper {
+                        assem,
+                        dst: Dst::empty(),
+                        src: Src(srcs),
+                        jump: vec![],
+                    });
+                } else if matches!(src_exp, Mem(..)) {
+                    let addr_mode = AddressingMode::match_addressing_mode(src_exp);
+                    let d_src = Self::munch_exp(dst_exp, result, gen)?;
+                    let mut srcs = Vec::new();
+                    let assem =
+                        addr_mode.consume_as_source("movq", &mut srcs, result, gen, None)?;
+                    result.push(Instr::Oper {
+                        assem,
+                        dst: Dst(vec![d_src]),
+                        src: Src(srcs),
+                        jump: vec![],
+                    });
+                } else {
+                    let dst = Self::munch_exp(dst_exp, result, gen)?;
+                    let src = Self::munch_exp(src_exp, result, gen)?;
+                    result.push(Instr::Move {
+                        assem: "movq %'S, %'D",
+                        dst,
+                        src,
+                    });
                 }
             }
             Jump(box e, target_labels) => {
@@ -494,58 +479,38 @@ impl Codegen for X86Asm {
                 });
             }
             Cjump(r, box a, box b, lt, lf) => {
-                let addr_mode_a = AddressingMode::match_addressing_mode(a);
-                let addr_mode_b = AddressingMode::match_addressing_mode(b);
-
-                match (addr_mode_a, addr_mode_b) {
-                    (NotMem(a), NotMem(b)) => {
-                        let ta = Self::munch_exp(a, result, gen)?;
-                        let tb = Self::munch_exp(b, result, gen)?;
-                        result.push(Instr::Oper {
-                            assem: "cmpq %'S0, %'S1".into(), // S1-S0, here it is a-b
-                            dst: Dst::empty(), // status flag is affected but we don't use that as a register.
-                            src: Src(vec![tb, ta]), // in the correct order for ATT syntax.
-                            jump: vec![],
-                        });
-                    }
-                    (a @ Bisd { .. }, b @ Bisd { .. }) => {
-                        let b_temp = b.move_into_temporary(result, gen)?;
-                        let mut srcs = Vec::new();
-                        let assem = a.consume_as_dst("cmp", b_temp, &mut srcs, result, gen)?;
-                        result.push(Instr::Oper {
-                            assem,
-                            dst: Dst::empty(),
-                            src: Src(srcs),
-                            jump: vec![],
-                        });
-                    }
-                    (a @ Bisd { .. }, NotMem(b)) => {
-                        let tb = Self::munch_exp(b, result, gen)?;
-                        let mut srcs = Vec::new();
-
-                        // cmpq %Sx, <a>
-                        let assem = a.consume_as_dst("cmpq", tb, &mut srcs, result, gen)?;
-                        result.push(Instr::Oper {
-                            assem,
-                            dst: Dst::empty(),
-                            src: Src(srcs),
-                            jump: vec![],
-                        });
-                    }
-                    (NotMem(a), b @ Bisd { .. }) => {
-                        let ta = Self::munch_exp(a, result, gen)?;
-                        let mut srcs = Vec::new();
-
-                        // cmpq <b>, %S0
-                        let assem =
-                            b.consume_as_source("cmpq", &mut srcs, result, gen, Some(ta))?;
-                        result.push(Instr::Oper {
-                            assem,
-                            dst: Dst::empty(),
-                            src: Src(srcs),
-                            jump: vec![],
-                        });
-                    }
+                if matches!(a, Mem(..)) {
+                    let addr_mode = AddressingMode::match_addressing_mode(a);
+                    let mut srcs = Vec::new();
+                    let tb = Self::munch_exp(b, result, gen)?;
+                    let assem = addr_mode.consume_as_dst("cmpq", tb, &mut srcs, result, gen)?;
+                    result.push(Instr::Oper {
+                        assem,
+                        dst: Dst::empty(),
+                        src: Src(srcs),
+                        jump: vec![],
+                    });
+                } else if matches!(b, Mem(..)) {
+                    let addr_mode = AddressingMode::match_addressing_mode(b);
+                    let ta = Self::munch_exp(a, result, gen)?;
+                    let mut srcs = Vec::new();
+                    let assem =
+                        addr_mode.consume_as_source("cmpq", &mut srcs, result, gen, Some(ta))?;
+                    result.push(Instr::Oper {
+                        assem,
+                        dst: Dst::empty(),
+                        src: Src(srcs),
+                        jump: vec![],
+                    });
+                } else {
+                    let ta = Self::munch_exp(a, result, gen)?;
+                    let tb = Self::munch_exp(b, result, gen)?;
+                    result.push(Instr::Oper {
+                        assem: "cmpq %'S0, %'S1".into(), // S1-S0, here it is a-b
+                        dst: Dst::empty(), // status flag is affected but we don't use that as a register.
+                        src: Src(vec![tb, ta]), // in the correct order for ATT syntax.
+                        jump: vec![],
+                    });
                 }
 
                 let assem = match r {
