@@ -105,7 +105,7 @@ fn consume_index(
     match usize::from_str(tmp.as_str()) {
         Ok(template_arg_idx) => template_arg_idx,
         Err(..) => {
-            panic!("impl bug: invalid asm template string {}", assem)
+            panic!("impl bug: invalid asm template string '{}'", assem)
         }
     }
 }

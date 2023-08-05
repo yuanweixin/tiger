@@ -57,25 +57,64 @@ enum AddressingMode {
 use AddressingMode::*;
 
 impl AddressingMode {
+    /// In the code we match IrExp into an AddressingMode.
+    /// When we have situation op(e1, e2) where e1 and e2 are both matched into Bisd,
+    /// we need to basically process one of them into a temporary. But, since we already
+    /// "used" the IrExp during the matching, we can't just recursively munch it and
+    /// get the abstract register. So, to work around this annoying issue in our code
+    /// structure, this is added to generate that MOVE instruction.
+    ///
+    /// In other words, this is a good approximation of munch_exp(e, result, gen) where
+    /// e is a Mem.
+    fn move_into_temporary(
+        self,
+        result: &mut Vec<Instr>,
+        gen: &mut dyn Uuids,
+    ) -> Result<temp::Temp, Box<dyn Error>> {
+        let mut srcs = Vec::new();
+        let tf = gen.new_unnamed_temp();
+
+        let assem = self.consume_as_source("movq", &mut srcs, result, gen, None)?;
+        result.push(Instr::Oper {
+            assem,
+            dst: Dst(vec![tf]),
+            src: Src(srcs),
+            jump: vec![],
+        });
+        Ok(tf)
+    }
+
+    /// If src_temp_in_dst_position is None, this assumes 'D0 is the register this writes to.
+    ///
+    /// If src_temp_in_dst_position is passed, it means that register is used in the normally destination position; instruction is going to READ from instead of WRITE to that register.
+    /// That would have the side effect, of pushing the src_temp_in_dst_position content to the srcs list (so caller shouldn't do it).
+    ///
+    /// Finally, this also has the side effect of populating srcs with whatever source registers are generated during
+    /// the processing of the base-index-offset part.
     fn consume_as_source(
         self,
         oper: &str,
         srcs: &mut Vec<temp::Temp>,
         result: &mut Vec<Instr>,
         gen: &mut dyn Uuids,
-        // no_dst: bool // TODO true for things like `cmpq %a, %b`, where %b refers to a source register.
+        src_temp_in_dst_position: Option<temp::Temp>, // only set this if instruction does a read instead of a write, e.g. cmpq %b %a reads from %a.
     ) -> Result<String, Box<dyn Error>> {
         let mut fmt = String::new();
         write!(fmt, "{} ", oper)?;
         self.consume(srcs, &mut fmt, result, gen)?;
-        // if no_dst {
-        //     write!(fmt, ", %'S0");
-        // } else {
+        if let Some(src_temp_in_dst_pos) = src_temp_in_dst_position {
+            let idx = srcs.len();
+            srcs.push(src_temp_in_dst_pos);
+            write!(fmt, ", %'S{}", idx)?;
+        } else {
             write!(fmt, ", %'D0")?;
-        // }
+        }
         Ok(fmt)
     }
 
+    /// src is added to srcs as a side effect.
+    /// also has the side effect of extending the srcs with whatever source registers are generated during
+    /// the processing of the base-index-offset.
     fn consume_as_dst(
         self,
         oper: &str,
@@ -85,8 +124,9 @@ impl AddressingMode {
         gen: &mut dyn Uuids,
     ) -> Result<String, Box<dyn Error>> {
         let mut fmt = String::new();
+        let src_idx = srcs.len();
         srcs.push(src);
-        write!(fmt, "{} %'S0, ", oper)?;
+        write!(fmt, "{} %'S{}, ", oper, src_idx)?;
         self.consume(srcs, &mut fmt, result, gen)?;
         Ok(fmt)
     }
@@ -409,10 +449,8 @@ impl Codegen for X86Asm {
                     }
                     (dst @ Bisd { .. }, NotMem(src)) => {
                         let mut srcs = Vec::new();
-
                         let s0 = Self::munch_exp(src, result, gen)?;
-
-                        let assem = dst.consume_as_dst("movq", s0, &mut srcs,  result, gen)?;
+                        let assem = dst.consume_as_dst("movq", s0, &mut srcs, result, gen)?;
                         result.push(Instr::Oper {
                             assem,
                             dst: Dst::empty(),
@@ -425,7 +463,7 @@ impl Codegen for X86Asm {
 
                         let d0 = Self::munch_exp(dst, result, gen)?;
 
-                        let assem = src.consume_as_source("movq", &mut srcs, result, gen)?;
+                        let assem = src.consume_as_source("movq", &mut srcs, result, gen, None)?;
                         result.push(Instr::Oper {
                             assem,
                             dst: Dst(vec![d0]),
@@ -434,26 +472,11 @@ impl Codegen for X86Asm {
                         });
                     }
                     (dst @ Bisd { .. }, src @ Bisd { .. }) => {
-                        // need to do it 2 times. once to move the src into a temporary.
-                        let mut fmt = String::new();
+                        let src_temp = src.move_into_temporary(result, gen)?;
                         let mut srcs = Vec::new();
-                        let src_temp = gen.new_unnamed_temp();
-
-                        let assem = src.consume_as_source("movq", &mut srcs, result, gen)?;
-
+                        let assem = dst.consume_as_dst("movq", src_temp, &mut srcs, result, gen)?;
                         result.push(Instr::Oper {
                             assem,
-                            dst: Dst(vec![src_temp]),
-                            src: Src(srcs),
-                            jump: vec![],
-                        });
-                        // then move the temporary into the dst.
-                        fmt = String::new();
-                        srcs = Vec::new();
-
-                        let assem = dst.consume_as_dst("movq", src_temp, &mut srcs,  result, gen)?;
-                        result.push(Instr::Oper {
-                            assem: fmt,
                             dst: Dst::empty(),
                             src: Src(srcs),
                             jump: vec![],
@@ -471,58 +494,69 @@ impl Codegen for X86Asm {
                 });
             }
             Cjump(r, box a, box b, lt, lf) => {
-                // let addr_mode_a = AddressingMode::match_addressing_mode(a);
-                // let addr_mode_b = AddressingMode::match_addressing_mode(b);
+                let addr_mode_a = AddressingMode::match_addressing_mode(a);
+                let addr_mode_b = AddressingMode::match_addressing_mode(b);
 
-                // match (addr_mode_a, addr_mode_b) {
-                //     (NotMem(a), NotMem(b)) => {
-                //         let ta = Self::munch_exp(a, result, gen)?;
-                //         let tb = Self::munch_exp(b, result, gen)?;
-                //         result.push(Instr::Oper {
-                //             assem: "cmpq %'S0, %'S1".into(), // S1-S0, here it is a-b
-                //             dst: Dst::empty(), // status flag is affected but we don't use that as a register.
-                //             src: Src(vec![tb, ta]),
-                //             jump: vec![],
-                //         });
-                //     }
-                //     (a @ Bisd { .. }, b @ Bisd { .. }) => {}
-                //     (a @ Bisd { .. }, NotMem(b)) => {
-                //         let tb = Self::munch_exp(b, result, gen)?;
+                match (addr_mode_a, addr_mode_b) {
+                    (NotMem(a), NotMem(b)) => {
+                        let ta = Self::munch_exp(a, result, gen)?;
+                        let tb = Self::munch_exp(b, result, gen)?;
+                        result.push(Instr::Oper {
+                            assem: "cmpq %'S0, %'S1".into(), // S1-S0, here it is a-b
+                            dst: Dst::empty(), // status flag is affected but we don't use that as a register.
+                            src: Src(vec![tb, ta]), // in the correct order for ATT syntax.
+                            jump: vec![],
+                        });
+                    }
+                    (a @ Bisd { .. }, b @ Bisd { .. }) => {
+                        let b_temp = b.move_into_temporary(result, gen)?;
+                        let mut srcs = Vec::new();
+                        let assem = a.consume_as_dst("cmp", b_temp, &mut srcs, result, gen)?;
+                        result.push(Instr::Oper {
+                            assem,
+                            dst: Dst::empty(),
+                            src: Src(srcs),
+                            jump: vec![],
+                        });
+                    }
+                    (a @ Bisd { .. }, NotMem(b)) => {
+                        let tb = Self::munch_exp(b, result, gen)?;
+                        let mut srcs = Vec::new();
 
-                //         let mut srcs = Vec::new();
+                        // cmpq %Sx, <a>
+                        let assem = a.consume_as_dst("cmpq", tb, &mut srcs, result, gen)?;
+                        result.push(Instr::Oper {
+                            assem,
+                            dst: Dst::empty(),
+                            src: Src(srcs),
+                            jump: vec![],
+                        });
+                    }
+                    (NotMem(a), b @ Bisd { .. }) => {
+                        let ta = Self::munch_exp(a, result, gen)?;
+                        let mut srcs = Vec::new();
 
-                //         // cmpq %S0, <a>
-                //         let assem = a.consume_as_dst("cmpq", tb, &mut srcs, result, gen)?;
+                        // cmpq <b>, %S0
+                        let assem =
+                            b.consume_as_source("cmpq", &mut srcs, result, gen, Some(ta))?;
+                        result.push(Instr::Oper {
+                            assem,
+                            dst: Dst::empty(),
+                            src: Src(srcs),
+                            jump: vec![],
+                        });
+                    }
+                }
 
-                //         result.push(Instr::Oper {
-                //             assem,
-                //             dst: Dst::empty(),
-                //             src: Src(srcs),
-                //             jump: vec![],
-                //         });
-                //     }
-                //     (NotMem(a), b @ Bisd { .. }) => {
-                //         // cmpq <b>, %S0
-                //         // final forms
-                //         // op [mem], %D0|S0 (D0 if it's a write, S0 if it's a read)
-                //         // op %S0, [mem]
-                //         // only difference is what the dst i
-                //         // let ta = Self::munch_exp(a, result, gen);
-                //         // let mut srcs = Vec::new();
-
-                //         // b.consume_as_source("cmpq", srcs, &mut fmt, result, gen)
-                //     }
-                // }
-
-                let ta = Self::munch_exp(a, result, gen)?;
-                let tb = Self::munch_exp(b, result, gen)?;
-                // TODO one of these can be a Mem
-                result.push(Instr::Oper {
-                    assem: "cmpq %'S0, %'D0".into(),
-                    dst: Dst(vec![ta]),
-                    src: Src(vec![tb, ta]),
-                    jump: vec![],
-                });
+                // let ta = Self::munch_exp(a, result, gen)?;
+                // let tb = Self::munch_exp(b, result, gen)?;
+                // // TODO one of these can be a Mem
+                // result.push(Instr::Oper {
+                //     assem: "cmpq %'S0, %'D0".into(),
+                //     dst: Dst(vec![ta]),
+                //     src: Src(vec![tb, ta]),
+                //     jump: vec![],
+                // });
 
                 let assem = match r {
                     Eq => "je .L'J0",
@@ -589,7 +623,7 @@ impl Codegen for X86Asm {
             | Binop(Plus, box Temp(t1), box Binop(Mul, box Const(k), box Temp(t2)))
             | Binop(Plus, box Binop(Mul, box Temp(t2), box Const(k)), box Temp(t1))
             | Binop(Plus, box Binop(Mul, box Const(k), box Temp(t2)), box Temp(t1))
-                if [1, 2, 4, 8].contains(&k) =>
+                if let Some(_) = Scale::from(k) =>
             {
                 let tfresh = gen.new_unnamed_temp();
                 result.push(Instr::Oper {
@@ -796,7 +830,7 @@ impl Codegen for X86Asm {
                     Bisd { .. } => {
                         let mut srcs = Vec::new();
 
-                        let assem = m.consume_as_source("movq", &mut srcs, result, gen)?;
+                        let assem = m.consume_as_source("movq", &mut srcs, result, gen, None)?;
                         result.push(Instr::Oper {
                             assem,
                             dst: Dst(vec![result_temp]),
