@@ -198,13 +198,12 @@ impl AddressingMode {
                     _ => unreachable!(),
                 }
             }
-            _ => {}
+            NotMem(..) => panic!("impl bug: consume should never be called on a NotMem")
         }
         Ok(())
     }
 
     fn match_addressing_mode(e: IrExp) -> AddressingMode {
-        // TODO maybe this should panic if input is not some form of Mem.
         match e {
             // ----------------------------------------------t1 + t2 * k + c----------------------------------------------
             // and variations accounting for commutivity and associativity
