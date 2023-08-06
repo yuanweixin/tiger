@@ -1,7 +1,7 @@
 let
     var a := 2147483647
 in
-    // overflows are silent.
-    // hmm, should we catch and panic on such exceptions?
+    /* overflows are silent.
+       hmm, should we catch and panic on such exceptions? */
     (a + a; ())
 end

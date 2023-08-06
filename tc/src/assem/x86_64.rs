@@ -131,6 +131,7 @@ impl AddressingMode {
         Ok(fmt)
     }
 
+    /// Panics if used on a non-Bisd variant.
     fn consume(
         self,
         srcs: &mut Vec<temp::Temp>,
@@ -198,7 +199,7 @@ impl AddressingMode {
                     _ => unreachable!(),
                 }
             }
-            NotMem(..) => panic!("impl bug: consume should never be called on a NotMem")
+            NotMem(..) => panic!("impl bug: consume should never be called on a NotMem"),
         }
         Ok(())
     }
@@ -469,6 +470,7 @@ impl Codegen for X86Asm {
                 }
             }
             Jump(box e, target_labels) => {
+                // TODO isn't this suboptimal? shouldn't it detect jump to Name? Isn't that the only case really?
                 let t = Self::munch_exp(e, result, gen)?;
                 result.push(Instr::Oper {
                     assem: "jmp *%'S0".into(),
@@ -589,6 +591,58 @@ impl Codegen for X86Asm {
                 tfresh
             }
             Binop(op, box a, box b) => {
+                // let oper = match op {
+                // Plus => "addq",
+                //     Minus => "subq",
+                //     IrBinop::Mul => "imulq",
+                //     IrBinop::Div => "movq",
+                //     IrBinop::And => "andq",
+                //     IrBinop::Or => "orq",
+                //     Lshift => "shlq",
+                //     Rshift => "shrq",
+                //     ArShift => "sarq",
+                //     IrBinop::Xor => "xorq",
+                // };
+                // let rax_is_dst = matches!(op, Div);
+
+
+                // if matches!(a, Mem(..)) {
+                //     // using ta as the "destination" does not overwrite the content in a, which is correct.
+                //     let ta = Self::munch_exp(a, result, gen)?;
+                //     let addr_mode = AddressingMode::match_addressing_mode(b);
+
+                //     match addr_mode {
+                //         NotMem(be) => {
+                //             let tb = Self::munch_exp(be, result, gen)?;
+                //             if rax_is_dst {
+                //                 result.push(Instr::Oper { assem: format!("{} %'S0, 'S1", oper), dst: Dst(vec![x86_64::named_register(gen, x86_64::RAX)]), src: Src(vec![ta, tb]), jump: vec![] });
+                //             } else {
+                //                 result.push(Instr::Oper { assem: format!("{} %'S0, 'D0", oper), dst: Dst(vec![tb]), src: Src(vec![ta, tb]), jump: vec![] });
+                //             }
+                //         }
+                //         Bisd{..} => {
+                //             // op <b>, %ra
+                //             let mut srcs = Vec::new();
+                //             let assem = addr_mode.consume_as_source(oper, &mut srcs, result, gen, None)?;
+                //             srcs.push(ta); // since in 2 operand instruction, both operands are sources.
+                //             if rax_is_dst {
+                //                 result.push(Instr::Oper { assem, dst: Dst(vec![x86_64::named_register(gen, x86_64::RAX)]), src: Src(vec![ta, tb]), jump: vec![] });
+
+                //             } else {
+                //                 result.push(Instr::Oper { assem, dst: Dst(vec![ta]), src: Src(srcs), jump: vec![] });
+                //             }
+                //         }
+                //     }
+
+
+
+
+                // } else if matches!(b, Mem(..)) {
+
+                // } else {
+
+                // }
+
                 // TODO: if one of these is a mem, could probably handle that.
                 let instr = match op {
                     Plus => "addq %'S0, %'D0",  // ok
@@ -880,7 +934,7 @@ pub mod trivial_reg {
     ///         allocate a spot for it in the frame if there is not one.
     ///         then, we assign an available machine register rres to it.
     ///         the instruction would have the src/dst registers replaced with machine register temporaries.
-    ///         finally, after the instruction, we include a "mov [fp + offset], rres"
+    ///         finally, after the instruction, we include a "mov [fp + offset], rres" (intel syntax)
     ///             where offset is the fp relative offset of the dst register.
     ///         note: we will assume there is at most 1 abstract register that is used as the dst.
     pub fn do_trivial_register_allcation(
