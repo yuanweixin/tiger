@@ -475,7 +475,7 @@ impl Codegen for X86Asm {
                     assem: "jmp .L'J0".into(),
                     dst: Dst::empty(),
                     src: Src::empty(),
-                    jump: target_labels
+                    jump: target_labels,
                 });
             }
             Jump(box e, target_labels) => {
@@ -656,7 +656,7 @@ impl Codegen for X86Asm {
                     Plus => "addq %'S0, %'D0",  // ok
                     Minus => "subq %'S0, %'D0", // ok
                     IrBinop::Mul => "imulq %'S0, %'D0",
-                    IrBinop::Div => "movq $0, %rdx\n\tidivq %'S0", // rdx is zero'ed otherwise it complains about "floating point exception"
+                    IrBinop::Div => "idivq %'S0", // before: need to zero rdx and move dividend to rax; after: move rax to result register
                     IrBinop::And => "andq %'S0, %'D0",
                     IrBinop::Or => "orq %'S0, %'D0",
                     // base tiger language doesn't have these
@@ -667,7 +667,7 @@ impl Codegen for X86Asm {
                     IrBinop::Xor => "xorq %'S0, %'D0",
                 };
                 let is_div = matches!(op, IrBinop::Div);
-                // TODO add a test case to cover this of `a` being a temporary.
+
                 let a_temp = match a {
                     // because, if dst is already a temporary, this would have the undesirable
                     // side effect of overwriting the temporary. otoh, if dst is some complex
@@ -684,24 +684,27 @@ impl Codegen for X86Asm {
                     }
                     _ => Self::munch_exp(a, result, gen)?,
                 };
-
                 let b_temp = Self::munch_exp(b, result, gen)?;
-                result.push(Instr::Oper {
-                    assem: instr.into(),
-                    dst: Dst(if is_div {
-                        // div is a single operand operation that operates on RAX.
-                        // by construction, a_temp is a fresh temporary, so it will not be RAX.
-                        vec![a_temp, x86_64::named_register(gen, x86_64::RAX)]
-                    } else {
-                        vec![a_temp]
-                    }),
-                    // op a, b where a is both read and written to.
-                    // must include a here because it is also a source.
-                    // in trivial reg allocation, this would result in a load of a_temp from memory before the instruction.
-                    // but, since we use 'S0, b_temp must come first...not deep but very tricky.
-                    src: Src(vec![b_temp, a_temp]),
-                    jump: vec![],
-                });
+                if !is_div {
+                    result.push(Instr::Oper {
+                        assem: instr.into(),
+                        dst: Dst(
+                            vec![a_temp] // a_temp is defined here.
+                        ),
+                        src: Src(vec![b_temp, a_temp]), // a_temp is an implicit use in usual 2 address op code manner.
+                        jump: vec![],
+                    });
+                } else {
+                    // move a into rax
+                    // zero rdx
+                    // do the div
+                    // move rax to result register
+                    result.push(Instr::Oper { assem: "movq %'S0, %rax".into(), dst: Dst(vec![gen.named_temp(x86_64::RAX)]), src: Src(vec![a_temp]), jump: vec![] });
+                    // the dividend is actually RDX:RAX. so we have to zero the upper half.
+                    result.push(Instr::Oper { assem: "movq $0, %rdx".into(), dst: Dst(vec![gen.named_temp(x86_64::RDX)]), src: Src::empty(), jump: vec![] });
+                    result.push(Instr::Oper { assem: instr.into(), dst: Dst(vec![gen.named_temp(x86_64::RAX)]), src: Src(vec![b_temp]), jump: vec![] });
+                    result.push(Instr::Move { assem: "movq %'S, %'D", dst: a_temp , src: gen.named_temp(x86_64::RAX) });
+                }
                 a_temp
             }
             IrExp::Call(box f, args) => {
