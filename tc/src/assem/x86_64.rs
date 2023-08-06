@@ -469,8 +469,16 @@ impl Codegen for X86Asm {
                     });
                 }
             }
+            Jump(box Name(label), target_labels) => {
+                debug_assert!(matches!(label, temp::Label::Unnamed(..)));
+                result.push(Instr::Oper {
+                    assem: "jmp .L'J0".into(),
+                    dst: Dst::empty(),
+                    src: Src::empty(),
+                    jump: target_labels
+                });
+            }
             Jump(box e, target_labels) => {
-                // TODO isn't this suboptimal? shouldn't it detect jump to Name? Isn't that the only case really?
                 let t = Self::munch_exp(e, result, gen)?;
                 result.push(Instr::Oper {
                     assem: "jmp *%'S0".into(),
