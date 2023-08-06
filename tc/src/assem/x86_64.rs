@@ -44,17 +44,12 @@ impl Scale {
 }
 // Base-index-scale-displacement
 
-enum AddressingMode {
-    Bisd {
-        base: Option<IrExp>,
-        index: Option<IrExp>,
-        scale: Scale,
-        disp: Option<i32>,
-    },
-    NotMem(IrExp),
+struct AddressingMode {
+    base: Option<IrExp>,
+    index: Option<IrExp>,
+    scale: Scale,
+    disp: Option<i32>,
 }
-
-use AddressingMode::*;
 
 impl AddressingMode {
     /// In the code we match IrExp into an AddressingMode.
@@ -139,260 +134,248 @@ impl AddressingMode {
         result: &mut Vec<Instr>,
         gen: &mut dyn Uuids,
     ) -> Result<(), Box<dyn Error>> {
-        match self {
-            Bisd {
-                base,
-                index,
-                scale,
-                disp,
-            } => {
-                let next_src = srcs.len();
+        let next_src = srcs.len();
 
-                match (base, index, disp) {
-                    (Some(b), None, None) => {
-                        let t = X86Asm::munch_exp(b, result, gen)?;
-                        write!(fmt, "(%'S{})", next_src)?;
-                        srcs.push(t);
-                    }
-                    (Some(b), None, Some(d)) => {
-                        let t = X86Asm::munch_exp(b, result, gen)?;
-                        write!(fmt, "{}(%'S{})", d, next_src)?;
-                        srcs.push(t);
-                    }
-                    (Some(b), Some(i), None) => {
-                        let bt = X86Asm::munch_exp(b, result, gen)?;
-                        let it = X86Asm::munch_exp(i, result, gen)?;
-                        write!(
-                            fmt,
-                            "(%'S{}, %'S{}, {})",
-                            next_src,
-                            next_src + 1,
-                            scale.as_str()
-                        )?;
-                        srcs.push(bt);
-                        srcs.push(it);
-                    }
-                    (Some(b), Some(i), Some(d)) => {
-                        let bt = X86Asm::munch_exp(b, result, gen)?;
-                        let it = X86Asm::munch_exp(i, result, gen)?;
-                        write!(
-                            fmt,
-                            "{}(%'S{}, %'S{}, {})",
-                            d,
-                            next_src,
-                            next_src + 1,
-                            scale.as_str()
-                        )?;
-                        srcs.push(bt);
-                        srcs.push(it);
-                    }
-                    (None, Some(i), None) => {
-                        let it = X86Asm::munch_exp(i, result, gen)?;
-                        write!(fmt, "(, %'S{}, {})", next_src, scale.as_str())?;
-                        srcs.push(it);
-                    }
-                    (None, Some(i), Some(d)) => {
-                        let it = X86Asm::munch_exp(i, result, gen)?;
-                        write!(fmt, "{}(, %'S{}, {})", d, next_src, scale.as_str())?;
-                        srcs.push(it);
-                    }
-                    _ => unreachable!(),
-                }
+        match (self.base, self.index, self.disp) {
+            (Some(b), None, None) => {
+                let t = X86Asm::munch_exp(b, result, gen)?;
+                write!(fmt, "(%'S{})", next_src)?;
+                srcs.push(t);
             }
-            NotMem(..) => panic!("impl bug: consume should never be called on a NotMem"),
+            (Some(b), None, Some(d)) => {
+                let t = X86Asm::munch_exp(b, result, gen)?;
+                write!(fmt, "{}(%'S{})", d, next_src)?;
+                srcs.push(t);
+            }
+            (Some(b), Some(i), None) => {
+                let bt = X86Asm::munch_exp(b, result, gen)?;
+                let it = X86Asm::munch_exp(i, result, gen)?;
+                write!(
+                    fmt,
+                    "(%'S{}, %'S{}, {})",
+                    next_src,
+                    next_src + 1,
+                    self.scale.as_str()
+                )?;
+                srcs.push(bt);
+                srcs.push(it);
+            }
+            (Some(b), Some(i), Some(d)) => {
+                let bt = X86Asm::munch_exp(b, result, gen)?;
+                let it = X86Asm::munch_exp(i, result, gen)?;
+                write!(
+                    fmt,
+                    "{}(%'S{}, %'S{}, {})",
+                    d,
+                    next_src,
+                    next_src + 1,
+                    self.scale.as_str()
+                )?;
+                srcs.push(bt);
+                srcs.push(it);
+            }
+            (None, Some(i), None) => {
+                let it = X86Asm::munch_exp(i, result, gen)?;
+                write!(fmt, "(, %'S{}, {})", next_src, self.scale.as_str())?;
+                srcs.push(it);
+            }
+            (None, Some(i), Some(d)) => {
+                let it = X86Asm::munch_exp(i, result, gen)?;
+                write!(fmt, "{}(, %'S{}, {})", d, next_src, self.scale.as_str())?;
+                srcs.push(it);
+            }
+            _ => unreachable!(),
         }
         Ok(())
     }
 
+    /// input should be the inside expression of a Mem node. i.e. given Mem(e), use e as input.
     fn match_addressing_mode(e: IrExp) -> AddressingMode {
         match e {
-            // ----------------------------------------------t1 + t2 * k + c----------------------------------------------
-            // and variations accounting for commutivity and associativity
-            Mem(box Binop(
-                // [e1 + (e2 * k + c)]
-                Plus,
-                box e1,
-                box Binop(Plus, box Binop(Mul, box e2, box Const(k)), box Const(c)),
-            ))
-            | Mem(box Binop(
-                // [e1 + (k * e2 + c)]
-                Plus,
-                box e1,
-                box Binop(Plus, box Binop(Mul, box Const(k), box e2), box Const(c)),
-            ))
-            | Mem(box Binop(
-                // [e1 + (c + e2 * k)]
-                Plus,
-                box e1,
-                box Binop(Plus, box Const(c), box Binop(Mul, box e2, box Const(k))),
-            ))
-            | Mem(box Binop(
-                // [e1 + (c + k * e2)]
-                Plus,
-                box e1,
-                box Binop(Plus, box Const(c), box Binop(Mul, box Const(k), box e2)),
-            ))
-            | Mem(box Binop(
-                // [e2 * k + (e1 + c)]
-                Plus,
-                box Binop(Mul, box e2, box Const(k)),
-                box Binop(Plus, box e1, box Const(c)),
-            ))
-            | Mem(box Binop(
-                // [k * e2 + (e1 + c)]
-                Plus,
-                box Binop(Mul, box Const(k), box e2),
-                box Binop(Plus, box e1, box Const(c)),
-            ))
-            | Mem(box Binop(
-                // [e2 * k + (c + e1)]
-                Plus,
-                box Binop(Mul, box e2, box Const(k)),
-                box Binop(Plus, box Const(c), box e1),
-            ))
-            | Mem(box Binop(
-                // [k * e2 + (c + e1)]
-                Plus,
-                box Binop(Mul, box Const(k), box e2),
-                box Binop(Plus, box Const(c), box e1),
-            ))
-            | Mem(box Binop(
-                Plus, // [c + (e1 + e2 * k)]
-                box Const(c),
-                box Binop(Plus, box e1, box Binop(Mul, box e2, box Const(k))),
-            ))
-            | Mem(box Binop(
-                Plus, // [c + (e2 * k + e1)]
-                box Const(c),
-                box Binop(Plus, box Binop(Mul, box e2, box Const(k)), box e1),
-            ))
-            | Mem(box Binop(
-                Plus, // [c + (e1 + k * e2) ]
-                box Const(c),
-                box Binop(Plus, box e1, box Binop(Mul, box Const(k), box e2)),
-            ))
-            | Mem(box Binop(
-                Plus, // [c + (k * e2 + e1) ]
-                box Const(c),
-                box Binop(Plus, box Binop(Mul, box Const(k), box e2), box e1),
-            ))
-            | // ----------------------------------------------associativity----------------------------------------------
-             Mem(box Binop(
-                // [e1 + e2 * k + c]
-                Plus,
-                box Binop(Plus, box e1, box Binop(Mul, box e2, box Const(k))),
-                box Const(c)
-            ))
-            | Mem(box Binop(
-                // [e1 + k * e2 + c]
-                Plus,
-                box Binop(Plus, box e1, box Binop(Mul, box Const(k), box e2)),
-                box Const(c)
-            ))
-            | Mem(box Binop(
-                // [e1 + c + e2 * k]
-                Plus,
-                box Binop(Plus, box e1, box Const(c)),
-                box Binop(Mul, box e2, box Const(k))
-            ))
-            | Mem(box Binop(
-                // [e1 + c + k * e2]
-                Plus,
-                box Binop(Plus, box e1, box Const(c)),
-                box Binop(Mul, box Const(k), box e2)
-            ))
-            | Mem(box Binop(
-                // [e2 * k + e1 + c]
-                Plus,
-                box Binop(Plus, box Binop(Mul, box e2, box Const(k)), box e1),
-                box Const(c)
-            ))
-            | Mem(box Binop(
-                // [k * e2 + e1 + c]
-                Plus,
-                box Binop(Plus, box Binop(Mul, box Const(k), box e2), box e1),
-                box Const(c)
-            ))
-            | Mem(box Binop(
-                // [e2 * k + c + e1]
-                Plus,
-                box Binop(Plus, box Binop(Mul, box e2, box Const(k)), box Const(c)),
-                box e1
-            ))
-            | Mem(box Binop(
-                // [k * e2 + c + e1]
-                Plus,
-                box Binop(Plus, box Binop(Mul, box Const(k), box e2), box Const(c)),
-                box e1
-            ))
-            | Mem(box Binop(
-                Plus, // [c + e1 + e2 * k]
-                box Binop(Plus, box Const(c), box e1),
-                box Binop(Mul, box e2, box Const(k)),
-            ))
-            | Mem(box Binop(
-                Plus, // [c + e2 * k + e1]
-                box Binop(Plus, box Const(c),  box Binop(Mul, box e2, box Const(k))),
-                box e1
-            ))
-            | Mem(box Binop(
-                Plus, // [c + e1 + k * e2 ]
-                box Binop(Plus, box Const(c), box e1),
-                box Binop(Mul, box Const(k), box e2)
-            ))
-            | Mem(box Binop(
-                Plus, // [c + k * e2 + e1 ]
-                box Binop(Plus, box Const(c), box Binop(Mul, box Const(k), box e2)),
-                box e1
-            )) if let Some(scale) = Scale::from(k) => Bisd {
-                base : Some(e1),
-                index: Some(e2),
-                scale,
-                disp: Some(c),
-            },
+                // ----------------------------------------------t1 + t2 * k + c----------------------------------------------
+                // and variations accounting for commutivity and associativity
+                Binop(
+                    // [e1 + (e2 * k + c)]
+                    Plus,
+                    box e1,
+                    box Binop(Plus, box Binop(Mul, box e2, box Const(k)), box Const(c)),
+                )
+                | Binop(
+                    // [e1 + (k * e2 + c)]
+                    Plus,
+                    box e1,
+                    box Binop(Plus, box Binop(Mul, box Const(k), box e2), box Const(c)),
+                )
+                | Binop(
+                    // [e1 + (c + e2 * k)]
+                    Plus,
+                    box e1,
+                    box Binop(Plus, box Const(c), box Binop(Mul, box e2, box Const(k))),
+                )
+                | Binop(
+                    // [e1 + (c + k * e2)]
+                    Plus,
+                    box e1,
+                    box Binop(Plus, box Const(c), box Binop(Mul, box Const(k), box e2)),
+                )
+                | Binop(
+                    // [e2 * k + (e1 + c)]
+                    Plus,
+                    box Binop(Mul, box e2, box Const(k)),
+                    box Binop(Plus, box e1, box Const(c)),
+                )
+                | Binop(
+                    // [k * e2 + (e1 + c)]
+                    Plus,
+                    box Binop(Mul, box Const(k), box e2),
+                    box Binop(Plus, box e1, box Const(c)),
+                )
+                | Binop(
+                    // [e2 * k + (c + e1)]
+                    Plus,
+                    box Binop(Mul, box e2, box Const(k)),
+                    box Binop(Plus, box Const(c), box e1),
+                )
+                | Binop(
+                    // [k * e2 + (c + e1)]
+                    Plus,
+                    box Binop(Mul, box Const(k), box e2),
+                    box Binop(Plus, box Const(c), box e1),
+                )
+                | Binop(
+                    Plus, // [c + (e1 + e2 * k)]
+                    box Const(c),
+                    box Binop(Plus, box e1, box Binop(Mul, box e2, box Const(k))),
+                )
+                | Binop(
+                    Plus, // [c + (e2 * k + e1)]
+                    box Const(c),
+                    box Binop(Plus, box Binop(Mul, box e2, box Const(k)), box e1),
+                )
+                | Binop(
+                    Plus, // [c + (e1 + k * e2) ]
+                    box Const(c),
+                    box Binop(Plus, box e1, box Binop(Mul, box Const(k), box e2)),
+                )
+                | Binop(
+                    Plus, // [c + (k * e2 + e1) ]
+                    box Const(c),
+                    box Binop(Plus, box Binop(Mul, box Const(k), box e2), box e1),
+                )
+                | // ----------------------------------------------associativity----------------------------------------------
+                 Binop(
+                    // [e1 + e2 * k + c]
+                    Plus,
+                    box Binop(Plus, box e1, box Binop(Mul, box e2, box Const(k))),
+                    box Const(c)
+                )
+                | Binop(
+                    // [e1 + k * e2 + c]
+                    Plus,
+                    box Binop(Plus, box e1, box Binop(Mul, box Const(k), box e2)),
+                    box Const(c)
+                )
+                | Binop(
+                    // [e1 + c + e2 * k]
+                    Plus,
+                    box Binop(Plus, box e1, box Const(c)),
+                    box Binop(Mul, box e2, box Const(k))
+                )
+                | Binop(
+                    // [e1 + c + k * e2]
+                    Plus,
+                    box Binop(Plus, box e1, box Const(c)),
+                    box Binop(Mul, box Const(k), box e2)
+                )
+                | Binop(
+                    // [e2 * k + e1 + c]
+                    Plus,
+                    box Binop(Plus, box Binop(Mul, box e2, box Const(k)), box e1),
+                    box Const(c)
+                )
+                | Binop(
+                    // [k * e2 + e1 + c]
+                    Plus,
+                    box Binop(Plus, box Binop(Mul, box Const(k), box e2), box e1),
+                    box Const(c)
+                )
+                | Binop(
+                    // [e2 * k + c + e1]
+                    Plus,
+                    box Binop(Plus, box Binop(Mul, box e2, box Const(k)), box Const(c)),
+                    box e1
+                )
+                | Binop(
+                    // [k * e2 + c + e1]
+                    Plus,
+                    box Binop(Plus, box Binop(Mul, box Const(k), box e2), box Const(c)),
+                    box e1
+                )
+                | Binop(
+                    Plus, // [c + e1 + e2 * k]
+                    box Binop(Plus, box Const(c), box e1),
+                    box Binop(Mul, box e2, box Const(k)),
+                )
+                | Binop(
+                    Plus, // [c + e2 * k + e1]
+                    box Binop(Plus, box Const(c),  box Binop(Mul, box e2, box Const(k))),
+                    box e1
+                )
+                | Binop(
+                    Plus, // [c + e1 + k * e2 ]
+                    box Binop(Plus, box Const(c), box e1),
+                    box Binop(Mul, box Const(k), box e2)
+                )
+                | Binop(
+                    Plus, // [c + k * e2 + e1 ]
+                    box Binop(Plus, box Const(c), box Binop(Mul, box Const(k), box e2)),
+                    box e1
+                ) if let Some(scale) = Scale::from(k) => AddressingMode {
+                    base : Some(e1),
+                    index: Some(e2),
+                    scale,
+                    disp: Some(c),
+                },
+
+                // ----------------------------------------------[e * k + c]----------------------------------------------
+                Binop(Plus, box Binop(Mul, box e, box Const(k)), box Const(c))
+                | Binop(Plus, box Binop(Mul, box Const(k), box e), box Const(c))
+                | Binop(Plus, box Const(c), box Binop(Mul, box e, box Const(k)))
+                | Binop(Plus, box Const(c), box Binop(Mul, box Const(k), box e))
+                if let Some(scale) = Scale::from(k)
+                => AddressingMode { base: None, index: Some(e), scale: scale, disp: Some(c) },
 
 
-            // ----------------------------------------------[e * k + c]----------------------------------------------
-            Mem(box Binop(Plus, box Binop(Mul, box e, box Const(k)), box Const(c)))
-            | Mem(box Binop(Plus, box Binop(Mul, box Const(k), box e), box Const(c)))
-            | Mem(box Binop(Plus, box Const(c), box Binop(Mul, box e, box Const(k))))
-            | Mem(box Binop(Plus, box Const(c), box Binop(Mul, box Const(k), box e)))
-            if let Some(scale) = Scale::from(k)
-            =>
-                Bisd { base: None, index: Some(e), scale: scale, disp: Some(c) },
+                // ----------------------------------------------[e + c]----------------------------------------------
+                 Binop(Plus, box e, box Const(c))
+                |  Binop(Plus, box Const(c), box e) =>
+                    AddressingMode { base: Some(e), index: None, scale: Scale::One, disp: Some(c) },
 
 
-            // ----------------------------------------------[e + c]----------------------------------------------
-            Mem(box Binop(Plus, box e, box Const(c)))
-            | Mem(box Binop(Plus, box Const(c), box e)) =>
-                Bisd { base: Some(e), index: None, scale: Scale::One, disp: Some(c) },
+                // ----------------------------------------------[e * k]----------------------------------------------
+                 Binop(Mul, box e, box Const(k))
+                |  Binop(Mul, box Const(k), box e)
+                if let Some(scale) = Scale::from(k) =>
+                    AddressingMode { base: None, index: Some(e), scale: scale, disp: None },
 
 
-            // ----------------------------------------------[[e * k]----------------------------------------------[
-            Mem(box Binop(Mul, box e, box Const(k)))
-            | Mem(box Binop(Mul, box Const(k), box e))
-            if let Some(scale) = Scale::from(k) =>
-                Bisd { base: None, index: Some(e), scale: scale, disp: None },
+                // ----------------------------------------------[e1 + e2 * k]----------------------------------------------
+                 Binop(Plus, box e1, box Binop(Mul, box e2, box Const(k)))
+                |  Binop(Plus, box e1, box Binop(Mul, box Const(k), box e2))
+                |  Binop(Plus, box Binop(Mul, box e2, box Const(k)), box e1)
+                |  Binop(Plus, box Binop(Mul, box Const(k), box e2), box e1)
+                if let Some(scale) = Scale::from(k) =>
+                    AddressingMode { base: Some(e1), index: Some(e2), scale, disp: None },
 
 
-            // ----------------------------------------------[e1 + e2 * k]----------------------------------------------
-            Mem(box Binop(Plus, box e1, box Binop(Mul, box e2, box Const(k))))
-            | Mem(box Binop(Plus, box e1, box Binop(Mul, box Const(k), box e2)))
-            | Mem(box Binop(Plus, box Binop(Mul, box e2, box Const(k)), box e1))
-            | Mem(box Binop(Plus, box Binop(Mul, box Const(k), box e2), box e1))
-            if let Some(scale) = Scale::from(k) =>
-                Bisd { base: Some(e1), index: Some(e2), scale, disp: None },
-
-
-            // ----------------------------------------------[e]----------------------------------------------
-            Mem(box e) => Bisd {
-                base: Some(e),
-                index: None,
-                scale: Scale::One,
-                disp: None,
-            },
-            _ => NotMem(e)
-        }
+                // ----------------------------------------------[e]----------------------------------------------
+                e => AddressingMode {
+                    base: Some(e),
+                    index: None,
+                    scale: Scale::One,
+                    disp: None,
+                }
+            }
     }
 }
 
@@ -436,8 +419,8 @@ impl Codegen for X86Asm {
                 });
             }
             Move(box dst_exp, box src_exp) => {
-                if matches!(dst_exp, Mem(..)) {
-                    let addr_mode = AddressingMode::match_addressing_mode(dst_exp);
+                if let Mem(box de) = dst_exp {
+                    let addr_mode = AddressingMode::match_addressing_mode(de);
                     let t_src = Self::munch_exp(src_exp, result, gen)?;
                     let mut srcs = Vec::new();
                     let assem = addr_mode.consume_as_dst("movq", t_src, &mut srcs, result, gen)?;
@@ -447,8 +430,8 @@ impl Codegen for X86Asm {
                         src: Src(srcs),
                         jump: vec![],
                     });
-                } else if matches!(src_exp, Mem(..)) {
-                    let addr_mode = AddressingMode::match_addressing_mode(src_exp);
+                } else if let Mem(box se) = src_exp {
+                    let addr_mode = AddressingMode::match_addressing_mode(se);
                     let d_src = Self::munch_exp(dst_exp, result, gen)?;
                     let mut srcs = Vec::new();
                     let assem =
@@ -488,8 +471,8 @@ impl Codegen for X86Asm {
                 });
             }
             Cjump(r, box a, box b, lt, lf) => {
-                if matches!(a, Mem(..)) {
-                    let addr_mode = AddressingMode::match_addressing_mode(a);
+                if let Mem(box ae) = a {
+                    let addr_mode = AddressingMode::match_addressing_mode(ae);
                     let mut srcs = Vec::new();
                     let tb = Self::munch_exp(b, result, gen)?;
                     let assem = addr_mode.consume_as_dst("cmpq", tb, &mut srcs, result, gen)?;
@@ -499,8 +482,8 @@ impl Codegen for X86Asm {
                         src: Src(srcs),
                         jump: vec![],
                     });
-                } else if matches!(b, Mem(..)) {
-                    let addr_mode = AddressingMode::match_addressing_mode(b);
+                } else if let Mem(box be) = b {
+                    let addr_mode = AddressingMode::match_addressing_mode(be);
                     let ta = Self::munch_exp(a, result, gen)?;
                     let mut srcs = Vec::new();
                     let assem =
@@ -651,21 +634,22 @@ impl Codegen for X86Asm {
 
                 // }
 
-                // TODO: if one of these is a mem, could probably handle that.
-                let instr = match op {
-                    Plus => "addq %'S0, %'D0",  // ok
-                    Minus => "subq %'S0, %'D0", // ok
-                    IrBinop::Mul => "imulq %'S0, %'D0",
-                    IrBinop::Div => "idivq %'S0", // before: need to zero rdx and move dividend to rax; after: move rax to result register
-                    IrBinop::And => "andq %'S0, %'D0",
-                    IrBinop::Or => "orq %'S0, %'D0",
-                    // base tiger language doesn't have these
-                    // so presumably they must come from optimizations.
-                    Lshift => "shlq %'S0, %'D0", // TODO shl r/m64, imm8; shl r/m64, CL; shl r/m64, 1; masked to 63 bits for the REX instructions
-                    Rshift => "shrq %'S0, %'D0", // TODO ditto as above;
-                    ArShift => "sarq %'S0, %'D0", // note idiv rounds quotient toward 0, sar rounds quotient toward neg infinity
-                    IrBinop::Xor => "xorq %'S0, %'D0",
+                let instr =
+                    match op {
+                       Plus => "addq %'S0, %'D0",  // ok
+                       Minus => "subq %'S0, %'D0", // ok
+                       IrBinop::Mul => "imulq %'S0, %'D0",
+                       IrBinop::Div => "idivq %'S0", // before: need to zero rdx and move dividend to rax; after: move rax to result register
+                       IrBinop::And => "andq %'S0, %'D0",
+                       IrBinop::Or => "orq %'S0, %'D0",
+                       // base tiger language doesn't have these
+                       // so presumably they must come from optimizations.
+                       Lshift => "shlq %'S0, %'D0", // TODO shl r/m64, imm8; shl r/m64, CL; shl r/m64, 1; masked to 63 bits for the REX instructions
+                       Rshift => "shrq %'S0, %'D0", // TODO ditto as above;
+                       ArShift => "sarq %'S0, %'D0", // note idiv rounds quotient toward 0, sar rounds quotient toward neg infinity
+                       IrBinop::Xor => "xorq %'S0, %'D0",
                 };
+
                 let is_div = matches!(op, IrBinop::Div);
 
                 let a_temp = match a {
@@ -843,29 +827,16 @@ impl Codegen for X86Asm {
                 t
             }
             Mem(box e) => {
-                let m = AddressingMode::match_addressing_mode(e);
                 let result_temp = gen.new_unnamed_temp();
-                match m {
-                    Bisd { .. } => {
-                        let mut srcs = Vec::new();
-
-                        let assem = m.consume_as_source("movq", &mut srcs, result, gen, None)?;
-                        result.push(Instr::Oper {
-                            assem,
-                            dst: Dst(vec![result_temp]),
-                            src: Src(srcs),
-                            jump: vec![],
-                        });
-                    }
-                    NotMem(e) => {
-                        let address = Self::munch_exp(e, result, gen)?;
-                        result.push(Instr::Move {
-                            assem: "movq (%'S), %'D",
-                            dst: result_temp,
-                            src: address,
-                        });
-                    }
-                }
+                let m = AddressingMode::match_addressing_mode(e);
+                let mut srcs = Vec::new();
+                let assem = m.consume_as_source("movq", &mut srcs, result, gen, None)?;
+                result.push(Instr::Oper {
+                    assem,
+                    dst: Dst(vec![result_temp]),
+                    src: Src(srcs),
+                    jump: vec![],
+                });
                 result_temp
             }
             Eseq(..) => panic!("impl bug: Eseq should have been eliminated"),
