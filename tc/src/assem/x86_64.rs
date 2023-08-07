@@ -190,7 +190,12 @@ impl AddressingMode {
     }
 
     /// input should be the inside expression of a Mem node. i.e. given Mem(e), use e as input.
-    fn match_addressing_mode(e: IrExp) -> AddressingMode {
+    /// this looks for variations of the [e1 + e2*k + c] form, in the various permutation and associativities.
+    /// it also handles the partial forms such as [e], [e+c], etc.
+    ///
+    /// note that the AddressingMode object returned contains IrExp, so you'd still have to munch on them
+    /// to take care of cases where the IrExp are not abstract registers.
+    fn match_memory_addressing_mode(e: IrExp) -> AddressingMode {
         match e {
                 // ----------------------------------------------t1 + t2 * k + c----------------------------------------------
                 // and variations accounting for commutivity and associativity
@@ -401,7 +406,7 @@ impl Codegen for X86Asm {
                     src: Src::empty(),
                     jump: vec![],
                 });
-            }
+            }trivial
             Move(
                 // move [t+x], [t+x] + 1 -> add [t+x], 1
                 box Mem(box Binop(Plus, box Temp(t1), box Const(c1))),
@@ -420,7 +425,7 @@ impl Codegen for X86Asm {
             }
             Move(box dst_exp, box src_exp) => {
                 if let Mem(box de) = dst_exp {
-                    let addr_mode = AddressingMode::match_addressing_mode(de);
+                    let addr_mode = AddressingMode::match_memory_addressing_mode(de);
                     let t_src = Self::munch_exp(src_exp, result, gen)?;
                     let mut srcs = Vec::new();
                     let assem = addr_mode.consume_as_dst("movq", t_src, &mut srcs, result, gen)?;
@@ -431,7 +436,7 @@ impl Codegen for X86Asm {
                         jump: vec![],
                     });
                 } else if let Mem(box se) = src_exp {
-                    let addr_mode = AddressingMode::match_addressing_mode(se);
+                    let addr_mode = AddressingMode::match_memory_addressing_mode(se);
                     let d_src = Self::munch_exp(dst_exp, result, gen)?;
                     let mut srcs = Vec::new();
                     let assem =
@@ -472,7 +477,7 @@ impl Codegen for X86Asm {
             }
             Cjump(r, box a, box b, lt, lf) => {
                 if let Mem(box ae) = a {
-                    let addr_mode = AddressingMode::match_addressing_mode(ae);
+                    let addr_mode = AddressingMode::match_memory_addressing_mode(ae);
                     let mut srcs = Vec::new();
                     let tb = Self::munch_exp(b, result, gen)?;
                     let assem = addr_mode.consume_as_dst("cmpq", tb, &mut srcs, result, gen)?;
@@ -483,7 +488,7 @@ impl Codegen for X86Asm {
                         jump: vec![],
                     });
                 } else if let Mem(box be) = b {
-                    let addr_mode = AddressingMode::match_addressing_mode(be);
+                    let addr_mode = AddressingMode::match_memory_addressing_mode(be);
                     let ta = Self::munch_exp(a, result, gen)?;
                     let mut srcs = Vec::new();
                     let assem =
@@ -602,7 +607,7 @@ impl Codegen for X86Asm {
                 };
 
                 if let Mem(box be) = b {
-                    let addr_mode_b = AddressingMode::match_addressing_mode(be);
+                    let addr_mode_b = AddressingMode::match_memory_addressing_mode(be);
                     let mut srcs = Vec::new();
 
                     let oper = match op {
@@ -823,7 +828,7 @@ impl Codegen for X86Asm {
             }
             Mem(box e) => {
                 let result_temp = gen.new_unnamed_temp();
-                let m = AddressingMode::match_addressing_mode(e);
+                let m = AddressingMode::match_memory_addressing_mode(e);
                 let mut srcs = Vec::new();
                 let assem = m.consume_as_source("movq", &mut srcs, result, gen, None)?;
                 result.push(Instr::Oper {
