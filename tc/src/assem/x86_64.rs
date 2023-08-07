@@ -601,91 +601,48 @@ impl Codegen for X86Asm {
                     _ => Self::munch_exp(a, result, gen)?,
                 };
 
-                // if let Mem(box be) = b {
-                //     // extract addr mode
-                //     // generate the instruction for if not div.
-                //     let addr_mode_b = AddressingMode::match_addressing_mode(be);
-                //     let mut srcs = Vec::new();
+                if let Mem(box be) = b {
+                    let addr_mode_b = AddressingMode::match_addressing_mode(be);
+                    let mut srcs = Vec::new();
 
-                //     let oper = match op {
-                //         Plus => "addq",
-                //         Minus => "subq",
-                //         IrBinop::Mul => "imulq",
-                //         IrBinop::Div => "idivq",
-                //         IrBinop::And => "andq",
-                //         IrBinop::Or => "orq",
-                //         Lshift => "shlq",
-                //         Rshift => "shrq",
-                //         ArShift => "sarq",
-                //         IrBinop::Xor => "xorq",
-                //     };
+                    let oper = match op {
+                        Plus => "addq",
+                        Minus => "subq",
+                        IrBinop::Mul => "imulq",
+                        IrBinop::Div => "idivq",
+                        IrBinop::And => "andq",
+                        IrBinop::Or => "orq",
+                        Lshift => "shlq",
+                        Rshift => "shrq",
+                        ArShift => "sarq",
+                        IrBinop::Xor => "xorq",
+                    };
 
-                //     if !is_div {
-                //         let assem = addr_mode_b.consume_as_source(oper, &mut srcs, result, gen, None)?;
-                //         result.push(Instr::Oper { assem, dst: Dst(vec![a_temp]), src: Src(srcs), jump: vec![] });
-                //     } else {
-                //         // move a into rax
-                //         // zero rdx
-                //         // do the div
-                //         // move rax to result register
-                //         result.push(Instr::Oper { assem: "movq %'S0, %rax".into(), dst: Dst(vec![gen.named_temp(x86_64::RAX)]), src: Src(vec![a_temp]), jump: vec![] });
-                //         // the dividend is actually RDX:RAX. so we have to zero the upper half.
-                //         result.push(Instr::Oper { assem: "movq $0, %rdx".into(), dst: Dst(vec![gen.named_temp(x86_64::RDX)]), src: Src::empty(), jump: vec![] });
+                    if !is_div {
+                        srcs.push(a_temp);
+                        let assem = addr_mode_b.consume_as_source(oper, &mut srcs, result, gen, None)?;
+                        result.push(Instr::Oper { assem, dst: Dst(vec![a_temp]), src: Src(srcs), jump: vec![] });
+                    } else {
+                        // move a into rax
+                        // zero rdx
+                        // do the div
+                        // move rax to result register
+                        result.push(Instr::Oper { assem: "movq %'S0, %rax".into(), dst: Dst(vec![gen.named_temp(x86_64::RAX)]), src: Src(vec![a_temp]), jump: vec![] });
+                        // the dividend is actually RDX:RAX. so we have to zero the upper half.
+                        result.push(Instr::Oper { assem: "movq $0, %rdx".into(), dst: Dst(vec![gen.named_temp(x86_64::RDX)]), src: Src::empty(), jump: vec![] });
 
-                //         // have the drop down to the lower level api because division is a single operand instruction
-                //         // and the helpers are for 2 operand instructions!
-                //         let mut fmt = String::new();
-                //         write!(fmt, "{} ", oper)?; // write the operation which should be idiv here.
-                //         addr_mode_b.consume(&mut srcs, &mut fmt, result, gen)?; // write the memory addressing part.
-                //         // this mutates both rax and rdx
-                //         result.push(Instr::Oper { assem: fmt, dst: Dst(vec![gen.named_temp(x86_64::RAX), gen.named_temp(x86_64::RDX)]), src: Src(srcs), jump: vec![] });
+                        // have the drop down to the lower level api because division is a single operand instruction
+                        // and the helpers are for 2 operand instructions!
+                        let mut fmt = String::new();
+                        write!(fmt, "{} ", oper)?; // write the operation which should be idiv here.
+                        addr_mode_b.consume(&mut srcs, &mut fmt, result, gen)?; // write the memory addressing part.
+                        // this mutates both rax and rdx
+                        result.push(Instr::Oper { assem: fmt, dst: Dst(vec![gen.named_temp(x86_64::RAX), gen.named_temp(x86_64::RDX)]), src: Src(srcs), jump: vec![] });
 
-                //         result.push(Instr::Move { assem: "movq %'S, %'D", dst: a_temp , src: gen.named_temp(x86_64::RAX) });
-                //     }
-                // } else {
-                //     let instr =
-                //         match op {
-                //         Plus => "addq %'S0, %'D0",  // ok
-                //         Minus => "subq %'S0, %'D0", // ok
-                //         IrBinop::Mul => "imulq %'S0, %'D0",
-                //         IrBinop::Div => "idivq %'S0", // before: need to zero rdx and move dividend to rax; after: move rax to result register
-                //         IrBinop::And => "andq %'S0, %'D0",
-                //         IrBinop::Or => "orq %'S0, %'D0",
-                //         // base tiger language doesn't have these
-                //         // so presumably they must come from optimizations.
-                //         Lshift => "shlq %'S0, %'D0", // TODO shl r/m64, imm8; shl r/m64, CL; shl r/m64, 1; masked to 63 bits for the REX instructions
-                //         Rshift => "shrq %'S0, %'D0", // TODO ditto as above;
-                //         ArShift => "sarq %'S0, %'D0", // note idiv rounds quotient toward 0, sar rounds quotient toward neg infinity
-                //         IrBinop::Xor => "xorq %'S0, %'D0",
-                //     };
-
-                //     let b_temp = Self::munch_exp(b, result, gen)?;
-                //     if !is_div {
-                //         result.push(Instr::Oper {
-                //             assem: instr.into(),
-                //             dst: Dst(
-                //                 vec![a_temp] // a_temp is defined here.
-                //             ),
-                //             src: Src(vec![b_temp, a_temp]), // a_temp is an implicit use in usual 2 address op code manner.
-                //             jump: vec![],
-                //         });
-                //     } else {
-                //         // move a into rax
-                //         // zero rdx
-                //         // do the div
-                //         // move rax to result register
-                //         result.push(Instr::Oper { assem: "movq %'S0, %rax".into(), dst: Dst(vec![gen.named_temp(x86_64::RAX)]), src: Src(vec![a_temp]), jump: vec![] });
-                //         // the dividend is actually RDX:RAX. so we have to zero the upper half.
-                //         result.push(Instr::Oper { assem: "movq $0, %rdx".into(), dst: Dst(vec![gen.named_temp(x86_64::RDX)]), src: Src::empty(), jump: vec![] });
-
-                //         // this mutates both rax and rdx
-                //         result.push(Instr::Oper { assem: instr.into(), dst: Dst(vec![gen.named_temp(x86_64::RAX), gen.named_temp(x86_64::RDX)]), src: Src(vec![b_temp]), jump: vec![] });
-
-                //         result.push(Instr::Move { assem: "movq %'S, %'D", dst: a_temp , src: gen.named_temp(x86_64::RAX) });
-                //     }
-                // }
-
-                 let instr =
+                        result.push(Instr::Move { assem: "movq %'S, %'D", dst: a_temp , src: gen.named_temp(x86_64::RAX) });
+                    }
+                } else {
+                    let instr =
                         match op {
                         Plus => "addq %'S0, %'D0",  // ok
                         Minus => "subq %'S0, %'D0", // ok
@@ -725,6 +682,8 @@ impl Codegen for X86Asm {
 
                         result.push(Instr::Move { assem: "movq %'S, %'D", dst: a_temp , src: gen.named_temp(x86_64::RAX) });
                     }
+                }
+
                 a_temp
             }
             IrExp::Call(box f, args) => {
@@ -898,6 +857,8 @@ impl Codegen for X86Asm {
 
 /// This module contains the code to do trivial register allocation.
 pub mod trivial_reg {
+    use itertools::Itertools;
+
     use super::*;
 
     /// In a given frame, maps the temporary to the offset in the frame.
@@ -999,9 +960,10 @@ pub mod trivial_reg {
             .map(|x| *x)
             .collect::<Vec<temp::Temp>>();
 
+
         // we should always have enough colors to cover all the registers needed.
         assert!(
-            srcs.len() + dsts.len() <= candidates.len(),
+            srcs.iter().chain(dsts.iter()).unique().count() <= candidates.len(),
             "srcs={:?}, dsts={:?}, candidates={:?}",
             srcs,
             dsts,
@@ -1020,7 +982,8 @@ pub mod trivial_reg {
         // do coloring.
         let mut colors = HashMap::with_capacity(3);
         let mut choices = candidates.iter();
-        for r in srcs.iter().chain(dsts.iter()) {
+        // TODO dedup first
+        for r in srcs.iter().chain(dsts.iter()).unique() {
             let color = choices.next().unwrap();
             colors.insert(r, *color);
         }
