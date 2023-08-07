@@ -982,7 +982,6 @@ pub mod trivial_reg {
         // do coloring.
         let mut colors = HashMap::with_capacity(3);
         let mut choices = candidates.iter();
-        // TODO dedup first
         for r in srcs.iter().chain(dsts.iter()).unique() {
             let color = choices.next().unwrap();
             colors.insert(r, *color);
@@ -1076,7 +1075,3 @@ pub mod trivial_reg {
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-}
