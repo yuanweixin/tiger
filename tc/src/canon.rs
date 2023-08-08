@@ -432,8 +432,10 @@ pub trait BlockList {
 
     // gives the next available block to start a trace.
     // this gives the trace algorithm some flexibility in picking what to use to start trace.
-    // the main intended use is to let us use Vec representation during testing to have
+    // the main intended use right now is to let us use Vec representation during testing to have
     // reproducible/controllable block input order, so that we can write proper tests.
+    //
+    // future extensions could include heuristics such as,picking blocks that don't have unmarked predecessors.
     fn next(&mut self) -> Option<Block>;
 }
 

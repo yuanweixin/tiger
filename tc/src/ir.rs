@@ -3,6 +3,26 @@ use crate::{int_types::TigerInt, temp, temp::TempMap, Uuids};
 
 #[derive(Hash, Eq, PartialEq, Debug, Clone)]
 pub enum IrExp {
+    // Appel appendix:
+    // nil denotes a value nil belonging to every record type.
+    // if record variable v contains value nil, it is a checked runtime
+    // error to select a field from v.
+    //
+    // record and arrays are implemented as pointers in the runtime.
+    // furthermore, in x86 ABI the NULL pointer is 0.
+    //
+    // the c-faq question 5.17 lists some historical machines that don't use 0 for null.
+    // https://c-faq.com/null/machexamp.html
+    //
+    // and question 5.5 touches on the c compiler translating use of 0 in pointer context
+    // into whatever internal bit pattern the machine actually uses.
+    // https://c-faq.com/null/machnon0.html
+    //
+    // this hints at the need for tracking whether a Const(0) is used in pointer context.
+    // Null was added for this purpose.
+    // for compiling to x86 it is a purely pedantic exercise, but it seems like the "correct"
+    // thing to have an explicit type representing Null instead of hand waving and say null
+    // is same as Const(0).
     Null,
     Const(TigerInt),
     Name(temp::Label),
@@ -15,6 +35,8 @@ pub enum IrExp {
 
 #[derive(Hash, Eq, PartialEq, Debug, Clone)]
 pub enum IrStm {
+    // TODO add Return(e1,...,en) so that the IR can be interpreted. and as exercise
+    // write the interpreter and especially solve the part about Jumps.
     Move(Box<IrExp>, Box<IrExp>),
     Exp(Box<IrExp>),
     Jump(Box<IrExp>, Vec<temp::Label>),
