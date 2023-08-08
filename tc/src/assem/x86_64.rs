@@ -406,7 +406,7 @@ impl Codegen for X86Asm {
                     src: Src::empty(),
                     jump: vec![],
                 });
-            }trivial
+            }
             Move(
                 // move [t+x], [t+x] + 1 -> add [t+x], 1
                 box Mem(box Binop(Plus, box Temp(t1), box Const(c1))),
