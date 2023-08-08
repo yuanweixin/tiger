@@ -449,8 +449,12 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     let res = run_on_file(&matches);
     if res.is_ok() {
+        // even though it says Ok, the return code might not be 0. think of it as
+        // "checked exceptions".
         util::exit(res.unwrap());
     } else {
+        // this is like "unchecked exceptions", just a catch all for any other error
+        // that wasn't caughted explicitly.
         eprintln!("{:?}", res.err());
         util::exit(util::ReturnCode::OtherErrors);
     }

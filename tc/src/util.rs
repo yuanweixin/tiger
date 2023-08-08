@@ -1,6 +1,5 @@
 use std::{fs, path::PathBuf};
 
-// TODO this seems unnecessary.
 #[allow(dead_code)]
 #[derive(Debug, Eq, PartialEq)]
 pub enum ReturnCode {
