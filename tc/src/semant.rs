@@ -1526,7 +1526,6 @@ mod tests {
 
         fn proc_entry_exit3(
             &self,
-            _: &Vec<crate::assem::Instr>,
             _: &mut dyn Uuids,
             _: temp::Label,
         ) -> (frame::Prologue, frame::Epilogue) {

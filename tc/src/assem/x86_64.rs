@@ -709,7 +709,7 @@ impl Codegen for X86Asm {
                     let t = gen.new_unnamed_temp();
                     caller_save_temps.push(t);
                     result.push(Instr::Move {
-                        assem: "mov %'S, %'D",
+                        assem: "movq %'S, %'D",
                         dst: t,
                         src: gen.named_temp(reg_name),
                     });
@@ -720,7 +720,7 @@ impl Codegen for X86Asm {
                     // args after the 6th one go on stack.
                     while i > 5 {
                         result.push(Instr::Oper {
-                            assem: "push %'S0".into(),
+                            assem: "pushq %'S0".into(),
                             dst: Dst(vec![gen.named_temp(frame::x86_64::RSP)]),
                             src: Src(vec![arg_regs[i]]),
                             jump: vec![],
@@ -775,7 +775,7 @@ impl Codegen for X86Asm {
                 // restore caller save registers.
                 for (reg_name, t) in frame::x86_64::CALLER_SAVES.iter().zip(caller_save_temps) {
                     result.push(Instr::Move {
-                        assem: "mov %'S, %'D",
+                        assem: "movq %'S, %'D",
                         src: t,
                         dst: gen.named_temp(reg_name),
                     });

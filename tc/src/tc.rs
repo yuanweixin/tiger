@@ -273,6 +273,7 @@ fn run_on_file(opts: &dyn CompilerOptions) -> Result<util::ReturnCode, Box<dyn E
 
     if frags.is_err() {
         println!("type checking failed");
+        // TODO need a custom error type to hold the error return codes? not sure.
         return Ok(util::ReturnCode::TypeError);
     }
 
@@ -354,7 +355,8 @@ fn run_on_file(opts: &dyn CompilerOptions) -> Result<util::ReturnCode, Box<dyn E
                 // the trivial allocator could have been done as a single pass over the
                 // finished list of instr. but it's done here inside each fragment so we
                 // still have access to the IrStm that leads to the blocks of asm. this is
-                // for sanity and ease of debugging by printing out the strings.
+                // for ease of debugging by printing out the IrStm immediately followed by
+                // the asm generated.
                 let mut temp_offset = trivial_reg::TempOffset::new();
                 for stm in trace.into_iter() {
                     if opts.dump_codegen() {
@@ -398,28 +400,25 @@ fn run_on_file(opts: &dyn CompilerOptions) -> Result<util::ReturnCode, Box<dyn E
                     }
                 }
 
-                let s = String::from(frame.borrow().name().resolve_named_label(&gen));
+                let function_name = String::from(frame.borrow().name().resolve_named_label(&gen));
                 frame.borrow().proc_entry_exit2(&mut assems, &mut gen);
                 let (prologue, epilogue) =
                     frame
                         .borrow()
-                        .proc_entry_exit3(&assems, &mut gen, start_label.0);
-                prologue_epilogue_instrs_fn.push((prologue, epilogue, assems, s));
+                        .proc_entry_exit3(&mut gen, start_label.0);
+                prologue_epilogue_instrs_fn.push((prologue, epilogue, assems, function_name));
             }
         };
     }
 
-    for (prologue, epilogue, asm, fn_name) in prologue_epilogue_instrs_fn.iter() {
+    for (prologue, epilogue, asm, function_name) in prologue_epilogue_instrs_fn.iter() {
         writeln!(bout, "{}", prologue)?;
-        writeln!(bout, ".{}_body:", fn_name)?;
         for i in asm {
             let s = i.format(&tm, true, &mut gen);
-            if s.len() > 0 {
-                // because proc_entry_exit2 added the dummy instruction, it will cause an empty line
-                if s.chars().next().unwrap() != '.' {
+            if s.len() > 0 { // because proc_entry_exit2 added the dummy instruction, it will cause an empty string when formatted.
+                if s.chars().next().unwrap() != '.' { // not a label.
                     writeln!(bout, "\t{}", i.format(&tm, true, &mut gen))?;
-                } else {
-                    // label, don't indent.
+                } else { // don't indent label.
                     writeln!(bout, "{}", i.format(&tm, true, &mut gen))?;
                 }
             }

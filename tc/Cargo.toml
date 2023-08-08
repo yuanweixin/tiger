@@ -10,6 +10,7 @@ path = "src/tc.rs"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
+anyhow = "1.0.72"
 cfgrammar = "0.13.1"
 clap = { version = "4.1.8", features = ["cargo"] }
 itertools = "0.11.0"
@@ -20,6 +21,7 @@ serde = "=1.0.171" # rules_rust doesn't work with newer because https://github.c
 string-interner = "0.14.0"
 strum = {version = "0.25.0", features=["derive"]}
 strum_macros = "0.25.0"
+thiserror = "1.0.44"
 
 [build-dependencies]
 cfgrammar = "0.13.1"

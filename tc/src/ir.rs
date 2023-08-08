@@ -35,8 +35,6 @@ pub enum IrExp {
 
 #[derive(Hash, Eq, PartialEq, Debug, Clone)]
 pub enum IrStm {
-    // TODO add Return(e1,...,en) so that the IR can be interpreted. and as exercise
-    // write the interpreter and especially solve the part about Jumps.
     Move(Box<IrExp>, Box<IrExp>),
     Exp(Box<IrExp>),
     Jump(Box<IrExp>, Vec<temp::Label>),
@@ -46,6 +44,7 @@ pub enum IrStm {
 }
 
 impl IrExp {
+    /// pretty print helper.
     fn debug_to_string_helper(
         &self,
         tm: &TempMap,
@@ -107,12 +106,16 @@ impl IrExp {
         }
     }
 
+    /// pretty print to assist debugging. this was added because the default Debug implementation
+    /// tended to mush the tree into a single line; might as well not print anything in that case.
     pub fn debug_to_string(&self, tm: &TempMap, gen: &dyn Uuids, pretty: bool) -> String {
         self.debug_to_string_helper(tm, gen, pretty, 0)
     }
 }
 
 impl IrStm {
+    // TODO (low pri) maybe rewrite to use write! instead of format! to reduce String allocs.
+    /// pretty print helper for stms.
     fn debug_to_string_helper(
         &self,
         tm: &TempMap,
@@ -164,6 +167,8 @@ impl IrStm {
         }
     }
 
+    /// pretty print to assist debugging. this was added because the default Debug implementation
+    /// tended to mush the tree into a single line; might as well not print anything in that case.
     pub fn debug_to_string(&self, tm: &TempMap, gen: &dyn Uuids, pretty: bool) -> String {
         self.debug_to_string_helper(tm, gen, pretty, 0)
     }

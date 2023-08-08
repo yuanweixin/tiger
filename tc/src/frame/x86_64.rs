@@ -192,38 +192,25 @@ impl Frame for x86_64_Frame {
 
     fn proc_entry_exit3(
         &self,
-        instrs: &Vec<crate::assem::Instr>, // TODO what is this even used for if we just output strings anyway?
         gen: &mut dyn Uuids,
         start_label: temp::Label,
     ) -> (super::Prologue, super::Epilogue) {
         let function_name = self.name.resolve_named_label(gen);
-        let prologue = if self.num_locals > 0 {
-            format!(
-                "{}:\n.{}_prologue:\n\tpushq %rbp\n\tmovq %rsp, %rbp\n\tsubq ${}, %rsp\n\tjmp .L{}",
-                function_name,
-                function_name,
-                self.num_locals * WORD_SIZE,
-                match start_label {
-                    lab @ temp::Label::Named(..) =>
-                        panic!("impl bug, got named label {}", lab.resolve_named_label(gen)),
-                    temp::Label::Unnamed(id) => id,
-                }
-            )
-        } else {
-            format!(
-                "{}:\n.{}_prologue:\n\tpush rbp\n\tmov rbp, rsp",
-                function_name, function_name,
-            )
-        };
+        let prologue = format!(
+            "{}:\n\tpushq %rbp\n\tmovq %rsp, %rbp\n\tsubq ${}, %rsp\n\tjmp .L{}",
+            function_name,
+            self.num_locals * WORD_SIZE,
+            match start_label {
+                lab @ temp::Label::Named(..) =>
+                    panic!("impl bug, got named label {}", lab.resolve_named_label(gen)),
+                temp::Label::Unnamed(id) => id,
+            }
+        );
 
-        let epilogue = if self.num_locals > 0 {
-            format!(
-                ".{}_epilogue:\n\tleave\n\tret\n\t.globl {}\n\t.type {}, @function",
-                function_name, function_name, function_name,
-            )
-        } else {
-            format!(".{}_epilogue:\n\tpop rbp\n\tret", function_name,)
-        };
+        let epilogue = format!(
+            "\n\tleave\n\tret\n\t.globl {}\n\t.type {}, @function",
+            function_name, function_name,
+        );
         return (prologue, epilogue);
     }
 
@@ -234,7 +221,7 @@ impl Frame for x86_64_Frame {
         // note: we are using the call instruction, which will push rip onto the stack.
         // since we also using rbp as frame pointer, upon entry we save it onto the stack.
         // therefore the correct offset is 2 words.
-        let mut positive_frame_offset = 2*WORD_SIZE as i32;
+        let mut positive_frame_offset = 2 * WORD_SIZE as i32;
         for (i, escape) in formals_escapes.iter().enumerate() {
             // this is where it interacts with the calling convention.
             // for system V, the first 6 args will go into registers.

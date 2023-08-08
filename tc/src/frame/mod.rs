@@ -66,7 +66,7 @@ pub trait Frame: Debug {
     fn proc_entry_exit2(&self, instrs: &mut Vec<Instr>, gen: &mut dyn Uuids);
 
     /// Creates the prologue and epilogue assembly language.
-    fn proc_entry_exit3(&self, instrs: &Vec<Instr>, gen: &mut dyn Uuids, sl: temp::Label) -> (Prologue, Epilogue);
+    fn proc_entry_exit3(&self, gen: &mut dyn Uuids, sl: temp::Label) -> (Prologue, Epilogue);
 
     // since we don't use global state to track the symbol table, temporaries, labels,
     // will need to pass this in and grab it each time. each frame implementation shall

@@ -698,6 +698,7 @@ dependencies = [
 name = "tiger-lang"
 version = "0.1.0"
 dependencies = [
+ "anyhow",
  "cfgrammar",
  "clap",
  "itertools",
@@ -708,6 +709,7 @@ dependencies = [
  "string-interner",
  "strum",
  "strum_macros",
+ "thiserror",
 ]
 
 [[package]]

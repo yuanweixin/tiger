@@ -1,5 +1,5 @@
 {
-  "checksum": "2798237b962805b085bd4a202b46f2c3c3e834669c7002efb45f5dda46cb7d9d",
+  "checksum": "de37ded35e931d627150fd09ffa02d0bd657a26e19aa417344b9d72e5bac8611",
   "crates": {
     "ahash 0.7.6": {
       "name": "ahash",
@@ -3903,6 +3903,10 @@
         "deps": {
           "common": [
             {
+              "id": "anyhow 1.0.72",
+              "target": "anyhow"
+            },
+            {
               "id": "cfgrammar 0.13.1",
               "target": "cfgrammar"
             },
@@ -3937,6 +3941,10 @@
             {
               "id": "strum 0.25.0",
               "target": "strum"
+            },
+            {
+              "id": "thiserror 1.0.44",
+              "target": "thiserror"
             },
             {
               "id": "tiger-lang 0.1.0",
