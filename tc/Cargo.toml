@@ -16,6 +16,7 @@ clap = { version = "4.1.8", features = ["cargo"] }
 itertools = "0.11.0"
 lrlex = "0.13.1"
 lrpar = "0.13.1"
+petgraph = "0.6.3"
 proc-macro2 = "1.0.60"
 serde = "=1.0.171" # rules_rust doesn't work with newer because https://github.com/bazelbuild/rules_rust/issues/2071
 string-interner = "0.14.0"
