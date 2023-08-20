@@ -4,14 +4,6 @@
 #![feature(if_let_guard)]
 #![feature(let_chains)]
 
-use std::{
-    collections::HashMap, env, error::Error, fs, fs::File, io::BufWriter, io::Write, path::PathBuf,
-};
-
-use clap::{arg, command, Arg, ArgAction, ArgMatches};
-use lrlex::lrlex_mod;
-use lrpar::lrpar_mod;
-
 mod absyn;
 mod assem;
 mod canon;
@@ -25,7 +17,16 @@ mod symtab;
 mod temp;
 mod translate;
 mod util;
+mod optimize;
 
+
+use std::{
+    collections::HashMap, env, error::Error, fs, fs::File, io::BufWriter, io::Write, path::PathBuf,
+};
+
+use clap::{arg, command, Arg, ArgAction, ArgMatches};
+use lrlex::lrlex_mod;
+use lrpar::lrpar_mod;
 use crate::{
     assem::x86_64::trivial_reg,
     assem::Codegen,

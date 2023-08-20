@@ -34,9 +34,38 @@ segways into microarchitecture for x86 and understanding the cost of assembly in
 
 want to take a bit of time to look through https://www.agner.org/optimize/optimizing_assembly.pdf
 
-[? day] implement non-trivial instruction selection, ensure e2e tests continue to pass
-[0.5 day] constant folding, and have it respect flags.
-[1 day] break from touching any code.
+everything from liveness onwards is classic compiler optimization techniques involving dataflow analysis.
+
+can mentally split into the analyzer vs optimizer step. the analyzer does the analysis but the optimizer is the one that does the side effect of changing the code. i don't think they are necessarily separate; each type of optimization would do analysis then modify the cfg (there is probably no good reason at all, to do it "functional" style where the effects are reified and separate from their application; if anything this in theory turns the transformation into a protocol, but we don't need that here).
+
+also, the program representation matters. namely,
+* quads (textbooks assume use of triples; quads is a form of triples)
+* explicit control flow graph (model it after the module in appel book)
+* basic blocks in control flow graph containing quads
+* convert to ssa on the get to (might as well, doesn't make sense to do this later)
+
+then each individual optimization needs to be expressed in terms of the data flow framework (meet operator, direction, transfer function).
+
+other considerations:
+* "patching up" dataflow results due to modification of cfg.
+* running dataflow on basic blocks to speed it up instead of on individual statements, requiring composing the transfer function of the statements in the basic block.
+* interface for dataflow analysis (start with the one in appel book)
+
+testing
+this is def a tough one to test, input will be cfg, and minimal test should contain straightline code, conditionals and loops. for checking analysis, the associated data of the cfg nodes will be checked. for code transforms, the actual cfg itself needs to be matched against expected value.
+
+for each optimization, determine this matrix of info:
+* direction
+* meet function
+* transfer function
+* is it monotonic?
+* is it distributive?
+
+algorithms used
+* depth first ordering
+* nonreducible graph detection using back edge deletion + cycle detection
+* natural loop construction (assume reducible graph)
+
 [2-3 days] understand liveness
 [2-3 days] implement liveness.
 [2-3 days] understand register allocation.
