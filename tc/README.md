@@ -4,6 +4,14 @@ Implementation of the tiger language described in "modern compiler implementatio
 
 Currently x86_64 programs can be generated. However there are no optimizations applied. Trivial register allocation is used to color registers, resulting in very bloated and inefficient assembly where every instruction reads and writes to memory.
 
+If I had to rate the book, I'd give it a 6/10 to 7/10 for the writing quality. It could have used an editor and better examples. I think it suffers from the need to balance brevity/linearity and depth, especially in the first 12 chapters where it needs to usher along a specific implementation.
+
+A nice supplement read is "Engineering a Compiler" by Cooper and Torzon. It is up-to-date (latest edition from 2023), has enough breadth in coverage of each topic, and is not as pedantic on the technical details as Dragon book. It also does a great job of providing an example to illustrate algorithms and concepts, which really aids with understanding.
+
+The dragon book remains a nice reference. Beware of the "international" edition that omits chapter 12 on interprocedural optimization.
+
+I find Muchnick's book comprehensive on the dataflow analysis techniques up to the time of its writing, but the writing style leave much to be desired. Basically sentences don't flow and the writing is on the dry side.
+
 # Progress
 - [x] 2 Lexical analysis
 - [x] 3 Parsing
@@ -17,6 +25,8 @@ Currently x86_64 programs can be generated. However there are no optimizations a
 - [ ] 11 Register allocation
 - [ ] 12 Checkpoint
 
+Optimization is a very interesting topic. I probably would come back to actually implementing liveness analysis and global register allocation later, but atm feel more interested in figuring out the general code organization needed to make a relatively generic dataflow analysis framework. Also there are other distractions, so I might not come back to do the implementation for some time.
+
 [done][2 days 7/19, 7/20] trivial register allocation
 [done][1 days 7/19] link it with the runtime - yup full of errors
 [done][0.25 day 7/23] for test purpose, might want to allow tigermain to return int types. this way output can be checked on cmdline.
@@ -27,51 +37,6 @@ Currently x86_64 programs can be generated. However there are no optimizations a
 [done][0.5 day] fix up the use and deps in the generated Instr objects for register allocation use. (no time spent as this should not work for trivial register allocation if we forgot to specify a source. at any rate, can revisit when implementing register allocation)
 [done][0.25 days 7/26] get all the e2e tests to work (not merge.tig or queens.tig as those are the big ones)
 [done][2 day 7/27, 7/28] get merge.tig and queens.tig to work
-
-non-trivial instruction selection, what is the cost of using complex addressing mode of the form [t1 + t2*k + c]? is there actual speed gain from using this besides a smaller code size (ok so less pressure on code caches is one).
-
-segways into microarchitecture for x86 and understanding the cost of assembly instructions! turtles all the way down.
-
-want to take a bit of time to look through https://www.agner.org/optimize/optimizing_assembly.pdf
-
-everything from liveness onwards is classic compiler optimization techniques involving dataflow analysis.
-
-can mentally split into the analyzer vs optimizer step. the analyzer does the analysis but the optimizer is the one that does the side effect of changing the code. i don't think they are necessarily separate; each type of optimization would do analysis then modify the cfg (there is probably no good reason at all, to do it "functional" style where the effects are reified and separate from their application; if anything this in theory turns the transformation into a protocol, but we don't need that here).
-
-also, the program representation matters. namely,
-* quads (textbooks assume use of triples; quads is a form of triples)
-* explicit control flow graph (model it after the module in appel book)
-* basic blocks in control flow graph containing quads
-* convert to ssa on the get to (might as well, doesn't make sense to do this later)
-
-then each individual optimization needs to be expressed in terms of the data flow framework (meet operator, direction, transfer function).
-
-other considerations:
-* "patching up" dataflow results due to modification of cfg.
-* running dataflow on basic blocks to speed it up instead of on individual statements, requiring composing the transfer function of the statements in the basic block.
-* interface for dataflow analysis (start with the one in appel book)
-
-testing
-this is def a tough one to test, input will be cfg, and minimal test should contain straightline code, conditionals and loops. for checking analysis, the associated data of the cfg nodes will be checked. for code transforms, the actual cfg itself needs to be matched against expected value.
-
-for each optimization, determine this matrix of info:
-* direction
-* meet function
-* transfer function
-* is it monotonic?
-* is it distributive?
-
-algorithms used
-* depth first ordering
-* nonreducible graph detection using back edge deletion + cycle detection
-* natural loop construction (assume reducible graph)
-
-[2-3 days] understand liveness
-[2-3 days] implement liveness.
-[2-3 days] understand register allocation.
-[2-3 days] impl register allocation
-[1+1 days] plug in register allocation.
-[0.5 day] fix up the compiler options.
 
 # Build
 ```
@@ -88,10 +53,24 @@ bazel test //tc::e2e_test
 ```
 cargo test
 ```
+non-trivial instruction selection, what is the cost of using complex addressing mode of the form [t1 + t2*k + c]? is there actual speed gain from using this besides a smaller code size (ok so less pressure on code caches is one).
+
+segways into microarchitecture for x86 and understanding the cost of assembly instructions! turtles all the way down.
+
+want to take a bit of time to look through https://www.agner.org/optimize/optimizing_assembly.pdf
+
+everything from liveness onwards is classic compiler optimization techniques involving dataflow analysis.
+
+non-trivial instruction selection, what is the cost of using complex addressing mode of the form [t1 + t2*k + c]? is there actual speed gain from using this besides a smaller code size (ok so less pressure on code caches is one).
+
+segways into microarchitecture for x86 and understanding the cost of assembly instructions! turtles all the way down.
+
+want to take a bit of time to look through https://www.agner.org/optimize/optimizing_assembly.pdf
+
+everything from liveness onwards is classic compiler optimization techniques involving dataflow analysis.
+
+
 # Other topics
-- [ ] Dataflow analysis
-- [ ] Loop optimization
-- [ ] SSA
 - [ ] Pipelining, scheduling
 - [ ] Memory hierarchies
 - [ ] Garbage collection
