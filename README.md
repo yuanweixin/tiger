@@ -27,17 +27,6 @@ I find Muchnick's book comprehensive on the dataflow analysis techniques up to t
 
 Optimization is a very interesting topic. I probably would come back to actually implementing liveness analysis and global register allocation later, but was sidetracked by impulsive need to figure out the general code organization needed, to create a relatively generic dataflow analysis framework. Alas there are not a single framework but multiple ones exist. 
 
-[done][2 days 7/19, 7/20] trivial register allocation
-[done][1 days 7/19] link it with the runtime - yup full of errors
-[done][0.25 day 7/23] for test purpose, might want to allow tigermain to return int types. this way output can be checked on cmdline.
-[done][3 days 7/24, 7/25, 7/26] experiment on building out the end to end test harness
-    x add rules_rust to WS
-    x convert project to build using bazel
-    x current tests will just be run with cargo test, because i am not gonna write out a bunch of rust_library targets for no reason
-[done][0.5 day] fix up the use and deps in the generated Instr objects for register allocation use. (no time spent as this should not work for trivial register allocation if we forgot to specify a source. at any rate, can revisit when implementing register allocation)
-[done][0.25 days 7/26] get all the e2e tests to work (not merge.tig or queens.tig as those are the big ones)
-[done][2 day 7/27, 7/28] get merge.tig and queens.tig to work
-
 # Build
 ```
 cargo build --release
