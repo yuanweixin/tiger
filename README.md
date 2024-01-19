@@ -106,3 +106,7 @@ The language is very low level. It does not make things easy such as "take this 
 Ad hoc polymorphism using Haskell style trait classes work reasonably, I more or less pretend it is glorified interface file. Here, implementation details/language mechanisms creep in, such as the differentiation between trait objects (dispatch overhead) vs generics, which you have to keep in mind in some cases. 
 
 I read about compile times getting longer on larger projects but obviously this is a tiny one, so haven't experienced that myself. 
+
+## Would I use Rust in prod? 
+
+Yes with the caveat that the code has requirement to be performant. Web servers probably benefit the most from the borrow checking and the "safe subset of Rust" which uses various smart pointers. If you are using unsafe Rust then I feel it might be worth it if you don't want to deal with preprocessors. The biggest gain is the fantastic dev experience from the friendly useful compiler error messages and the fantastic package manager. If you are just writing business logic and could afford some extra cycles, maybe something like F# would be better since it is neater to read and easier to express higher level ideas. 
