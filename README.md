@@ -25,7 +25,7 @@ I find Muchnick's book comprehensive on the dataflow analysis techniques up to t
 - [ ] 11 Register allocation
 - [ ] 12 Checkpoint
 
-Optimization is a very interesting topic. I probably would come back to actually implementing liveness analysis and global register allocation later, but atm feel more interested in figuring out the general code organization needed to make a relatively generic dataflow analysis framework. Also there are other distractions, so I might not come back to do the implementation for some time.
+Optimization is a very interesting topic. I probably would come back to actually implementing liveness analysis and global register allocation later, but was sidetracked by impulsive need to figure out the general code organization needed, to create a relatively generic dataflow analysis framework. Alas there are not a single framework but multiple ones exist. 
 
 [done][2 days 7/19, 7/20] trivial register allocation
 [done][1 days 7/19] link it with the runtime - yup full of errors
@@ -69,8 +69,7 @@ want to take a bit of time to look through https://www.agner.org/optimize/optimi
 
 everything from liveness onwards is classic compiler optimization techniques involving dataflow analysis.
 
-
-# Other topics
+# Other topics in the book 
 - [ ] Pipelining, scheduling
 - [ ] Memory hierarchies
 - [ ] Garbage collection
@@ -78,3 +77,32 @@ everything from liveness onwards is classic compiler optimization techniques inv
 - [ ] Polymorphic types
 - [ ] Garbage collection
 - [ ] Oop features
+
+# Review of Rust language 
+
+## Tooling - top notch
+This is top notch. An actual package manager exists. There's ONE package manager that dominate, so none of the bullshit in e.g. JS. 
+
+## Ecosystem - okay to decent 
+There's 2-3 LR parser generator libraries, but the one that is supposed to imitate YACC refuses to allow rule precedence for their own cynical aesthetic reasons (irrc they added some support for that, but it is at best an undocumented feature). The lib I ended up using is actually an academic implementation of a parser generator with automatic error recovery. I find it less of a hassle to use than the shitty yacc imitator, and it is nice that somebody finally decided to implement a (better imo) parser generator algorithm. So, this one experience tells me ymmv with Rust libs depending on what you trying to do. 
+
+The package versioning in rust tend to err on side of immaturity i.e. a lot of things are pre 1.0. Idk why this is the case, seems to be the culture. In practice this makes it hard to pick out "mature libraries" to use in prod scenario. 
+
+## Borrow checker 
+
+It's not really that difficult to grok for me. Initially I feared it would be very tricky, but if you understand multi-reader single-writer locks, then it's more or less the same thing but for variables. 
+
+## Language UX - okay but language mechanisms start to grate on my nerves and drive me up a wall as time goes by 
+
+The major saving grace is the super friendly and helpful error messages from compiler that mostly tell you where things went wrong with borrow checking. I don't feel confused by what is going on. 
+
+Over time, I get a hunch about where borrow checker might blow up. But it is a mental overhead for me to do this. 
+
+I understand the reason they have all these smart objects e.g. Rc to track lifetimes, but frankly it start to get really irritating having to type out long ass type signatures. 
+
+The language is very low level. It does not make things easy such as "take this vector of stuff A and transform it to vector of stuff B". Maybe that's not the best example, but basically I cannot effortlessly translate a high level idea into code. I have to spend extra effort to just write it out in a Rust way. This pain started to get searing when I got to thinking about how to implement dataflow analysis framework. I find there is cognitive dissonance between how I want to think about the problem (if I was using a functional language, I'd say that has the most natural affinity with dataflow analysis as it is fundamentally just a series of transformations on some in-memory representation), and how it needs to be implemented (mutation, on maybe vectors of structs or whatever, and probably have to be written out in a very clumsy way). Maybe it's because I didn't have the concepts being implemented clear in my head, but in no way did "thinking in terms of the Rust language" help. If anything it just made me feel like doing mental juggling between understanding high level concept and the ugliness of my implementation.  
+
+## Language scalability to larger projects - decent 
+Ad hoc polymorphism using Haskell style trait classes work reasonably, I more or less pretend it is glorified interface file. Here, implementation details/language mechanisms creep in, such as the differentiation between trait objects (dispatch overhead) vs generics, which you have to keep in mind in some cases. 
+
+I read about compile times getting longer on larger projects but obviously this is a tiny one, so haven't experienced that myself. 
